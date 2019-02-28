@@ -1,0 +1,23 @@
+[package]
+name = "gltf-viewer-rs"
+version = "0.1.0"
+authors = ["Adrien Bennadji <adrien.bennadji@boulanger.com>"]
+edition = "2018"
+build = "build.rs"
+
+[dependencies]
+log = "0.4"
+env_logger = "0.6"
+ash = "0.27"
+winit = "0.18"
+cgmath = "0.17"
+image = "0.21"
+gltf = "0.11"
+
+[target.'cfg(windows)'.dependencies]
+winapi = "0.3"
+
+[target.'cfg(target_os = "macos")'.dependencies]
+metal-rs = "0.6"
+cocoa = "0.13"
+objc = "0.2"
