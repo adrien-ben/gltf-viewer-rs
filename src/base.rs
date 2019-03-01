@@ -29,7 +29,7 @@ pub struct BaseApp {
 }
 
 impl BaseApp {
-    pub fn new() -> Self {
+    pub fn new(path: String) -> Self {
         log::debug!("Creating application.");
 
         let events_loop = EventsLoop::new();
@@ -86,7 +86,7 @@ impl BaseApp {
             render_pass,
         );
 
-        let model = Model::create_triangle(&context);
+        let model = Model::create_from_file(&context, path).unwrap();
 
         let command_buffers = Self::create_and_register_command_buffers(
             &context,
@@ -240,9 +240,11 @@ impl BaseApp {
             .build();
         let shader_states_infos = [vertex_shader_state_info, fragment_shader_state_info];
 
+        let bindings_descs = Vertex::get_bindings_descriptions();
+        let attributes_descs = Vertex::get_attributes_descriptions();
         let vertex_input_info = vk::PipelineVertexInputStateCreateInfo::builder()
-            .vertex_binding_descriptions(&Vertex::get_bindings_descriptions())
-            .vertex_attribute_descriptions(&Vertex::get_attributes_descriptions())
+            .vertex_binding_descriptions(&bindings_descs)
+            .vertex_attribute_descriptions(&attributes_descs)
             .build();
 
         let input_assembly_info = vk::PipelineInputAssemblyStateCreateInfo::builder()
@@ -275,7 +277,7 @@ impl BaseApp {
             .polygon_mode(vk::PolygonMode::FILL)
             .line_width(1.0)
             .cull_mode(vk::CullModeFlags::BACK)
-            .front_face(vk::FrontFace::COUNTER_CLOCKWISE)
+            .front_face(vk::FrontFace::CLOCKWISE)
             .depth_bias_enable(false)
             .depth_bias_constant_factor(0.0)
             .depth_bias_clamp(0.0)
@@ -520,14 +522,17 @@ impl BaseApp {
 
             // Draw
             unsafe {
-                device.cmd_bind_vertex_buffers(buffer, 0, &[model.vertices().buffer], &[0]);
-                device.cmd_bind_index_buffer(
-                    buffer,
-                    model.indices().buffer,
-                    0,
-                    vk::IndexType::UINT32,
-                );
-                device.cmd_draw_indexed(buffer, model.index_count(), 1, 0, 0, 0);
+                device.cmd_bind_vertex_buffers(buffer, 0, &[model.vertices().0.buffer], &[0]);
+
+                match model.indices() {
+                    Some((indices, index_count, index_type)) => {
+                        device.cmd_bind_index_buffer(buffer, indices.buffer, 0, *index_type);
+                        device.cmd_draw_indexed(buffer, *index_count, 1, 0, 0, 0);
+                    }
+                    None => {
+                        device.cmd_draw(buffer, model.vertices().1, 1, 0, 0);
+                    }
+                }
             };
 
             // End render pass

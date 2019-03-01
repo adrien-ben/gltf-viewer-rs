@@ -177,7 +177,7 @@ impl Image {
         });
     }
 
-    pub fn copy_buffer(&self, buffer: &Buffer, extent: vk::Extent2D) {
+    pub fn _copy_buffer(&self, buffer: &Buffer, extent: vk::Extent2D) {
         self.context.execute_one_time_commands(|command_buffer| {
             let region = vk::BufferImageCopy::builder()
                 .buffer_offset(0)
@@ -209,7 +209,7 @@ impl Image {
         })
     }
 
-    pub fn generate_mipmaps(&self, extent: vk::Extent2D, format: vk::Format, mip_levels: u32) {
+    pub fn _generate_mipmaps(&self, extent: vk::Extent2D, format: vk::Format, mip_levels: u32) {
         let format_properties = unsafe {
             self.context
                 .instance()
