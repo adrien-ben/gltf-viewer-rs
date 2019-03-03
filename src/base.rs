@@ -1,6 +1,11 @@
-use crate::{model::*, vulkan::*};
+use crate::{camera::*, math, model::*, vulkan::*};
 use ash::{version::DeviceV1_0, vk, Device};
-use std::{ffi::CString, rc::Rc};
+use cgmath::{Deg, Matrix4, Point3, Vector3};
+use std::{
+    ffi::CString,
+    mem::{align_of, size_of},
+    rc::Rc,
+};
 use winit::{dpi::LogicalSize, Event, EventsLoop, Window, WindowBuilder, WindowEvent};
 
 const WIDTH: u32 = 800;
@@ -15,6 +20,9 @@ pub struct BaseApp {
     context: Rc<Context>,
     render_pass: vk::RenderPass,
     descriptor_set_layout: vk::DescriptorSetLayout,
+    descriptor_pool: vk::DescriptorPool,
+    uniform_buffers: Vec<Buffer>,
+    descriptor_sets: Vec<vk::DescriptorSet>,
     pipeline_layout: vk::PipelineLayout,
     pipeline: vk::Pipeline,
     msaa_samples: vk::SampleCountFlags,
@@ -58,7 +66,11 @@ impl BaseApp {
             msaa_samples,
             depth_format,
         );
-        let descriptor_set_layout = Self::create_descriptor_set_layout(context.device());
+
+        let uniform_buffers =
+            Self::create_uniform_buffers(&context, swapchain_properties.image_count);
+        let (descriptor_set_layout, descriptor_pool, descriptor_sets) =
+            Self::create_descriptor_sets_resources(&context, &uniform_buffers);
         let (pipeline, layout) = Self::create_pipeline(
             context.device(),
             swapchain_properties,
@@ -93,6 +105,8 @@ impl BaseApp {
             &swapchain,
             render_pass,
             pipeline,
+            layout,
+            &descriptor_sets,
             &model,
         );
 
@@ -105,6 +119,9 @@ impl BaseApp {
             context,
             render_pass,
             descriptor_set_layout,
+            descriptor_pool,
+            uniform_buffers,
+            descriptor_sets,
             pipeline_layout: layout,
             pipeline,
             msaa_samples,
@@ -204,14 +221,107 @@ impl BaseApp {
         unsafe { device.create_render_pass(&render_pass_info, None).unwrap() }
     }
 
+    fn create_uniform_buffers(context: &Rc<Context>, count: u32) -> Vec<Buffer> {
+        (0..count)
+            .map(|_| {
+                Buffer::create(
+                    Rc::clone(context),
+                    size_of::<CameraUBO>() as _,
+                    vk::BufferUsageFlags::UNIFORM_BUFFER,
+                    vk::MemoryPropertyFlags::HOST_VISIBLE | vk::MemoryPropertyFlags::HOST_COHERENT,
+                )
+            })
+            .collect::<Vec<_>>()
+    }
+
+    fn create_descriptor_sets_resources(
+        context: &Rc<Context>,
+        uniform_buffers: &[Buffer],
+    ) -> (
+        vk::DescriptorSetLayout,
+        vk::DescriptorPool,
+        Vec<vk::DescriptorSet>,
+    ) {
+        let layout = Self::create_descriptor_set_layout(context.device());
+        let pool = Self::create_descriptor_pool(context.device(), uniform_buffers.len() as _);
+        let sets = Self::create_descriptor_sets(context, pool, layout, &uniform_buffers);
+        (layout, pool, sets)
+    }
+
     fn create_descriptor_set_layout(device: &Device) -> vk::DescriptorSetLayout {
-        let layout_info = vk::DescriptorSetLayoutCreateInfo::builder().build();
+        let bindings = [vk::DescriptorSetLayoutBinding::builder()
+            .binding(0)
+            .descriptor_type(vk::DescriptorType::UNIFORM_BUFFER)
+            .descriptor_count(1)
+            .stage_flags(vk::ShaderStageFlags::VERTEX)
+            .build()];
+        let layout_info = vk::DescriptorSetLayoutCreateInfo::builder()
+            .bindings(&bindings)
+            .build();
 
         unsafe {
             device
                 .create_descriptor_set_layout(&layout_info, None)
                 .unwrap()
         }
+    }
+
+    fn create_descriptor_pool(device: &Device, descriptor_count: u32) -> vk::DescriptorPool {
+        let pool_sizes = [vk::DescriptorPoolSize {
+            ty: vk::DescriptorType::UNIFORM_BUFFER,
+            descriptor_count,
+        }];
+
+        let create_info = vk::DescriptorPoolCreateInfo::builder()
+            .pool_sizes(&pool_sizes)
+            .max_sets(descriptor_count)
+            .build();
+
+        unsafe { device.create_descriptor_pool(&create_info, None).unwrap() }
+    }
+
+    fn create_descriptor_sets(
+        context: &Rc<Context>,
+        pool: vk::DescriptorPool,
+        layout: vk::DescriptorSetLayout,
+        buffers: &[Buffer],
+    ) -> Vec<vk::DescriptorSet> {
+        let layouts = (0..buffers.len()).map(|_| layout).collect::<Vec<_>>();
+
+        let allocate_info = vk::DescriptorSetAllocateInfo::builder()
+            .descriptor_pool(pool)
+            .set_layouts(&layouts)
+            .build();
+        let sets = unsafe {
+            context
+                .device()
+                .allocate_descriptor_sets(&allocate_info)
+                .unwrap()
+        };
+
+        sets.iter().zip(buffers.iter()).for_each(|(set, buffer)| {
+            let buffer_info = [vk::DescriptorBufferInfo::builder()
+                .buffer(buffer.buffer)
+                .offset(0)
+                .range(size_of::<CameraUBO>() as _)
+                .build()];
+
+            let descriptor_writes = [vk::WriteDescriptorSet::builder()
+                .dst_set(*set)
+                .dst_binding(0)
+                .dst_array_element(0)
+                .descriptor_type(vk::DescriptorType::UNIFORM_BUFFER)
+                .buffer_info(&buffer_info)
+                .build()];
+
+            unsafe {
+                context
+                    .device()
+                    .update_descriptor_sets(&descriptor_writes, &[])
+            }
+        });
+
+        sets
     }
 
     fn create_pipeline(
@@ -277,7 +387,7 @@ impl BaseApp {
             .polygon_mode(vk::PolygonMode::FILL)
             .line_width(1.0)
             .cull_mode(vk::CullModeFlags::BACK)
-            .front_face(vk::FrontFace::CLOCKWISE)
+            .front_face(vk::FrontFace::COUNTER_CLOCKWISE)
             .depth_bias_enable(false)
             .depth_bias_constant_factor(0.0)
             .depth_bias_clamp(0.0)
@@ -454,6 +564,8 @@ impl BaseApp {
         swapchain: &Swapchain,
         render_pass: vk::RenderPass,
         graphics_pipeline: vk::Pipeline,
+        pipeline_layout: vk::PipelineLayout,
+        descriptor_sets: &[vk::DescriptorSet],
         model: &Model,
     ) -> Vec<vk::CommandBuffer> {
         let allocate_info = vk::CommandBufferAllocateInfo::builder()
@@ -518,6 +630,18 @@ impl BaseApp {
             // Bind pipeline
             unsafe {
                 device.cmd_bind_pipeline(buffer, vk::PipelineBindPoint::GRAPHICS, graphics_pipeline)
+            };
+
+            // Bind descriptor sets
+            unsafe {
+                device.cmd_bind_descriptor_sets(
+                    buffer,
+                    vk::PipelineBindPoint::GRAPHICS,
+                    pipeline_layout,
+                    0,
+                    &descriptor_sets[i..=i],
+                    &[],
+                )
             };
 
             // Draw
@@ -637,6 +761,8 @@ impl BaseApp {
         };
 
         unsafe { self.context.device().reset_fences(&wait_fences).unwrap() };
+
+        self.update_uniform_buffers(image_index);
 
         let device = self.context.device();
         let wait_semaphores = [image_available_semaphore];
@@ -765,6 +891,8 @@ impl BaseApp {
             &swapchain,
             render_pass,
             pipeline,
+            layout,
+            &self.descriptor_sets,
             &self.model,
         );
 
@@ -802,6 +930,30 @@ impl BaseApp {
         }
         self.swapchain.destroy();
     }
+
+    fn update_uniform_buffers(&mut self, current_image: u32) {
+        let aspect = self.swapchain.properties().extent.width as f32
+            / self.swapchain.properties().extent.height as f32;
+        let view = Matrix4::look_at(
+            Point3::new(0.0, 0.0, 5.0),
+            Point3::new(0.0, 0.0, 0.0),
+            Vector3::new(0.0, 1.0, 0.0),
+        );
+        let proj = math::perspective(Deg(45.0), aspect, 0.1, 10.0);
+
+        let ubos = [CameraUBO::new(view, proj)];
+        let buffer_mem = self.uniform_buffers[current_image as usize].memory;
+        let size = size_of::<CameraUBO>() as vk::DeviceSize;
+        unsafe {
+            let device = self.context.device();
+            let data_ptr = device
+                .map_memory(buffer_mem, 0, size, vk::MemoryMapFlags::empty())
+                .unwrap();
+            let mut align = ash::util::Align::new(data_ptr, align_of::<f32>() as _, size);
+            align.copy_from_slice(&ubos);
+            device.unmap_memory(buffer_mem);
+        }
+    }
 }
 
 impl Drop for BaseApp {
@@ -811,6 +963,7 @@ impl Drop for BaseApp {
         let device = self.context.device();
         self.in_flight_frames.destroy(device);
         unsafe {
+            device.destroy_descriptor_pool(self.descriptor_pool, None);
             device.destroy_descriptor_set_layout(self.descriptor_set_layout, None);
         }
     }

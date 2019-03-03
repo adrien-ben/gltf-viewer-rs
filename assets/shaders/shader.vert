@@ -3,6 +3,11 @@
 
 layout(location = 0) in vec3 vPositions;
 
+layout(binding = 0) uniform CameraUBO {
+     mat4 view;
+     mat4 proj;
+} cameraUBO;
+
 void main() {
-    gl_Position = vec4(vPositions, 1.0);
+    gl_Position = cameraUBO.proj * cameraUBO.view * vec4(vPositions, 1.0);
 }
