@@ -2,6 +2,7 @@ mod base;
 mod camera;
 mod math;
 mod model;
+mod util;
 mod vulkan;
 
 use base::BaseApp;

@@ -645,16 +645,27 @@ impl BaseApp {
             };
 
             // Draw
+            let model = &model.meshes()[0];
             unsafe {
-                device.cmd_bind_vertex_buffers(buffer, 0, &[model.vertices().0.buffer], &[0]);
+                device.cmd_bind_vertex_buffers(
+                    buffer,
+                    0,
+                    &[model.vertices().buffer().buffer],
+                    &[model.vertices().offset()],
+                );
 
                 match model.indices() {
-                    Some((indices, index_count, index_type)) => {
-                        device.cmd_bind_index_buffer(buffer, indices.buffer, 0, *index_type);
-                        device.cmd_draw_indexed(buffer, *index_count, 1, 0, 0, 0);
+                    Some(index_buffer) => {
+                        device.cmd_bind_index_buffer(
+                            buffer,
+                            index_buffer.buffer().buffer,
+                            index_buffer.offset(),
+                            index_buffer.index_type(),
+                        );
+                        device.cmd_draw_indexed(buffer, index_buffer.element_count(), 1, 0, 0, 0);
                     }
                     None => {
-                        device.cmd_draw(buffer, model.vertices().1, 1, 0, 0);
+                        device.cmd_draw(buffer, model.vertices().element_count(), 1, 0, 0);
                     }
                 }
             };

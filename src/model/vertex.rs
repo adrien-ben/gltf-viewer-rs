@@ -1,6 +1,6 @@
 use crate::vulkan::*;
 use ash::vk;
-use std::mem::size_of;
+use std::{mem::size_of, rc::Rc};
 
 #[derive(Clone, Copy)]
 #[allow(dead_code)]
@@ -27,5 +27,73 @@ impl Vertex {
     }
 }
 
-pub type VertexBuffer = (Buffer, u32);
-pub type IndexBuffer = (Buffer, u32, vk::IndexType);
+pub struct VertexBuffer {
+    buffer: Rc<Buffer>,
+    offset: vk::DeviceSize,
+    element_count: u32,
+}
+
+impl VertexBuffer {
+    pub fn new(buffer: Rc<Buffer>, offset: vk::DeviceSize, element_count: u32) -> Self {
+        Self {
+            buffer,
+            offset,
+            element_count,
+        }
+    }
+}
+
+impl VertexBuffer {
+    pub fn buffer(&self) -> &Buffer {
+        &self.buffer
+    }
+
+    pub fn offset(&self) -> vk::DeviceSize {
+        self.offset
+    }
+
+    pub fn element_count(&self) -> u32 {
+        self.element_count
+    }
+}
+
+pub struct IndexBuffer {
+    buffer: Rc<Buffer>,
+    offset: vk::DeviceSize,
+    element_count: u32,
+    index_type: vk::IndexType,
+}
+
+impl IndexBuffer {
+    pub fn new(
+        buffer: Rc<Buffer>,
+        offset: vk::DeviceSize,
+        element_count: u32,
+        index_type: vk::IndexType,
+    ) -> Self {
+        Self {
+            buffer,
+            offset,
+            element_count,
+            index_type,
+        }
+    }
+}
+
+impl IndexBuffer {
+    pub fn buffer(&self) -> &Buffer {
+        &self.buffer
+    }
+
+    pub fn offset(&self) -> vk::DeviceSize {
+        self.offset
+    }
+
+    pub fn element_count(&self) -> u32 {
+        self.element_count
+    }
+
+    pub fn index_type(&self) -> vk::IndexType {
+        self.index_type
+    }
+}
