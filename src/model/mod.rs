@@ -18,8 +18,10 @@ impl Model {
         context: &Rc<Context>,
         path: P,
     ) -> Result<Self, Box<dyn Error>> {
+        log::debug!("Importing gltf file");
         let (document, buffers, _) = gltf::import(path)?;
 
+        log::debug!("Creating the model");
         if document.scenes().len() == 0 {
             return Err(Box::new(ModelLoadingError::new("There is no scene")));
         }

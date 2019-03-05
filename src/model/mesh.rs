@@ -1,5 +1,5 @@
 use super::{IndexBuffer, VertexBuffer};
-use crate::{util, vulkan::*};
+use crate::{util::*, vulkan::*};
 use ash::vk;
 use gltf::{accessor::DataType, buffer::Data, mesh::Semantic, Accessor, Document};
 use std::rc::Rc;
@@ -45,12 +45,23 @@ pub fn create_mesh_from_gltf(
                 (offset, accessor.count(), index_type)
             });
 
-            if let Some(positions) = primitive.get(&Semantic::Positions) {
-                let vertices = read_accessor(&positions, &buffers);
+            if let Some(accessor) = primitive.get(&Semantic::Positions) {
+                let positions = read_accessor(&accessor, &buffers);
+                let normals = primitive
+                    .get(&Semantic::Normals)
+                    .map(|normals| read_accessor(&normals, &buffers));
+
+                let mut vertices = Vec::<u8>::new();
+
+                for elt_index in 0..accessor.count() {
+                    push_vec3(&Some(&positions), elt_index, &mut vertices);
+                    push_vec3(&normals.as_ref().map(|v| &v[..]), elt_index, &mut vertices);
+                }
+
                 let offset = all_vertices.len();
                 all_vertices.extend_from_slice(&vertices);
 
-                meshes_buffers.push((indices, (offset, positions.count())));
+                meshes_buffers.push((indices, (offset, accessor.count())));
             }
         }
     }
@@ -124,7 +135,7 @@ fn extract_indices_from_accessor(
         let mut u8_indices = Vec::<u8>::new();
         for i in u16_indices {
             unsafe {
-                u8_indices.extend_from_slice(util::any_as_u8_slice(&i));
+                u8_indices.extend_from_slice(any_as_u8_slice(&i));
             }
         }
 
@@ -150,4 +161,18 @@ fn read_accessor(accessor: &Accessor, buffers: &[Data]) -> Vec<u8> {
         }
     }
     vertices
+}
+
+fn push_vec3(src: &Option<&[u8]>, index: usize, dest: &mut Vec<u8>) {
+    let left = index * 12;
+    let right = left + 12;
+
+    if let Some(src) = src {
+        dest.extend_from_slice(&src[left..right]);
+    } else {
+        unsafe {
+            let one: [f32; 3] = [1.0, 1.0, 1.0];
+            dest.extend_from_slice(any_as_u8_slice(&one));
+        }
+    };
 }
