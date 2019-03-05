@@ -1,4 +1,4 @@
-use crate::{camera::*, math, model::*, vulkan::*};
+use crate::{camera::*, math, model::*, util::*, vulkan::*};
 use ash::{version::DeviceV1_0, vk, Device};
 use cgmath::{Deg, Matrix4, Point3, Vector3};
 use std::{
@@ -435,8 +435,14 @@ impl BaseApp {
 
         let layout = {
             let layouts = [descriptor_set_layout];
+            let push_constant_range = [vk::PushConstantRange {
+                stage_flags: vk::ShaderStageFlags::VERTEX,
+                offset: 0,
+                size: size_of::<Matrix4<f32>>() as _,
+            }];
             let layout_info = vk::PipelineLayoutCreateInfo::builder()
                 .set_layouts(&layouts)
+                .push_constant_ranges(&push_constant_range)
                 .build();
 
             unsafe { device.create_pipeline_layout(&layout_info, None).unwrap() }
@@ -645,30 +651,7 @@ impl BaseApp {
             };
 
             // Draw
-            let model = &model.meshes()[0];
-            unsafe {
-                device.cmd_bind_vertex_buffers(
-                    buffer,
-                    0,
-                    &[model.vertices().buffer().buffer],
-                    &[model.vertices().offset()],
-                );
-
-                match model.indices() {
-                    Some(index_buffer) => {
-                        device.cmd_bind_index_buffer(
-                            buffer,
-                            index_buffer.buffer().buffer,
-                            index_buffer.offset(),
-                            index_buffer.index_type(),
-                        );
-                        device.cmd_draw_indexed(buffer, index_buffer.element_count(), 1, 0, 0, 0);
-                    }
-                    None => {
-                        device.cmd_draw(buffer, model.vertices().element_count(), 1, 0, 0);
-                    }
-                }
-            };
+            Self::register_model_draw_commands(device, pipeline_layout, buffer, model);
 
             // End render pass
             unsafe { device.cmd_end_render_pass(buffer) };
@@ -678,6 +661,76 @@ impl BaseApp {
         });
 
         buffers
+    }
+
+    fn register_model_draw_commands(
+        device: &Device,
+        pipeline_layout: vk::PipelineLayout,
+        command_buffer: vk::CommandBuffer,
+        model: &Model,
+    ) {
+        let mut current_mesh: Option<usize> = None;
+        for node in model.nodes() {
+            let mesh_index = node.mesh_index();
+            let mesh = &model.meshes()[mesh_index];
+            // Bind vertex/index buffer is necessary
+            if current_mesh.is_none() || current_mesh.unwrap() != mesh_index {
+                current_mesh = Some(mesh_index);
+                unsafe {
+                    device.cmd_bind_vertex_buffers(
+                        command_buffer,
+                        0,
+                        &[mesh.vertices().buffer().buffer],
+                        &[mesh.vertices().offset()],
+                    );
+                }
+
+                if let Some(index_buffer) = mesh.indices() {
+                    unsafe {
+                        device.cmd_bind_index_buffer(
+                            command_buffer,
+                            index_buffer.buffer().buffer,
+                            index_buffer.offset(),
+                            index_buffer.index_type(),
+                        );
+                    }
+                }
+            }
+
+            // Push transform constants
+            unsafe {
+                let transform = node.transform();
+                let constants = any_as_u8_slice(&transform);
+                device.cmd_push_constants(
+                    command_buffer,
+                    pipeline_layout,
+                    vk::ShaderStageFlags::VERTEX,
+                    0,
+                    &constants,
+                )
+            };
+
+            // Draw geometry
+            match mesh.indices() {
+                Some(index_buffer) => {
+                    unsafe {
+                        device.cmd_draw_indexed(
+                            command_buffer,
+                            index_buffer.element_count(),
+                            1,
+                            0,
+                            0,
+                            0,
+                        )
+                    };
+                }
+                None => {
+                    unsafe {
+                        device.cmd_draw(command_buffer, mesh.vertices().element_count(), 1, 0, 0)
+                    };
+                }
+            }
+        }
     }
 
     fn create_sync_objects(device: &Device) -> InFlightFrames {
