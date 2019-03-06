@@ -44,8 +44,8 @@ impl Model {
 }
 
 impl Model {
-    pub fn meshes(&self) -> &[Mesh] {
-        &self.meshes
+    pub fn mesh(&self, index: usize) -> &Mesh {
+        &self.meshes[index]
     }
 
     pub fn nodes(&self) -> &[Node] {

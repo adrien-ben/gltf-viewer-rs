@@ -5,11 +5,21 @@ use gltf::{accessor::DataType, buffer::Data, mesh::Semantic, Accessor, Document}
 use std::rc::Rc;
 
 pub struct Mesh {
+    primitives: Vec<Primitive>,
+}
+
+impl Mesh {
+    pub fn primitives(&self) -> &[Primitive] {
+        &self.primitives
+    }
+}
+
+pub struct Primitive {
     vertices: VertexBuffer,
     indices: Option<IndexBuffer>,
 }
 
-impl Mesh {
+impl Primitive {
     pub fn vertices(&self) -> &VertexBuffer {
         &self.vertices
     }
@@ -31,13 +41,15 @@ pub fn create_mesh_from_gltf(
     buffers: &[Data],
 ) -> Vec<Mesh> {
     // (usize, usize) -> byte offset, element count
-    let mut meshes_buffers = Vec::<(Option<IndexBufferPart>, VertexBufferPart)>::new();
+    let mut meshes_buffers = Vec::<Vec<(Option<IndexBufferPart>, VertexBufferPart)>>::new();
     let mut all_vertices = Vec::<u8>::new();
     let mut all_indices = Vec::<u8>::new();
 
     // Gather vertices and indices from all the meshes in the document
     for mesh in document.meshes() {
-        if let Some(primitive) = mesh.primitives().nth(0) {
+        let mut primitives_buffers = Vec::<(Option<IndexBufferPart>, VertexBufferPart)>::new();
+
+        for primitive in mesh.primitives() {
             let indices = primitive.indices().map(|accessor| {
                 let (indices, index_type) = extract_indices_from_accessor(&accessor, &buffers);
                 let offset = all_indices.len();
@@ -61,9 +73,11 @@ pub fn create_mesh_from_gltf(
                 let offset = all_vertices.len();
                 all_vertices.extend_from_slice(&vertices);
 
-                meshes_buffers.push((indices, (offset, accessor.count())));
+                primitives_buffers.push((indices, (offset, accessor.count())));
             }
         }
+
+        meshes_buffers.push(primitives_buffers);
     }
 
     if !meshes_buffers.is_empty() {
@@ -85,28 +99,34 @@ pub fn create_mesh_from_gltf(
 
         return meshes_buffers
             .iter()
-            .map(|buffers| {
-                let mesh_vertices = buffers.1;
-                let vertex_buffer = VertexBuffer::new(
-                    Rc::clone(&vertices),
-                    mesh_vertices.0 as _,
-                    mesh_vertices.1 as _,
-                );
+            .map(|primitives_buffers| {
+                let primitives = primitives_buffers
+                    .iter()
+                    .map(|buffers| {
+                        let mesh_vertices = buffers.1;
+                        let vertex_buffer = VertexBuffer::new(
+                            Rc::clone(&vertices),
+                            mesh_vertices.0 as _,
+                            mesh_vertices.1 as _,
+                        );
 
-                let mesh_indices = buffers.0;
-                let index_buffer = mesh_indices.map(|mesh_indices| {
-                    IndexBuffer::new(
-                        Rc::clone(indices.as_ref().unwrap()),
-                        mesh_indices.0 as _,
-                        mesh_indices.1 as _,
-                        mesh_indices.2 as _,
-                    )
-                });
+                        let mesh_indices = buffers.0;
+                        let index_buffer = mesh_indices.map(|mesh_indices| {
+                            IndexBuffer::new(
+                                Rc::clone(indices.as_ref().unwrap()),
+                                mesh_indices.0 as _,
+                                mesh_indices.1 as _,
+                                mesh_indices.2 as _,
+                            )
+                        });
 
-                Mesh {
-                    vertices: vertex_buffer,
-                    indices: index_buffer,
-                }
+                        Primitive {
+                            vertices: vertex_buffer,
+                            indices: index_buffer,
+                        }
+                    })
+                    .collect::<Vec<_>>();
+                Mesh { primitives }
             })
             .collect::<Vec<_>>();
     }

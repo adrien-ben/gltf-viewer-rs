@@ -669,23 +669,20 @@ impl BaseApp {
         command_buffer: vk::CommandBuffer,
         model: &Model,
     ) {
-        let mut current_mesh: Option<usize> = None;
         for node in model.nodes() {
-            let mesh_index = node.mesh_index();
-            let mesh = &model.meshes()[mesh_index];
-            // Bind vertex/index buffer is necessary
-            if current_mesh.is_none() || current_mesh.unwrap() != mesh_index {
-                current_mesh = Some(mesh_index);
+            let mesh = model.mesh(node.mesh_index());
+
+            for primitive in mesh.primitives() {
                 unsafe {
                     device.cmd_bind_vertex_buffers(
                         command_buffer,
                         0,
-                        &[mesh.vertices().buffer().buffer],
-                        &[mesh.vertices().offset()],
+                        &[primitive.vertices().buffer().buffer],
+                        &[primitive.vertices().offset()],
                     );
                 }
 
-                if let Some(index_buffer) = mesh.indices() {
+                if let Some(index_buffer) = primitive.indices() {
                     unsafe {
                         device.cmd_bind_index_buffer(
                             command_buffer,
@@ -695,39 +692,45 @@ impl BaseApp {
                         );
                     }
                 }
-            }
 
-            // Push transform constants
-            unsafe {
-                let transform = node.transform();
-                let constants = any_as_u8_slice(&transform);
-                device.cmd_push_constants(
-                    command_buffer,
-                    pipeline_layout,
-                    vk::ShaderStageFlags::VERTEX,
-                    0,
-                    &constants,
-                )
-            };
+                // Push transform constants
+                unsafe {
+                    let transform = node.transform();
+                    let constants = any_as_u8_slice(&transform);
+                    device.cmd_push_constants(
+                        command_buffer,
+                        pipeline_layout,
+                        vk::ShaderStageFlags::VERTEX,
+                        0,
+                        &constants,
+                    )
+                };
 
-            // Draw geometry
-            match mesh.indices() {
-                Some(index_buffer) => {
-                    unsafe {
-                        device.cmd_draw_indexed(
-                            command_buffer,
-                            index_buffer.element_count(),
-                            1,
-                            0,
-                            0,
-                            0,
-                        )
-                    };
-                }
-                None => {
-                    unsafe {
-                        device.cmd_draw(command_buffer, mesh.vertices().element_count(), 1, 0, 0)
-                    };
+                // Draw geometry
+                match primitive.indices() {
+                    Some(index_buffer) => {
+                        unsafe {
+                            device.cmd_draw_indexed(
+                                command_buffer,
+                                index_buffer.element_count(),
+                                1,
+                                0,
+                                0,
+                                0,
+                            )
+                        };
+                    }
+                    None => {
+                        unsafe {
+                            device.cmd_draw(
+                                command_buffer,
+                                primitive.vertices().element_count(),
+                                1,
+                                0,
+                                0,
+                            )
+                        };
+                    }
                 }
             }
         }
@@ -998,8 +1001,13 @@ impl BaseApp {
     fn update_uniform_buffers(&mut self, current_image: u32) {
         let aspect = self.swapchain.properties().extent.width as f32
             / self.swapchain.properties().extent.height as f32;
+        // let view = Matrix4::look_at(
+        //     Point3::new(-100.0, 100.0, 200.0),
+        //     Point3::new(0.0, 0.0, 0.0),
+        //     Vector3::new(0.0, 1.0, 0.0),
+        // );
         let view = Matrix4::look_at(
-            Point3::new(0.0, 0.0, 5.0),
+            Point3::new(5.0, 1.0, 4.8),
             Point3::new(0.0, 0.0, 0.0),
             Vector3::new(0.0, 1.0, 0.0),
         );
