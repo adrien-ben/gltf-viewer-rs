@@ -16,6 +16,6 @@ layout(push_constant) uniform Transform {
 layout(location = 0) out vec3 oNormals;
 
 void main() {
-    oNormals = (transform.matrix * vec4(vNormals, 1.0)).xyz;
+    oNormals = (transform.matrix * vec4(vNormals, 0.0)).xyz;
     gl_Position = cameraUBO.proj * cameraUBO.view * transform.matrix * vec4(vPositions, 1.0);
 }
