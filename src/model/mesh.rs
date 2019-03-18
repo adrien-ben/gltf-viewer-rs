@@ -1,7 +1,7 @@
-use super::{IndexBuffer, VertexBuffer};
+use super::{IndexBuffer, VertexBuffer, Material};
 use crate::{util::*, vulkan::*};
 use ash::vk;
-use gltf::{accessor::DataType, buffer::Data, mesh::Semantic, Accessor, Document};
+use gltf::{accessor::DataType, buffer::Data, mesh::Semantic, Accessor, Document, mesh::Primitive as GltfPrimitive};
 use std::rc::Rc;
 
 pub struct Mesh {
@@ -17,6 +17,7 @@ impl Mesh {
 pub struct Primitive {
     vertices: VertexBuffer,
     indices: Option<IndexBuffer>,
+    material: Material,
 }
 
 impl Primitive {
@@ -27,6 +28,10 @@ impl Primitive {
     pub fn indices(&self) -> &Option<IndexBuffer> {
         &self.indices
     }
+
+    pub fn material(&self) -> Material {
+        self.material
+    }
 }
 
 /// Vertex buffer byte offset / element count
@@ -35,19 +40,19 @@ type VertexBufferPart = (usize, usize);
 /// Index buffer byte offset / element count / type
 type IndexBufferPart = (usize, usize, vk::IndexType);
 
-pub fn create_mesh_from_gltf(
+pub fn create_meshes_from_gltf(
     context: &Rc<Context>,
     document: &Document,
     buffers: &[Data],
 ) -> Vec<Mesh> {
     // (usize, usize) -> byte offset, element count
-    let mut meshes_buffers = Vec::<Vec<(Option<IndexBufferPart>, VertexBufferPart)>>::new();
+    let mut meshes_data = Vec::<Vec<(Option<IndexBufferPart>, VertexBufferPart, Material)>>::new();
     let mut all_vertices = Vec::<u8>::new();
     let mut all_indices = Vec::<u8>::new();
 
     // Gather vertices and indices from all the meshes in the document
     for mesh in document.meshes() {
-        let mut primitives_buffers = Vec::<(Option<IndexBufferPart>, VertexBufferPart)>::new();
+        let mut primitives_buffers = Vec::<(Option<IndexBufferPart>, VertexBufferPart, Material)>::new();
 
         for primitive in mesh.primitives() {
             let indices = primitive.indices().map(|accessor| {
@@ -59,9 +64,7 @@ pub fn create_mesh_from_gltf(
 
             if let Some(accessor) = primitive.get(&Semantic::Positions) {
                 let positions = read_accessor(&accessor, &buffers);
-                let normals = primitive
-                    .get(&Semantic::Normals)
-                    .map(|normals| read_accessor(&normals, &buffers));
+                let normals = read_normals(&primitive, &buffers);
 
                 let mut vertices = Vec::<u8>::new();
 
@@ -73,14 +76,16 @@ pub fn create_mesh_from_gltf(
                 let offset = all_vertices.len();
                 all_vertices.extend_from_slice(&vertices);
 
-                primitives_buffers.push((indices, (offset, accessor.count())));
+                let material = Material::from(primitive.material());
+
+                primitives_buffers.push((indices, (offset, accessor.count()), material));
             }
         }
 
-        meshes_buffers.push(primitives_buffers);
+        meshes_data.push(primitives_buffers);
     }
 
-    if !meshes_buffers.is_empty() {
+    if !meshes_data.is_empty() {
         let indices = if all_indices.is_empty() {
             None
         } else {
@@ -97,7 +102,7 @@ pub fn create_mesh_from_gltf(
             &all_vertices,
         ));
 
-        return meshes_buffers
+        return meshes_data
             .iter()
             .map(|primitives_buffers| {
                 let primitives = primitives_buffers
@@ -123,6 +128,7 @@ pub fn create_mesh_from_gltf(
                         Primitive {
                             vertices: vertex_buffer,
                             indices: index_buffer,
+                            material: buffers.2,
                         }
                     })
                     .collect::<Vec<_>>();
@@ -163,6 +169,12 @@ fn extract_indices_from_accessor(
     }
 
     (indices, index_type)
+}
+
+fn read_normals(primitive: &GltfPrimitive, buffers: &[Data]) -> Option<Vec<u8>> {
+    primitive
+        .get(&Semantic::Normals)
+        .map(|normals| read_accessor(&normals, &buffers))
 }
 
 fn read_accessor(accessor: &Accessor, buffers: &[Data]) -> Vec<u8> {

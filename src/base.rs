@@ -435,11 +435,18 @@ impl BaseApp {
 
         let layout = {
             let layouts = [descriptor_set_layout];
-            let push_constant_range = [vk::PushConstantRange {
-                stage_flags: vk::ShaderStageFlags::VERTEX,
-                offset: 0,
-                size: size_of::<Matrix4<f32>>() as _,
-            }];
+            let push_constant_range = [
+                vk::PushConstantRange {
+                    stage_flags: vk::ShaderStageFlags::VERTEX,
+                    offset: 0,
+                    size: size_of::<Matrix4<f32>>() as _,
+                },
+                vk::PushConstantRange {
+                    stage_flags: vk::ShaderStageFlags::FRAGMENT,
+                    offset: size_of::<Matrix4<f32>>() as _,
+                    size: size_of::<[f32; 3]>() as _,
+                }
+            ];
             let layout_info = vk::PipelineLayoutCreateInfo::builder()
                 .set_layouts(&layouts)
                 .push_constant_ranges(&push_constant_range)
@@ -696,14 +703,24 @@ impl BaseApp {
                 // Push transform constants
                 unsafe {
                     let transform = node.transform();
-                    let constants = any_as_u8_slice(&transform);
+                    let transform_contants = any_as_u8_slice(&transform);
                     device.cmd_push_constants(
                         command_buffer,
                         pipeline_layout,
                         vk::ShaderStageFlags::VERTEX,
                         0,
-                        &constants,
-                    )
+                        &transform_contants,
+                    );
+
+                    let material = primitive.material();
+                    let material_contants = any_as_u8_slice(&material);
+                    device.cmd_push_constants(
+                        command_buffer,
+                        pipeline_layout,
+                        vk::ShaderStageFlags::FRAGMENT,
+                        size_of::<Matrix4<f32>>() as _,
+                        &material_contants,
+                    );
                 };
 
                 // Draw geometry

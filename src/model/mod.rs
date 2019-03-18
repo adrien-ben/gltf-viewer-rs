@@ -1,11 +1,11 @@
 mod error;
+mod material;
 mod mesh;
 mod node;
 mod vertex;
 
-pub use self::{error::*, mesh::*, node::*, vertex::*};
+pub use self::{error::*, mesh::*, node::*, vertex::*, material::*};
 use crate::vulkan::*;
-
 use std::{error::Error, path::Path, rc::Rc, result::Result};
 
 pub struct Model {
@@ -26,7 +26,7 @@ impl Model {
             return Err(Box::new(ModelLoadingError::new("There is no scene")));
         }
 
-        let meshes = create_mesh_from_gltf(context, &document, &buffers);
+        let meshes = create_meshes_from_gltf(context, &document, &buffers);
 
         if meshes.is_empty() {
             return Err(Box::new(ModelLoadingError::new(
