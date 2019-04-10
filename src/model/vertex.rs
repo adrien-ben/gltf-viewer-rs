@@ -7,6 +7,7 @@ use std::{mem::size_of, rc::Rc};
 pub struct Vertex {
     position: [f32; 3],
     normals: [f32; 3],
+    tex_coords: [f32; 2],
 }
 
 impl Vertex {
@@ -18,7 +19,7 @@ impl Vertex {
         }]
     }
 
-    pub fn get_attributes_descriptions() -> [vk::VertexInputAttributeDescription; 2] {
+    pub fn get_attributes_descriptions() -> [vk::VertexInputAttributeDescription; 3] {
         [
             vk::VertexInputAttributeDescription {
                 location: 0,
@@ -31,6 +32,12 @@ impl Vertex {
                 binding: 0,
                 format: vk::Format::R32G32B32_SFLOAT,
                 offset: 12,
+            },
+            vk::VertexInputAttributeDescription {
+                location: 2,
+                binding: 0,
+                format: vk::Format::R32G32_SFLOAT,
+                offset: 24,
             },
         ]
     }

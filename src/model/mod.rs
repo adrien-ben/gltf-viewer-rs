@@ -2,15 +2,17 @@ mod error;
 mod material;
 mod mesh;
 mod node;
+mod texture;
 mod vertex;
 
-pub use self::{error::*, mesh::*, node::*, vertex::*, material::*};
+pub use self::{error::*, material::*, mesh::*, node::*, texture::*, vertex::*};
 use crate::vulkan::*;
 use std::{error::Error, path::Path, rc::Rc, result::Result};
 
 pub struct Model {
     meshes: Vec<Mesh>,
     nodes: Vec<Node>,
+    textures: Vec<Texture>,
 }
 
 impl Model {
@@ -19,7 +21,7 @@ impl Model {
         path: P,
     ) -> Result<Self, Box<dyn Error>> {
         log::debug!("Importing gltf file");
-        let (document, buffers, _) = gltf::import(path)?;
+        let (document, buffers, images) = gltf::import(path)?;
 
         log::debug!("Creating the model");
         if document.scenes().len() == 0 {
@@ -38,8 +40,13 @@ impl Model {
             .default_scene()
             .unwrap_or_else(|| document.scenes().nth(0).unwrap());
         let nodes = traverse_scene_nodes(&scene);
+        let textures = texture::create_textures_from_gltf(context, &images);
 
-        Ok(Model { meshes, nodes })
+        Ok(Model {
+            meshes,
+            nodes,
+            textures,
+        })
     }
 }
 
@@ -50,5 +57,9 @@ impl Model {
 
     pub fn nodes(&self) -> &[Node] {
         &self.nodes
+    }
+
+    pub fn textures(&self) -> &[Texture] {
+        &self.textures
     }
 }

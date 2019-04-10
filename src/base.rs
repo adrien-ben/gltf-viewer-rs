@@ -8,8 +8,8 @@ use std::{
 };
 use winit::{dpi::LogicalSize, Event, EventsLoop, Window, WindowBuilder, WindowEvent};
 
-const WIDTH: u32 = 800;
-const HEIGHT: u32 = 600;
+const WIDTH: u32 = 80;
+const HEIGHT: u32 = 60;
 const MAX_FRAMES_IN_FLIGHT: u32 = 2;
 
 pub struct BaseApp {
@@ -22,6 +22,8 @@ pub struct BaseApp {
     descriptor_set_layout: vk::DescriptorSetLayout,
     descriptor_pool: vk::DescriptorPool,
     uniform_buffers: Vec<Buffer>,
+    model: Model,
+    _dummy_texture: Texture,
     descriptor_sets: Vec<vk::DescriptorSet>,
     pipeline_layout: vk::PipelineLayout,
     pipeline: vk::Pipeline,
@@ -32,8 +34,6 @@ pub struct BaseApp {
     swapchain: Swapchain,
     command_buffers: Vec<vk::CommandBuffer>,
     in_flight_frames: InFlightFrames,
-
-    model: Model,
 }
 
 impl BaseApp {
@@ -69,8 +69,18 @@ impl BaseApp {
 
         let uniform_buffers =
             Self::create_uniform_buffers(&context, swapchain_properties.image_count);
+
+        let model = Model::create_from_file(&context, path).unwrap();
+
+        let dummy_texture = Texture::from_rgba(&context, 1, 1, &vec![0, 0, 0, 0]);
+
         let (descriptor_set_layout, descriptor_pool, descriptor_sets) =
-            Self::create_descriptor_sets_resources(&context, &uniform_buffers);
+            Self::create_descriptor_sets_resources(
+                &context,
+                &uniform_buffers,
+                model.textures(),
+                &dummy_texture,
+            );
         let (pipeline, layout) = Self::create_pipeline(
             context.device(),
             swapchain_properties,
@@ -98,8 +108,6 @@ impl BaseApp {
             render_pass,
         );
 
-        let model = Model::create_from_file(&context, path).unwrap();
-
         let command_buffers = Self::create_and_register_command_buffers(
             &context,
             &swapchain,
@@ -121,6 +129,8 @@ impl BaseApp {
             descriptor_set_layout,
             descriptor_pool,
             uniform_buffers,
+            model,
+            _dummy_texture: dummy_texture,
             descriptor_sets,
             pipeline_layout: layout,
             pipeline,
@@ -131,7 +141,6 @@ impl BaseApp {
             swapchain,
             command_buffers,
             in_flight_frames,
-            model,
         }
     }
 
@@ -237,6 +246,8 @@ impl BaseApp {
     fn create_descriptor_sets_resources(
         context: &Rc<Context>,
         uniform_buffers: &[Buffer],
+        textures: &[Texture],
+        dummy_texture: &Texture,
     ) -> (
         vk::DescriptorSetLayout,
         vk::DescriptorPool,
@@ -244,17 +255,33 @@ impl BaseApp {
     ) {
         let layout = Self::create_descriptor_set_layout(context.device());
         let pool = Self::create_descriptor_pool(context.device(), uniform_buffers.len() as _);
-        let sets = Self::create_descriptor_sets(context, pool, layout, &uniform_buffers);
+        let sets = Self::create_descriptor_sets(
+            context,
+            pool,
+            layout,
+            uniform_buffers,
+            textures,
+            dummy_texture,
+        );
         (layout, pool, sets)
     }
 
     fn create_descriptor_set_layout(device: &Device) -> vk::DescriptorSetLayout {
-        let bindings = [vk::DescriptorSetLayoutBinding::builder()
-            .binding(0)
-            .descriptor_type(vk::DescriptorType::UNIFORM_BUFFER)
-            .descriptor_count(1)
-            .stage_flags(vk::ShaderStageFlags::VERTEX)
-            .build()];
+        let bindings = [
+            vk::DescriptorSetLayoutBinding::builder()
+                .binding(0)
+                .descriptor_type(vk::DescriptorType::UNIFORM_BUFFER)
+                .descriptor_count(1)
+                .stage_flags(vk::ShaderStageFlags::VERTEX)
+                .build(),
+            vk::DescriptorSetLayoutBinding::builder()
+                .binding(1)
+                .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
+                .descriptor_count(MAX_TEXTURE_COUNT)
+                .stage_flags(vk::ShaderStageFlags::FRAGMENT)
+                .build(),
+        ];
+
         let layout_info = vk::DescriptorSetLayoutCreateInfo::builder()
             .bindings(&bindings)
             .build();
@@ -267,10 +294,16 @@ impl BaseApp {
     }
 
     fn create_descriptor_pool(device: &Device, descriptor_count: u32) -> vk::DescriptorPool {
-        let pool_sizes = [vk::DescriptorPoolSize {
-            ty: vk::DescriptorType::UNIFORM_BUFFER,
-            descriptor_count,
-        }];
+        let pool_sizes = [
+            vk::DescriptorPoolSize {
+                ty: vk::DescriptorType::UNIFORM_BUFFER,
+                descriptor_count,
+            },
+            vk::DescriptorPoolSize {
+                ty: vk::DescriptorType::COMBINED_IMAGE_SAMPLER,
+                descriptor_count: descriptor_count * MAX_TEXTURE_COUNT,
+            },
+        ];
 
         let create_info = vk::DescriptorPoolCreateInfo::builder()
             .pool_sizes(&pool_sizes)
@@ -285,6 +318,8 @@ impl BaseApp {
         pool: vk::DescriptorPool,
         layout: vk::DescriptorSetLayout,
         buffers: &[Buffer],
+        textures: &[Texture],
+        dummy_texture: &Texture,
     ) -> Vec<vk::DescriptorSet> {
         let layouts = (0..buffers.len()).map(|_| layout).collect::<Vec<_>>();
 
@@ -306,13 +341,46 @@ impl BaseApp {
                 .range(size_of::<CameraUBO>() as _)
                 .build()];
 
-            let descriptor_writes = [vk::WriteDescriptorSet::builder()
-                .dst_set(*set)
-                .dst_binding(0)
-                .dst_array_element(0)
-                .descriptor_type(vk::DescriptorType::UNIFORM_BUFFER)
-                .buffer_info(&buffer_info)
-                .build()];
+            let image_info = {
+                let mut infos = textures
+                    .iter()
+                    .take(MAX_TEXTURE_COUNT as _)
+                    .map(|texture| {
+                        vk::DescriptorImageInfo::builder()
+                            .image_layout(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL)
+                            .image_view(texture.view)
+                            .sampler(texture.sampler.unwrap())
+                            .build()
+                    })
+                    .collect::<Vec<_>>();
+
+                while infos.len() < MAX_TEXTURE_COUNT as _ {
+                    infos.push(
+                        vk::DescriptorImageInfo::builder()
+                            .image_layout(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL)
+                            .image_view(dummy_texture.view)
+                            .sampler(dummy_texture.sampler.unwrap())
+                            .build(),
+                    )
+                }
+
+                infos
+            };
+
+            let descriptor_writes = [
+                vk::WriteDescriptorSet::builder()
+                    .dst_set(*set)
+                    .dst_binding(0)
+                    .descriptor_type(vk::DescriptorType::UNIFORM_BUFFER)
+                    .buffer_info(&buffer_info)
+                    .build(),
+                vk::WriteDescriptorSet::builder()
+                    .dst_set(*set)
+                    .dst_binding(1)
+                    .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
+                    .image_info(&image_info)
+                    .build(),
+            ];
 
             unsafe {
                 context
@@ -444,8 +512,8 @@ impl BaseApp {
                 vk::PushConstantRange {
                     stage_flags: vk::ShaderStageFlags::FRAGMENT,
                     offset: size_of::<Matrix4<f32>>() as _,
-                    size: size_of::<[f32; 3]>() as _,
-                }
+                    size: size_of::<Material>() as _,
+                },
             ];
             let layout_info = vk::PipelineLayoutCreateInfo::builder()
                 .set_layouts(&layouts)
@@ -1019,7 +1087,7 @@ impl BaseApp {
         let aspect = self.swapchain.properties().extent.width as f32
             / self.swapchain.properties().extent.height as f32;
         // let view = Matrix4::look_at(
-        //     Point3::new(-100.0, 100.0, 200.0),
+        //     Point3::new(0.0, 100.0, 200.0),
         //     Point3::new(0.0, 0.0, 0.0),
         //     Vector3::new(0.0, 1.0, 0.0),
         // );

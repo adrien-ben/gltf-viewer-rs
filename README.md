@@ -3,6 +3,11 @@
 This project is a [glTF 2.0][0] viewer written in Rust. Rendering is done using the [Vulkan API][1]
 using [Ash][2]. It runs on Window, Linux and MacOS.
 
+## Features
+
+- Mesh vertices and normals
+- Material's base color and texture
+
 ## Build it
 
 ```sh

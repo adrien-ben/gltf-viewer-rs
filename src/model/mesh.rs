@@ -1,7 +1,10 @@
-use super::{IndexBuffer, VertexBuffer, Material};
+use super::{IndexBuffer, Material, VertexBuffer};
 use crate::{util::*, vulkan::*};
 use ash::vk;
-use gltf::{accessor::DataType, buffer::Data, mesh::Semantic, Accessor, Document, mesh::Primitive as GltfPrimitive};
+use gltf::{
+    accessor::DataType, buffer::Data, mesh::Primitive as GltfPrimitive, mesh::Semantic, Accessor,
+    Document,
+};
 use std::rc::Rc;
 
 pub struct Mesh {
@@ -52,25 +55,32 @@ pub fn create_meshes_from_gltf(
 
     // Gather vertices and indices from all the meshes in the document
     for mesh in document.meshes() {
-        let mut primitives_buffers = Vec::<(Option<IndexBufferPart>, VertexBufferPart, Material)>::new();
+        let mut primitives_buffers =
+            Vec::<(Option<IndexBufferPart>, VertexBufferPart, Material)>::new();
 
         for primitive in mesh.primitives() {
             let indices = primitive.indices().map(|accessor| {
-                let (indices, index_type) = extract_indices_from_accessor(&accessor, &buffers);
+                let (indices, index_type) = extract_indices_from_accessor(&accessor, buffers);
                 let offset = all_indices.len();
                 all_indices.extend_from_slice(&indices);
                 (offset, accessor.count(), index_type)
             });
 
             if let Some(accessor) = primitive.get(&Semantic::Positions) {
-                let positions = read_accessor(&accessor, &buffers);
-                let normals = read_normals(&primitive, &buffers);
+                let positions = read_accessor(&accessor, buffers);
+                let normals = read_normals(&primitive, buffers);
+                let texcoords = read_texcoords(&primitive, buffers);
 
                 let mut vertices = Vec::<u8>::new();
 
                 for elt_index in 0..accessor.count() {
                     push_vec3(&Some(&positions), elt_index, &mut vertices);
                     push_vec3(&normals.as_ref().map(|v| &v[..]), elt_index, &mut vertices);
+                    push_vec2(
+                        &texcoords.as_ref().map(|v| &v[..]),
+                        elt_index,
+                        &mut vertices,
+                    );
                 }
 
                 let offset = all_vertices.len();
@@ -174,7 +184,14 @@ fn extract_indices_from_accessor(
 fn read_normals(primitive: &GltfPrimitive, buffers: &[Data]) -> Option<Vec<u8>> {
     primitive
         .get(&Semantic::Normals)
-        .map(|normals| read_accessor(&normals, &buffers))
+        .map(|normals| read_accessor(&normals, buffers))
+}
+
+fn read_texcoords(primitive: &GltfPrimitive, buffers: &[Data]) -> Option<Vec<u8>> {
+    primitive
+        .get(&Semantic::TexCoords(0))
+        .filter(|texcoords| texcoords.data_type() == DataType::F32)
+        .map(|texcoords| read_accessor(&texcoords, buffers))
 }
 
 fn read_accessor(accessor: &Accessor, buffers: &[Data]) -> Vec<u8> {
@@ -204,6 +221,20 @@ fn push_vec3(src: &Option<&[u8]>, index: usize, dest: &mut Vec<u8>) {
     } else {
         unsafe {
             let one: [f32; 3] = [1.0, 1.0, 1.0];
+            dest.extend_from_slice(any_as_u8_slice(&one));
+        }
+    };
+}
+
+fn push_vec2(src: &Option<&[u8]>, index: usize, dest: &mut Vec<u8>) {
+    let left = index * 8;
+    let right = left + 8;
+
+    if let Some(src) = src {
+        dest.extend_from_slice(&src[left..right]);
+    } else {
+        unsafe {
+            let one: [f32; 2] = [0.0, 0.0];
             dest.extend_from_slice(any_as_u8_slice(&one));
         }
     };
