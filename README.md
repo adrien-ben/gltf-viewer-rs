@@ -6,7 +6,10 @@ using [Ash][2]. It runs on Window, Linux and MacOS.
 ## Features
 
 - Mesh vertices and normals
-- Material's base color and texture
+- Material
+  - Base color factor and texture
+  - Metallic/Roughness factors and textures
+  - Emissive factor and texture
 
 ## Build it
 

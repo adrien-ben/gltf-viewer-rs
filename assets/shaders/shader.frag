@@ -12,41 +12,52 @@ layout(binding = 0) uniform CameraUBO {
 } cameraUBO;
 
 layout(push_constant) uniform Material {
-    layout(offset = 64) vec3 color;
-    layout(offset = 76) float metallic;
-    layout(offset = 80) float roughness;
-    layout(offset = 84) int colorTextureId;
-    layout(offset = 88) int metallicRoughnessTextureId;
+    layout(offset = 64) vec4 colorAndMetallic;
+    layout(offset = 80) vec4 emissiveAndRoughness;
+    layout(offset = 96) int colorTextureId;
+    layout(offset = 100) int metallicRoughnessTextureId;
+    layout(offset = 104) int emissiveTextureId;
 } material;
 
 layout(binding = 1) uniform sampler2D texSamplers[64];
 
 layout(location = 0) out vec4 outColor;
 
-const vec3 LIGHT_DIR = vec3(1.0, -1.0, 0.0);
+const vec3 LIGHT_DIR = vec3(1.0, 0.0, -1.0);
 const vec3 DIELECTRIC_SPECULAR = vec3(0.04);
 const vec3 BLACK = vec3(0.0);
 const float PI = 3.14159;
 
 vec3 getBaseColor() {
-    if(material.colorTextureId == -1) {
-        return material.color;
+    vec3 color = material.colorAndMetallic.rgb;
+    if(material.colorTextureId != -1) {
+        color *= pow(texture(texSamplers[material.colorTextureId], oTexcoords).rgb, vec3(2.2));
     }
-    return pow(texture(texSamplers[material.colorTextureId], oTexcoords).rgb, vec3(2.2)) * material.color;
+    return color;
 }
 
 float getMetallic() {
-    if(material.metallicRoughnessTextureId == -1) {
-        return material.metallic;
+    float metallic = material.colorAndMetallic.a;
+    if(material.metallicRoughnessTextureId != -1) {
+        metallic *= texture(texSamplers[material.metallicRoughnessTextureId], oTexcoords).b;
     }
-    return texture(texSamplers[material.metallicRoughnessTextureId], oTexcoords).b * material.metallic;
+    return metallic;
 }
 
 float getRoughness() {
-    if(material.metallicRoughnessTextureId == -1) {
-        return material.roughness;
+    float roughness = material.emissiveAndRoughness.a;
+    if(material.metallicRoughnessTextureId != -1) {
+        roughness *= texture(texSamplers[material.metallicRoughnessTextureId], oTexcoords).g;
     }
-    return texture(texSamplers[material.metallicRoughnessTextureId], oTexcoords).g * material.roughness;
+    return roughness;
+}
+
+vec3 getEmissiveColor() {
+    vec3 emissive = material.emissiveAndRoughness.rgb;
+    if(material.emissiveTextureId != -1) {
+        emissive *= pow(texture(texSamplers[material.emissiveTextureId], oTexcoords).rgb, vec3(2.2));
+    }
+    return emissive;
 }
 
 vec3 f(vec3 f0, vec3 v, vec3 h) {
@@ -57,8 +68,12 @@ float vis(vec3 n, vec3 l, vec3 v, float a) {
     float aa = a * a;
     float nl = max(dot(n, l), 0.0);
     float nv = max(dot(n, v), 0.0);
+    float denom = ((nl * sqrt(nv * nv * (1 - aa) + aa)) + (nv * sqrt(nl * nl * (1 - aa) + aa))); 
 
-    return 0.5 / ((nl * sqrt(nv * nv * (1 - aa) + aa)) + (nv * sqrt(nl * nl * (1 - aa) + aa)));
+    if (denom < 0.0) {
+        return 0.0;
+    }
+    return 0.5 / denom;
 }
 
 float d(float a, vec3 n, vec3 h) {
@@ -69,30 +84,39 @@ float d(float a, vec3 n, vec3 h) {
     return aa / (PI * denom * denom);
 }
 
+vec3 computeColor(vec3 baseColor, float metallic, float roughness, vec3 n, vec3 l, vec3 v, vec3 h) {
+    vec3 color = vec3(0.0);
+    if (dot(n, l) > 0.0) {
+        vec3 cDiffuse = mix(baseColor * (1.0 - DIELECTRIC_SPECULAR.r), BLACK, metallic);
+        vec3 f0 = mix(DIELECTRIC_SPECULAR, baseColor, metallic);
+        float a = roughness * roughness;
 
+        vec3 f = f(f0, v, h);
+        float vis = vis(n, l, v, a);
+        float d = d(a, n, h);
+
+        vec3 diffuse = cDiffuse / PI;
+        vec3 fDiffuse = (1 - f) * diffuse;
+        vec3 fSpecular = f * vis * d;
+        color = fDiffuse + fSpecular;
+    }
+    return color;
+}
 
 void main() {
     vec3 baseColor = getBaseColor();
     float metallic = getMetallic();
     float roughness = getRoughness();
+    vec3 emissive = getEmissiveColor();
 
-    vec3 cDiffuse = mix(baseColor * (1.0 - DIELECTRIC_SPECULAR.r), BLACK, metallic);
-    vec3 f0 = mix(DIELECTRIC_SPECULAR, baseColor, metallic);
-    float a = roughness * roughness;
-
-    vec3 v = normalize(cameraUBO.eye - oPositions);
-    vec3 l = -normalize(LIGHT_DIR);
     vec3 n = normalize(oNormals);
+    vec3 l = -normalize(LIGHT_DIR);
+    vec3 v = normalize(cameraUBO.eye - oPositions);
     vec3 h = normalize(l + v);
 
-    vec3 f = f(f0, v, h);
-    float vis = vis(n, l, v, a);
-    float d = d(a, n, h);
+    vec3 color = computeColor(baseColor, metallic, roughness, n, l, v, h) + emissive;
 
-    vec3 diffuse = cDiffuse / PI;
-    vec3 fDiffuse = (1 - f) * diffuse;
-    vec3 fSpecular = f * vis * d;
-    vec3 color = fDiffuse + fSpecular;
-
-    outColor = vec4(pow(color, vec3(1.0 / 2.2)), 1.0);
+    color = color/(color + 1.0);
+    color = pow(color, vec3(1.0/2.2));
+    outColor = vec4(color, 1.0);
 }
