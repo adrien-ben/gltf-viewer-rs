@@ -8,8 +8,8 @@ use std::{
 };
 use winit::{dpi::LogicalSize, Event, EventsLoop, Window, WindowBuilder, WindowEvent};
 
-const WIDTH: u32 = 80;
-const HEIGHT: u32 = 60;
+const WIDTH: u32 = 800;
+const HEIGHT: u32 = 600;
 const MAX_FRAMES_IN_FLIGHT: u32 = 2;
 
 pub struct BaseApp {
@@ -272,7 +272,7 @@ impl BaseApp {
                 .binding(0)
                 .descriptor_type(vk::DescriptorType::UNIFORM_BUFFER)
                 .descriptor_count(1)
-                .stage_flags(vk::ShaderStageFlags::VERTEX)
+                .stage_flags(vk::ShaderStageFlags::VERTEX | vk::ShaderStageFlags::FRAGMENT)
                 .build(),
             vk::DescriptorSetLayoutBinding::builder()
                 .binding(1)
@@ -679,7 +679,7 @@ impl BaseApp {
                 let clear_values = [
                     vk::ClearValue {
                         color: vk::ClearColorValue {
-                            float32: [0.0, 0.0, 0.0, 1.0],
+                            float32: [0.7, 0.7, 0.7, 1.0],
                         },
                     },
                     vk::ClearValue {
@@ -1086,19 +1086,12 @@ impl BaseApp {
     fn update_uniform_buffers(&mut self, current_image: u32) {
         let aspect = self.swapchain.properties().extent.width as f32
             / self.swapchain.properties().extent.height as f32;
-        // let view = Matrix4::look_at(
-        //     Point3::new(0.0, 100.0, 200.0),
-        //     Point3::new(0.0, 0.0, 0.0),
-        //     Vector3::new(0.0, 1.0, 0.0),
-        // );
-        let view = Matrix4::look_at(
-            Point3::new(5.0, 1.0, 4.8),
-            Point3::new(0.0, 0.0, 0.0),
-            Vector3::new(0.0, 1.0, 0.0),
-        );
+        // let eye = Point3::new(0.0, 100.0, 200.0);
+        let eye = Point3::new(1.6, 1.6, 2.2);
+        let view = Matrix4::look_at(eye, Point3::new(0.0, 0.0, 0.0), Vector3::new(0.0, 1.0, 0.0));
         let proj = math::perspective(Deg(45.0), aspect, 0.1, 1000.0);
 
-        let ubos = [CameraUBO::new(view, proj)];
+        let ubos = [CameraUBO::new(view, proj, eye)];
         let buffer_mem = self.uniform_buffers[current_image as usize].memory;
         let size = size_of::<CameraUBO>() as vk::DeviceSize;
         unsafe {
