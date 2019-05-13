@@ -1,6 +1,13 @@
 #version 450
 #extension GL_ARB_separate_shader_objects : enable
 
+// #define DEBUG_COLOR 1
+// #define DEBUG_EMISSIVE 2
+// #define DEBUG_METALLIC 3
+// #define DEBUG_ROUGHNESS 4
+// #define DEBUG_OCCLUSION 5
+// #define DEBUG_NORMAL 5
+
 layout(location = 0) in vec3 oNormals;
 layout(location = 1) in vec2 oTexcoords;
 layout(location = 2) in vec3 oPositions;
@@ -142,4 +149,28 @@ void main() {
     color = color/(color + 1.0);
     color = pow(color, vec3(1.0/2.2));
     outColor = vec4(color, 1.0);
+
+#ifdef DEBUG_COLOR
+    outColor = vec4(baseColor, 1.0);
+#endif
+
+#ifdef DEBUG_EMISSIVE
+    outColor = vec4(emissive, 1.0);
+#endif
+
+#ifdef DEBUG_METALLIC
+    outColor = vec4(vec3(metallic), 1.0);
+#endif
+
+#ifdef DEBUG_ROUGHNESS
+    outColor = vec4(vec3(roughness), 1.0);
+#endif
+
+#ifdef DEBUG_OCCLUSION
+    outColor = vec4(vec3(texture(texSamplers[material.occlusionTextureId], oTexcoords).r), 1.0);
+#endif
+
+#ifdef DEBUG_NORMAL
+    outColor = vec4(n, 1.0);
+#endif
 }
