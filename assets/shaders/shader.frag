@@ -15,17 +15,20 @@ layout(binding = 0) uniform CameraUBO {
 layout(push_constant) uniform Material {
     layout(offset = 64) vec4 colorAndMetallic;
     layout(offset = 80) vec4 emissiveAndRoughness;
-    layout(offset = 96) int colorTextureId;
-    layout(offset = 100) int metallicRoughnessTextureId;
-    layout(offset = 104) int emissiveTextureId;
-    layout(offset = 108) int normalTextureId;
+    layout(offset = 96) float occlusion;
+    layout(offset = 100) int colorTextureId;
+    layout(offset = 104) int metallicRoughnessTextureId;
+    layout(offset = 108) int emissiveTextureId;
+    layout(offset = 112) int normalTextureId;
+    layout(offset = 116) int occlusionTextureId;
 } material;
 
 layout(binding = 1) uniform sampler2D texSamplers[64];
 
 layout(location = 0) out vec4 outColor;
 
-const vec3 LIGHT_DIR = vec3(1.0, 0.0, -1.0);
+const vec3 AMBIENT_COLOR = vec3(0.03);
+const vec3 LIGHT_DIR = vec3(-1.0, 0.0, 0.0);
 const vec3 DIELECTRIC_SPECULAR = vec3(0.04);
 const vec3 BLACK = vec3(0.0);
 const float PI = 3.14159;
@@ -68,6 +71,15 @@ vec3 getNormal() {
         return normalize(oTBN * normal);
     }
     return normalize(oNormals);
+}
+
+vec3 getAmbientColor(vec3 baseColor) {
+    float sampledOcclusion = 0.0;
+    if (material.occlusionTextureId != -1) {
+        sampledOcclusion = texture(texSamplers[material.occlusionTextureId], oTexcoords).r;
+    }
+    vec3 ambientColor = AMBIENT_COLOR * baseColor;
+    return mix(ambientColor, ambientColor * sampledOcclusion, material.occlusion);
 }
 
 vec3 f(vec3 f0, vec3 v, vec3 h) {
@@ -124,7 +136,8 @@ void main() {
     vec3 v = normalize(cameraUBO.eye - oPositions);
     vec3 h = normalize(l + v);
 
-    vec3 color = computeColor(baseColor, metallic, roughness, n, l, v, h) + emissive;
+    vec3 ambientColor = getAmbientColor(baseColor);
+    vec3 color = ambientColor + computeColor(baseColor, metallic, roughness, n, l, v, h) + emissive;
 
     color = color/(color + 1.0);
     color = pow(color, vec3(1.0/2.2));
