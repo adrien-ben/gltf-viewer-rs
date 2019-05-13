@@ -70,6 +70,7 @@ pub fn create_meshes_from_gltf(
                 let positions = read_accessor(&accessor, buffers);
                 let normals = read_normals(&primitive, buffers);
                 let texcoords = read_texcoords(&primitive, buffers);
+                let tangents = read_tangents(&primitive, buffers);
 
                 let mut vertices = Vec::<u8>::new();
 
@@ -77,10 +78,12 @@ pub fn create_meshes_from_gltf(
                     push_vec3(&Some(&positions), elt_index, &mut vertices);
                     push_vec3(&normals.as_ref().map(|v| &v[..]), elt_index, &mut vertices);
                     push_vec2(
-                        &texcoords.as_ref().map(|v| &v[..]),
+                        &texcoords.as_ref().map(|c| &c[..]),
                         elt_index,
                         &mut vertices,
                     );
+                    // TODO : if tangents are not provided they should be computed using default MikkTSpace algorithms.
+                    push_vec4(&tangents.as_ref().map(|t| &t[..]), elt_index, &mut vertices);
                 }
 
                 let offset = all_vertices.len();
@@ -194,6 +197,12 @@ fn read_texcoords(primitive: &GltfPrimitive, buffers: &[Data]) -> Option<Vec<u8>
         .map(|texcoords| read_accessor(&texcoords, buffers))
 }
 
+fn read_tangents(primitive: &GltfPrimitive, buffers: &[Data]) -> Option<Vec<u8>> {
+    primitive
+        .get(&Semantic::Tangents)
+        .map(|tangents| read_accessor(&tangents, buffers))
+}
+
 fn read_accessor(accessor: &Accessor, buffers: &[Data]) -> Vec<u8> {
     let view = accessor.view();
     let buffer = view.buffer();
@@ -235,6 +244,20 @@ fn push_vec2(src: &Option<&[u8]>, index: usize, dest: &mut Vec<u8>) {
     } else {
         unsafe {
             let one: [f32; 2] = [0.0, 0.0];
+            dest.extend_from_slice(any_as_u8_slice(&one));
+        }
+    };
+}
+
+fn push_vec4(src: &Option<&[u8]>, index: usize, dest: &mut Vec<u8>) {
+    let left = index * 16;
+    let right = left + 16;
+
+    if let Some(src) = src {
+        dest.extend_from_slice(&src[left..right]);
+    } else {
+        unsafe {
+            let one: [f32; 4] = [1.0, 1.0, 1.0, 1.0];
             dest.extend_from_slice(any_as_u8_slice(&one));
         }
     };

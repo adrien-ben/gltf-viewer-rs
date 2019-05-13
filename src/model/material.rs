@@ -1,4 +1,4 @@
-use gltf::{material::Material as GltfMaterial, texture::Info};
+use gltf::{material::{Material as GltfMaterial, NormalTexture}, texture::Info};
 
 pub const MAX_TEXTURE_COUNT: u32 = 64; // MUST be the same in the fragment shager
 
@@ -10,6 +10,7 @@ pub struct Material {
     color_texture_id: i32,
     metallic_roughness_texture_id: i32,
     emissive_texture_id: i32,
+    normal_texture_id: i32,
 }
 
 impl<'a> From<GltfMaterial<'a>> for Material {
@@ -35,6 +36,7 @@ impl<'a> From<GltfMaterial<'a>> for Material {
         let color_texture_id = get_texture_index(pbr.base_color_texture());
         let metallic_roughness_texture_id = get_texture_index(pbr.metallic_roughness_texture());
         let emissive_texture_id = get_texture_index(material.emissive_texture());
+        let normal_texture_id = get_normal_texture_index(material.normal_texture());
 
         Material {
             color_and_metallic,
@@ -42,11 +44,20 @@ impl<'a> From<GltfMaterial<'a>> for Material {
             color_texture_id,
             metallic_roughness_texture_id,
             emissive_texture_id,
+            normal_texture_id,
         }
     }
 }
 
 fn get_texture_index(texture_info: Option<Info>) -> i32 {
+    texture_info
+        .map(|tex_info| tex_info.texture())
+        .map(|texture| texture.index())
+        .filter(|index| *index < MAX_TEXTURE_COUNT as _)
+        .map_or(-1, |index| index as _)
+}
+
+fn get_normal_texture_index(texture_info: Option<NormalTexture>) -> i32 {
     texture_info
         .map(|tex_info| tex_info.texture())
         .map(|texture| texture.index())

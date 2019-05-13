@@ -4,6 +4,7 @@
 layout(location = 0) in vec3 oNormals;
 layout(location = 1) in vec2 oTexcoords;
 layout(location = 2) in vec3 oPositions;
+layout(location = 3) in mat3 oTBN;
 
 layout(binding = 0) uniform CameraUBO {
      mat4 view;
@@ -17,6 +18,7 @@ layout(push_constant) uniform Material {
     layout(offset = 96) int colorTextureId;
     layout(offset = 100) int metallicRoughnessTextureId;
     layout(offset = 104) int emissiveTextureId;
+    layout(offset = 108) int normalTextureId;
 } material;
 
 layout(binding = 1) uniform sampler2D texSamplers[64];
@@ -58,6 +60,14 @@ vec3 getEmissiveColor() {
         emissive *= pow(texture(texSamplers[material.emissiveTextureId], oTexcoords).rgb, vec3(2.2));
     }
     return emissive;
+}
+
+vec3 getNormal() {
+    if (material.normalTextureId != -1) {
+        vec3 normal = texture(texSamplers[material.normalTextureId], oTexcoords).rgb * 2.0 - 1.0;
+        return normalize(oTBN * normal);
+    }
+    return normalize(oNormals);
 }
 
 vec3 f(vec3 f0, vec3 v, vec3 h) {
@@ -109,7 +119,7 @@ void main() {
     float roughness = getRoughness();
     vec3 emissive = getEmissiveColor();
 
-    vec3 n = normalize(oNormals);
+    vec3 n = getNormal();
     vec3 l = -normalize(LIGHT_DIR);
     vec3 v = normalize(cameraUBO.eye - oPositions);
     vec3 h = normalize(l + v);
