@@ -34,8 +34,10 @@ layout(binding = 1) uniform sampler2D texSamplers[64];
 
 layout(location = 0) out vec4 outColor;
 
-const vec3 AMBIENT_COLOR = vec3(0.03);
-const vec3 LIGHT_DIR = vec3(-1.0, 0.0, 0.0);
+const vec3 LIGHTS_DIR[] = {
+    vec3(1.0, 0.0, -1.0), 
+    vec3(-1.0, 0.0, 1.0)
+};
 const vec3 DIELECTRIC_SPECULAR = vec3(0.04);
 const vec3 BLACK = vec3(0.0);
 const float PI = 3.14159;
@@ -80,12 +82,11 @@ vec3 getNormal() {
     return normalize(oNormals);
 }
 
-vec3 getAmbientColor(vec3 baseColor) {
+vec3 occludeAmbientColor(vec3 ambientColor) {
     float sampledOcclusion = 0.0;
     if (material.occlusionTextureId != -1) {
         sampledOcclusion = texture(texSamplers[material.occlusionTextureId], oTexcoords).r;
     }
-    vec3 ambientColor = AMBIENT_COLOR * baseColor;
     return mix(ambientColor, ambientColor * sampledOcclusion, material.occlusion);
 }
 
@@ -115,7 +116,7 @@ float d(float a, vec3 n, vec3 h) {
 
 vec3 computeColor(vec3 baseColor, float metallic, float roughness, vec3 n, vec3 l, vec3 v, vec3 h) {
     vec3 color = vec3(0.0);
-    if (dot(n, l) > 0.0) {
+    if (dot(n, l) > 0.0 || dot(n, v) > 0.0) {
         vec3 cDiffuse = mix(baseColor * (1.0 - DIELECTRIC_SPECULAR.r), BLACK, metallic);
         vec3 f0 = mix(DIELECTRIC_SPECULAR, baseColor, metallic);
         float a = roughness * roughness;
@@ -126,8 +127,8 @@ vec3 computeColor(vec3 baseColor, float metallic, float roughness, vec3 n, vec3 
 
         vec3 diffuse = cDiffuse / PI;
         vec3 fDiffuse = (1 - f) * diffuse;
-        vec3 fSpecular = f * vis * d;
-        color = fDiffuse + fSpecular;
+        vec3 fSpecular = max(f * vis * d, 0.0);
+        color = max(dot(n, l), 0.0) * (fDiffuse + fSpecular);
     }
     return color;
 }
@@ -139,12 +140,16 @@ void main() {
     vec3 emissive = getEmissiveColor();
 
     vec3 n = getNormal();
-    vec3 l = -normalize(LIGHT_DIR);
     vec3 v = normalize(cameraUBO.eye - oPositions);
-    vec3 h = normalize(l + v);
 
-    vec3 ambientColor = getAmbientColor(baseColor);
-    vec3 color = ambientColor + computeColor(baseColor, metallic, roughness, n, l, v, h) + emissive;
+    vec3 color = vec3(0.0);
+    for (int i = 0; i < 2; i++) {
+        vec3 light_dir = LIGHTS_DIR[i];
+        vec3 l = -normalize(light_dir);
+        vec3 h = normalize(l + v);
+        color += computeColor(baseColor, metallic, roughness, n, l, v, h);
+    }
+    color += emissive;
 
     color = color/(color + 1.0);
     color = pow(color, vec3(1.0/2.2));
