@@ -149,7 +149,7 @@ void main() {
         vec3 h = normalize(l + v);
         color += computeColor(baseColor, metallic, roughness, n, l, v, h);
     }
-    color += emissive;
+    color += emissive + occludeAmbientColor(baseColor*0.05);
 
     color = color/(color + 1.0);
     color = pow(color, vec3(1.0/2.2));
