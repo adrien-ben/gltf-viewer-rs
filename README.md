@@ -23,7 +23,7 @@ using [Ash][2]. It runs on Window, Linux and MacOS.
   - [ ] KHR_draco_mesh_compression
   - [ ] KHR_materials_unlit
 - [ ] Camera controls
-  - [ ] Orbital
+  - [x] Orbital
   - [ ] First Person
 
 ## Build it

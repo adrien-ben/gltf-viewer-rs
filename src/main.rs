@@ -1,5 +1,6 @@
 mod base;
 mod camera;
+mod controls;
 mod math;
 mod model;
 mod util;

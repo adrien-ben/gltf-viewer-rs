@@ -1,4 +1,4 @@
-use crate::{camera::*, math, model::*, util::*, vulkan::*};
+use crate::{camera::*, controls::*, math, model::*, util::*, vulkan::*};
 use ash::{version::DeviceV1_0, vk, Device};
 use cgmath::{Deg, Matrix4, Point3, Vector3};
 use std::{
@@ -17,6 +17,8 @@ pub struct BaseApp {
     _window: Window,
     resize_dimensions: Option<[u32; 2]>,
 
+    camera: Camera,
+    input_state: InputState,
     context: Rc<Context>,
     render_pass: vk::RenderPass,
     descriptor_set_layout: vk::DescriptorSetLayout,
@@ -42,7 +44,7 @@ impl BaseApp {
 
         let events_loop = EventsLoop::new();
         let window = WindowBuilder::new()
-            .with_title("Vulkan tutorial with Ash")
+            .with_title("GLTF Viewer")
             .with_dimensions(LogicalSize::new(f64::from(WIDTH), f64::from(HEIGHT)))
             .build(&events_loop)
             .unwrap();
@@ -124,6 +126,8 @@ impl BaseApp {
             events_loop,
             _window: window,
             resize_dimensions: None,
+            camera: Default::default(),
+            input_state: Default::default(),
             context,
             render_pass,
             descriptor_set_layout,
@@ -858,7 +862,8 @@ impl BaseApp {
             if self.process_event() {
                 break;
             }
-            self.draw_frame()
+            self.update_camera();
+            self.draw_frame();
         }
         unsafe { self.context.device().device_wait_idle().unwrap() };
     }
@@ -868,8 +873,11 @@ impl BaseApp {
     fn process_event(&mut self) -> bool {
         let mut should_stop = false;
         let mut resize_dimensions = None;
+        let mut input_state = self.input_state;
+        input_state.reset();
 
         self.events_loop.poll_events(|event| {
+            input_state = input_state.update(&event);
             if let Event::WindowEvent { event, .. } = event {
                 match event {
                     WindowEvent::CloseRequested => should_stop = true,
@@ -882,6 +890,7 @@ impl BaseApp {
         });
 
         self.resize_dimensions = resize_dimensions;
+        self.input_state = input_state;
         should_stop
     }
 
@@ -1083,15 +1092,32 @@ impl BaseApp {
         self.swapchain.destroy();
     }
 
+    fn update_camera(&mut self) {
+        if self.input_state.is_left_clicked() && self.input_state.cursor_delta().is_some() {
+            let delta = self.input_state.cursor_delta().take().unwrap();
+            let x_ratio = delta[0] as f32 / self.swapchain.properties().extent.width as f32;
+            let y_ratio = delta[1] as f32 / self.swapchain.properties().extent.height as f32;
+            let theta = x_ratio * 180.0_f32.to_radians();
+            let phi = y_ratio * 90.0_f32.to_radians();
+            self.camera.rotate(theta, phi);
+        }
+        if let Some(wheel_delta) = self.input_state.wheel_delta() {
+            self.camera.forward(wheel_delta * 0.2);
+        }
+    }
+
     fn update_uniform_buffers(&mut self, current_image: u32) {
         let aspect = self.swapchain.properties().extent.width as f32
             / self.swapchain.properties().extent.height as f32;
-        // let eye = Point3::new(0.0, 100.0, 200.0);
-        let eye = Point3::new(1.6, 1.6, 2.2);
-        let view = Matrix4::look_at(eye, Point3::new(0.0, 0.0, 0.0), Vector3::new(0.0, 1.0, 0.0));
-        let proj = math::perspective(Deg(45.0), aspect, 0.1, 1000.0);
 
-        let ubos = [CameraUBO::new(view, proj, eye)];
+        let view = Matrix4::look_at(
+            self.camera.position(),
+            Point3::new(0.0, 0.0, 0.0),
+            Vector3::new(0.0, 1.0, 0.0),
+        );
+        let proj = math::perspective(Deg(45.0), aspect, 0.01, 1000.0);
+
+        let ubos = [CameraUBO::new(view, proj, self.camera.position())];
         let buffer_mem = self.uniform_buffers[current_image as usize].memory;
         let size = size_of::<CameraUBO>() as vk::DeviceSize;
         unsafe {
