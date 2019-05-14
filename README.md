@@ -5,11 +5,26 @@ using [Ash][2]. It runs on Window, Linux and MacOS.
 
 ## Features
 
-- Mesh vertices and normals
-- Material
-  - Base color factor and texture
-  - Metallic/Roughness factors and textures
-  - Emissive factor and texture
+- [x] Mesh vertices and normals
+- [x] Material
+  - [x] Base color factor and texture
+  - [x] Metallic/Roughness factors and textures
+  - [x] Emissive factor and texture
+  - [x] Ambient occlusion
+  - [x] Normal maps
+- [ ] IBL
+  - [ ] Diffuse irradiance
+  - [ ] Specular
+- [ ] Animations
+  - [ ] Node animation
+  - [ ] Skinning
+- [ ] Support some extensions
+  - [ ] KHR_lights_punctual
+  - [ ] KHR_draco_mesh_compression
+  - [ ] KHR_materials_unlit
+- [ ] Camera controls
+  - [ ] Orbital
+  - [ ] First Person
 
 ## Build it
 
