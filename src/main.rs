@@ -3,6 +3,7 @@ mod camera;
 mod controls;
 mod math;
 mod model;
+mod pipelines;
 mod util;
 mod vulkan;
 

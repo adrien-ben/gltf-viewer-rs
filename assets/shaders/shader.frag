@@ -7,6 +7,7 @@
 // #define DEBUG_ROUGHNESS 4
 // #define DEBUG_OCCLUSION 5
 // #define DEBUG_NORMAL 6
+// #define DEBUG_ALPHA 7
 
 struct TextureIds {
     uint color;
@@ -52,6 +53,7 @@ const vec3 BLACK = vec3(0.0);
 const float PI = 3.14159;
 const uint NO_TEXTURE_ID = 255;
 const uint ALPHA_MODE_MASK = 1;
+const uint ALPHA_MODE_BLEND = 2;
 
 TextureIds getTextureIds() {
     return TextureIds(
@@ -112,9 +114,19 @@ vec3 occludeAmbientColor(vec3 ambientColor, TextureIds textureIds) {
     return mix(ambientColor, ambientColor * sampledOcclusion, material.occlusion);
 }
 
+uint getAlphaMode() {
+    return (material.occlusionTextureIdAndAlphaMode >> 16) & 255;
+}
+
 bool isMasked(vec4 baseColor) {
-    uint alphaMode = (material.occlusionTextureIdAndAlphaMode >> 16) & 255;
-    return alphaMode == ALPHA_MODE_MASK && baseColor.a < material.alphaCutoff;
+    return getAlphaMode() == ALPHA_MODE_MASK && baseColor.a < material.alphaCutoff;
+}
+
+float getAlpha(vec4 baseColor) {
+    if (getAlphaMode() == ALPHA_MODE_BLEND) {
+        return baseColor.a;
+    }
+    return 1.0;
 }
 
 vec3 f(vec3 f0, vec3 v, vec3 h) {
@@ -164,10 +176,10 @@ void main() {
     TextureIds textureIds = getTextureIds();
 
     vec4 baseColor = getBaseColor(textureIds);
-    
     if (isMasked(baseColor)) {
         discard;
     }
+    float alpha = getAlpha(baseColor);
 
     float metallic = getMetallic(textureIds);
     float roughness = getRoughness(textureIds);
@@ -187,7 +199,7 @@ void main() {
 
     color = color/(color + 1.0);
     color = pow(color, vec3(1.0/2.2));
-    outColor = vec4(color, 1.0);
+    outColor = vec4(color, alpha);
 
 #ifdef DEBUG_COLOR
     outColor = vec4(baseColor, 1.0);
@@ -211,5 +223,9 @@ void main() {
 
 #ifdef DEBUG_NORMAL
     outColor = vec4(n*0.5 + 0.5, 1.0);
+#endif
+
+#ifdef DEBUG_ALPHA
+     outColor = vec4(vec3(baseColor.a), 1.0);
 #endif
 }

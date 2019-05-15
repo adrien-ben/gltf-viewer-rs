@@ -29,13 +29,13 @@ fn build_rgba_buffer(image: &Data) -> Vec<u8> {
 
 fn get_next_rgba(pixels: &[u8], format: Format, index: usize) -> [u8; 4] {
     match format {
-        Format::R8 => [pixels[index], 0, 0, 0],
-        Format::R8G8 => [pixels[index * 2], pixels[index * 2 + 1], 0, 0],
+        Format::R8 => [pixels[index], 0, 0, std::u8::MAX],
+        Format::R8G8 => [pixels[index * 2], pixels[index * 2 + 1], 0, std::u8::MAX],
         Format::R8G8B8 => [
             pixels[index * 3],
             pixels[index * 3 + 1],
             pixels[index * 3 + 2],
-            0,
+            std::u8::MAX,
         ],
         Format::R8G8B8A8 => [
             pixels[index * 4],

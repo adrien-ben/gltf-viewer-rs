@@ -19,6 +19,12 @@ pub struct Material {
     alpha_cutoff: f32,
 }
 
+impl Material {
+    pub fn is_transparent(&self) -> bool {
+        ((self.occlusion_texture_id_and_alpha_mode >> 16) & 255) == 2
+    }
+}
+
 impl<'a> From<GltfMaterial<'a>> for Material {
     fn from(material: GltfMaterial) -> Material {
         let pbr = material.pbr_metallic_roughness();
