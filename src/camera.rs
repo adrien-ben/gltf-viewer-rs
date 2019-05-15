@@ -11,6 +11,10 @@ pub struct Camera {
 }
 
 impl Camera {
+    pub fn r(&self) -> f32 {
+        self.r
+    }
+
     pub fn position(&self) -> Point3<f32> {
         Point3::new(
             self.r * self.phi.sin() * self.theta.sin(),

@@ -1102,7 +1102,7 @@ impl BaseApp {
             self.camera.rotate(theta, phi);
         }
         if let Some(wheel_delta) = self.input_state.wheel_delta() {
-            self.camera.forward(wheel_delta * 0.2);
+            self.camera.forward(wheel_delta * self.camera.r() * 0.2);
         }
     }
 
@@ -1115,7 +1115,7 @@ impl BaseApp {
             Point3::new(0.0, 0.0, 0.0),
             Vector3::new(0.0, 1.0, 0.0),
         );
-        let proj = math::perspective(Deg(45.0), aspect, 0.01, 1000.0);
+        let proj = math::perspective(Deg(45.0), aspect, 0.01, 2000.0);
 
         let ubos = [CameraUBO::new(view, proj, self.camera.position())];
         let buffer_mem = self.uniform_buffers[current_image as usize].memory;
