@@ -1,5 +1,5 @@
 use gltf::{
-    material::{Material as GltfMaterial, NormalTexture, OcclusionTexture},
+    material::{AlphaMode, Material as GltfMaterial, NormalTexture, OcclusionTexture},
     texture::Info,
 };
 
@@ -9,25 +9,21 @@ const NO_TEXTURE_ID: u8 = std::u8::MAX;
 #[derive(Clone, Copy)]
 #[allow(dead_code)]
 pub struct Material {
-    color_and_metallic: [f32; 4],
+    color: [f32; 4],
     emissive_and_roughness: [f32; 4],
+    metallic: f32,
     occlusion: f32,
     // Contains the texture ids for color metallic/roughness emissive and normal (each taking 8 bytes)
     color_metallicroughness_emissive_normal_texture_ids: u32,
-    occlusion_texture_id: u32,
+    occlusion_texture_id_and_alpha_mode: u32,
+    alpha_cutoff: f32,
 }
 
 impl<'a> From<GltfMaterial<'a>> for Material {
     fn from(material: GltfMaterial) -> Material {
         let pbr = material.pbr_metallic_roughness();
 
-        let base_color_factor = pbr.base_color_factor();
-        let color_and_metallic = [
-            base_color_factor[0],
-            base_color_factor[1],
-            base_color_factor[2],
-            pbr.metallic_factor(),
-        ];
+        let color = pbr.base_color_factor();
 
         let emissive_factor = material.emissive_factor();
         let emissive_and_roughness = [
@@ -36,6 +32,8 @@ impl<'a> From<GltfMaterial<'a>> for Material {
             emissive_factor[2],
             pbr.roughness_factor(),
         ];
+
+        let metallic = pbr.metallic_factor();
 
         let color_texture_id = get_texture_index(pbr.base_color_texture());
         let metallic_roughness_texture_id = get_texture_index(pbr.metallic_roughness_texture());
@@ -47,13 +45,20 @@ impl<'a> From<GltfMaterial<'a>> for Material {
             | (normal_texture_id as u32);
 
         let (occlusion, occlusion_texture_id) = get_occlusion(material.occlusion_texture());
+        let alpha_mode = get_alpha_mode_index(material.alpha_mode());
+        let occlusion_texture_id_and_alpha_mode =
+            ((occlusion_texture_id as u32) << 24) | (alpha_mode << 16);
+
+        let alpha_cutoff = material.alpha_cutoff();
 
         Material {
-            color_and_metallic,
+            color,
             emissive_and_roughness,
+            metallic,
             occlusion,
             color_metallicroughness_emissive_normal_texture_ids,
-            occlusion_texture_id,
+            occlusion_texture_id_and_alpha_mode,
+            alpha_cutoff,
         }
     }
 }
@@ -85,4 +90,12 @@ fn get_occlusion(texture_info: Option<OcclusionTexture>) -> (f32, u32) {
             .filter(|index| *index < MAX_TEXTURE_COUNT as _)
             .map_or(NO_TEXTURE_ID as _, |index| index as _),
     )
+}
+
+fn get_alpha_mode_index(alpha_mode: AlphaMode) -> u32 {
+    match alpha_mode {
+        AlphaMode::Opaque => 0,
+        AlphaMode::Mask => 1,
+        AlphaMode::Blend => 2,
+    }
 }

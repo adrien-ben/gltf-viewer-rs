@@ -12,6 +12,11 @@ using [Ash][2]. It runs on Window, Linux and MacOS.
   - [x] Emissive factor and texture
   - [x] Ambient occlusion
   - [x] Normal maps
+  - [ ] Alpha
+    - [x] Opaque
+    - [x] Mask
+    - [ ] Blend
+  - [ ] Double sided surfaces
 - [ ] IBL
   - [ ] Diffuse irradiance
   - [ ] Specular
@@ -25,6 +30,11 @@ using [Ash][2]. It runs on Window, Linux and MacOS.
 - [ ] Camera controls
   - [x] Orbital
   - [ ] First Person
+
+## Controls
+
+- Left click and move to rotate camera around origin
+- Mouse wheel to un/zoom
 
 ## Build it
 
