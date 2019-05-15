@@ -4,6 +4,7 @@ use gltf::{
 };
 
 pub const MAX_TEXTURE_COUNT: u32 = 64; // MUST be the same in the fragment shager
+const NO_TEXTURE_ID: u8 = std::u8::MAX;
 
 #[derive(Clone, Copy)]
 #[allow(dead_code)]
@@ -11,11 +12,9 @@ pub struct Material {
     color_and_metallic: [f32; 4],
     emissive_and_roughness: [f32; 4],
     occlusion: f32,
-    color_texture_id: i32,
-    metallic_roughness_texture_id: i32,
-    emissive_texture_id: i32,
-    normal_texture_id: i32,
-    occlusion_texture_id: i32,
+    // Contains the texture ids for color metallic/roughness emissive and normal (each taking 8 bytes)
+    color_metallicroughness_emissive_normal_texture_ids: u32,
+    occlusion_texture_id: u32,
 }
 
 impl<'a> From<GltfMaterial<'a>> for Material {
@@ -42,38 +41,40 @@ impl<'a> From<GltfMaterial<'a>> for Material {
         let metallic_roughness_texture_id = get_texture_index(pbr.metallic_roughness_texture());
         let emissive_texture_id = get_texture_index(material.emissive_texture());
         let normal_texture_id = get_normal_texture_index(material.normal_texture());
+        let color_metallicroughness_emissive_normal_texture_ids = ((color_texture_id as u32) << 24)
+            | ((metallic_roughness_texture_id as u32) << 16)
+            | ((emissive_texture_id as u32) << 8)
+            | (normal_texture_id as u32);
+
         let (occlusion, occlusion_texture_id) = get_occlusion(material.occlusion_texture());
 
         Material {
             color_and_metallic,
             emissive_and_roughness,
             occlusion,
-            color_texture_id,
-            metallic_roughness_texture_id,
-            emissive_texture_id,
-            normal_texture_id,
+            color_metallicroughness_emissive_normal_texture_ids,
             occlusion_texture_id,
         }
     }
 }
 
-fn get_texture_index(texture_info: Option<Info>) -> i32 {
+fn get_texture_index(texture_info: Option<Info>) -> u8 {
     texture_info
         .map(|tex_info| tex_info.texture())
         .map(|texture| texture.index())
         .filter(|index| *index < MAX_TEXTURE_COUNT as _)
-        .map_or(-1, |index| index as _)
+        .map_or(NO_TEXTURE_ID, |index| index as _)
 }
 
-fn get_normal_texture_index(texture_info: Option<NormalTexture>) -> i32 {
+fn get_normal_texture_index(texture_info: Option<NormalTexture>) -> u8 {
     texture_info
         .map(|tex_info| tex_info.texture())
         .map(|texture| texture.index())
         .filter(|index| *index < MAX_TEXTURE_COUNT as _)
-        .map_or(-1, |index| index as _)
+        .map_or(NO_TEXTURE_ID, |index| index as _)
 }
 
-fn get_occlusion(texture_info: Option<OcclusionTexture>) -> (f32, i32) {
+fn get_occlusion(texture_info: Option<OcclusionTexture>) -> (f32, u32) {
     (
         texture_info
             .as_ref()
@@ -82,6 +83,6 @@ fn get_occlusion(texture_info: Option<OcclusionTexture>) -> (f32, i32) {
             .map(|tex_info| tex_info.texture())
             .map(|texture| texture.index())
             .filter(|index| *index < MAX_TEXTURE_COUNT as _)
-            .map_or(-1, |index| index as _),
+            .map_or(NO_TEXTURE_ID as _, |index| index as _),
     )
 }

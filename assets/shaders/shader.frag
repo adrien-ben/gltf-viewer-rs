@@ -23,11 +23,9 @@ layout(push_constant) uniform Material {
     layout(offset = 64) vec4 colorAndMetallic;
     layout(offset = 80) vec4 emissiveAndRoughness;
     layout(offset = 96) float occlusion;
-    layout(offset = 100) int colorTextureId;
-    layout(offset = 104) int metallicRoughnessTextureId;
-    layout(offset = 108) int emissiveTextureId;
-    layout(offset = 112) int normalTextureId;
-    layout(offset = 116) int occlusionTextureId;
+    // Contains the texture ids for color metallic/roughness emissive and normal (each taking 8 bytes)
+    layout(offset = 100) uint colorMetallicRoughnessEmissiveNormalTextureIds;
+    layout(offset = 104) uint occlusionTextureId;
 } material;
 
 layout(binding = 1) uniform sampler2D texSamplers[64];
@@ -41,42 +39,48 @@ const vec3 LIGHTS_DIR[] = {
 const vec3 DIELECTRIC_SPECULAR = vec3(0.04);
 const vec3 BLACK = vec3(0.0);
 const float PI = 3.14159;
+const uint NO_TEXTURE_ID = 255;
 
 vec3 getBaseColor() {
+    uint colorTextureId = (material.colorMetallicRoughnessEmissiveNormalTextureIds >> 24) & 255;
     vec3 color = material.colorAndMetallic.rgb;
-    if(material.colorTextureId != -1) {
-        color *= pow(texture(texSamplers[material.colorTextureId], oTexcoords).rgb, vec3(2.2));
+    if(colorTextureId != NO_TEXTURE_ID) {
+        color *= pow(texture(texSamplers[colorTextureId], oTexcoords).rgb, vec3(2.2));
     }
     return color;
 }
 
 float getMetallic() {
+    uint metallicRoughnessTextureId = (material.colorMetallicRoughnessEmissiveNormalTextureIds >> 16) & 255;
     float metallic = material.colorAndMetallic.a;
-    if(material.metallicRoughnessTextureId != -1) {
-        metallic *= texture(texSamplers[material.metallicRoughnessTextureId], oTexcoords).b;
+    if(metallicRoughnessTextureId != NO_TEXTURE_ID) {
+        metallic *= texture(texSamplers[metallicRoughnessTextureId], oTexcoords).b;
     }
     return metallic;
 }
 
 float getRoughness() {
+    uint metallicRoughnessTextureId = (material.colorMetallicRoughnessEmissiveNormalTextureIds >> 16) & 255;
     float roughness = material.emissiveAndRoughness.a;
-    if(material.metallicRoughnessTextureId != -1) {
-        roughness *= texture(texSamplers[material.metallicRoughnessTextureId], oTexcoords).g;
+    if(metallicRoughnessTextureId != NO_TEXTURE_ID) {
+        roughness *= texture(texSamplers[metallicRoughnessTextureId], oTexcoords).g;
     }
     return roughness;
 }
 
 vec3 getEmissiveColor() {
+    uint emissiveTextureId = (material.colorMetallicRoughnessEmissiveNormalTextureIds >> 8) & 255;
     vec3 emissive = material.emissiveAndRoughness.rgb;
-    if(material.emissiveTextureId != -1) {
-        emissive *= pow(texture(texSamplers[material.emissiveTextureId], oTexcoords).rgb, vec3(2.2));
+    if(emissiveTextureId != NO_TEXTURE_ID) {
+        emissive *= pow(texture(texSamplers[emissiveTextureId], oTexcoords).rgb, vec3(2.2));
     }
     return emissive;
 }
 
 vec3 getNormal() {
-    if (material.normalTextureId != -1) {
-        vec3 normal = texture(texSamplers[material.normalTextureId], oTexcoords).rgb * 2.0 - 1.0;
+    uint normalTextureId = material.colorMetallicRoughnessEmissiveNormalTextureIds & 255;
+    if (normalTextureId != NO_TEXTURE_ID) {
+        vec3 normal = texture(texSamplers[normalTextureId], oTexcoords).rgb * 2.0 - 1.0;
         return normalize(oTBN * normal);
     }
     return normalize(oNormals);
@@ -84,7 +88,7 @@ vec3 getNormal() {
 
 vec3 occludeAmbientColor(vec3 ambientColor) {
     float sampledOcclusion = 0.0;
-    if (material.occlusionTextureId != -1) {
+    if (material.occlusionTextureId != NO_TEXTURE_ID) {
         sampledOcclusion = texture(texSamplers[material.occlusionTextureId], oTexcoords).r;
     }
     return mix(ambientColor, ambientColor * sampledOcclusion, material.occlusion);
@@ -176,6 +180,6 @@ void main() {
 #endif
 
 #ifdef DEBUG_NORMAL
-    outColor = vec4(n, 1.0);
+    outColor = vec4(n*0.5 + 0.5, 1.0);
 #endif
 }
