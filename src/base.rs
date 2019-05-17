@@ -599,6 +599,19 @@ impl BaseApp {
         for node in model.nodes() {
             let mesh = model.mesh(node.mesh_index());
 
+            // Push transform constants
+            unsafe {
+                let transform = node.transform();
+                let transform_contants = any_as_u8_slice(&transform);
+                device.cmd_push_constants(
+                    command_buffer,
+                    pipeline_layout,
+                    vk::ShaderStageFlags::VERTEX,
+                    0,
+                    &transform_contants,
+                );
+            };
+
             for primitive in mesh.primitives().iter().filter(primitive_filter) {
                 unsafe {
                     device.cmd_bind_vertex_buffers(
@@ -620,18 +633,8 @@ impl BaseApp {
                     }
                 }
 
-                // Push transform constants
+                // Push material constants
                 unsafe {
-                    let transform = node.transform();
-                    let transform_contants = any_as_u8_slice(&transform);
-                    device.cmd_push_constants(
-                        command_buffer,
-                        pipeline_layout,
-                        vk::ShaderStageFlags::VERTEX,
-                        0,
-                        &transform_contants,
-                    );
-
                     let material = primitive.material();
                     let material_contants = any_as_u8_slice(&material);
                     device.cmd_push_constants(
@@ -960,7 +963,7 @@ impl BaseApp {
             Point3::new(0.0, 0.0, 0.0),
             Vector3::new(0.0, 1.0, 0.0),
         );
-        let proj = math::perspective(Deg(45.0), aspect, 0.01, 2000.0);
+        let proj = math::perspective(Deg(45.0), aspect, 0.01, 10.0);
 
         let ubos = [CameraUBO::new(view, proj, self.camera.position())];
         let buffer_mem = self.uniform_buffers[current_image as usize].memory;

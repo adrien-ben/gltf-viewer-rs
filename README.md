@@ -56,7 +56,7 @@ Building the project with the debug profile will activate Vulkan validation laye
 ## Run it
 
 ```sh
-RUST_LOG=gltf_viewer_rs=warn cargo run -- C:\\dev\\glTF-Sample-Models\\2.0\\Triangle\\glTF\\Triangle.gltf
+RUST_LOG=gltf_viewer_rs=warn cargo run -- C:\\dev\\assets\\glTF-Sample-Models\\2.0\\Triangle\\glTF\\Triangle.gltf
 ```
 
 [0]: https://github.com/KhronosGroup/glTF

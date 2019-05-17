@@ -1,6 +1,8 @@
 use cgmath::{Matrix4, Quaternion, SquareMatrix, Vector3};
 use gltf::{scene::Transform, Node as GltfNode, Scene};
+use std::ops::Mul;
 
+#[derive(Copy, Clone)]
 pub struct Node {
     transform: Matrix4<f32>,
     mesh_index: usize,
@@ -13,6 +15,18 @@ impl Node {
 
     pub fn mesh_index(&self) -> usize {
         self.mesh_index
+    }
+}
+
+// Transform this node by multiplying it with a Matrix4
+impl Mul<Matrix4<f32>> for Node {
+    type Output = Node;
+
+    fn mul(self, rhs: Matrix4<f32>) -> Self::Output {
+        Node {
+            transform: rhs * self.transform,
+            mesh_index: self.mesh_index,
+        }
     }
 }
 
