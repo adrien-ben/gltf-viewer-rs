@@ -713,7 +713,7 @@ impl BaseApp {
             if self.process_event() {
                 break;
             }
-            self.update_camera();
+            self.camera.update(&self.input_state);
             self.draw_frame();
         }
         unsafe { self.context.device().device_wait_idle().unwrap() };
@@ -938,20 +938,6 @@ impl BaseApp {
             device.destroy_render_pass(self.render_pass, None);
         }
         self.swapchain.destroy();
-    }
-
-    fn update_camera(&mut self) {
-        if self.input_state.is_left_clicked() && self.input_state.cursor_delta().is_some() {
-            let delta = self.input_state.cursor_delta().take().unwrap();
-            let x_ratio = delta[0] as f32 / self.swapchain.properties().extent.width as f32;
-            let y_ratio = delta[1] as f32 / self.swapchain.properties().extent.height as f32;
-            let theta = x_ratio * 180.0_f32.to_radians();
-            let phi = y_ratio * 90.0_f32.to_radians();
-            self.camera.rotate(theta, phi);
-        }
-        if let Some(wheel_delta) = self.input_state.wheel_delta() {
-            self.camera.forward(wheel_delta * self.camera.r() * 0.2);
-        }
     }
 
     fn update_uniform_buffers(&mut self, current_image: u32) {
