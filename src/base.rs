@@ -1,4 +1,6 @@
-use crate::{camera::*, controls::*, math, model::*, pipelines::*, util::*, vulkan::*};
+use crate::{
+    camera::*, controls::*, environment::*, math, model::*, pipelines::*, util::*, vulkan::*,
+};
 use ash::{version::DeviceV1_0, vk, Device};
 use cgmath::{Deg, Matrix4, Point3, Vector3};
 use std::{
@@ -19,13 +21,14 @@ pub struct BaseApp {
     camera: Camera,
     input_state: InputState,
     context: Rc<Context>,
+    _cubemap: Texture,
     render_pass: vk::RenderPass,
-    descriptor_set_layout: vk::DescriptorSetLayout,
-    descriptor_pool: vk::DescriptorPool,
+    model_descriptors: Descriptors,
+    skybox_descriptors: Descriptors,
     uniform_buffers: Vec<Buffer>,
+    skybox_model: SkyboxModel,
     model: Model,
     _dummy_texture: Texture,
-    descriptor_sets: Vec<vk::DescriptorSet>,
     pipelines: Pipelines,
     msaa_samples: vk::SampleCountFlags,
     color_texture: Texture,
@@ -49,6 +52,8 @@ impl BaseApp {
 
         let context = Rc::new(Context::new(&window));
 
+        let cubemap = create_skybox_cubemap(&context);
+
         let swapchain_support_details = SwapchainSupportDetails::new(
             context.physical_device(),
             context.surface(),
@@ -70,24 +75,30 @@ impl BaseApp {
         let uniform_buffers =
             Self::create_uniform_buffers(&context, swapchain_properties.image_count);
 
+        let skybox_model = SkyboxModel::new(&context);
+
         let model = Model::create_from_file(&context, path).unwrap();
 
         let dummy_texture = Texture::from_rgba(&context, 1, 1, &vec![0, 0, 0, 0]);
 
-        let (descriptor_set_layout, descriptor_pool, descriptor_sets) =
-            Self::create_descriptor_sets_resources(
-                &context,
-                &uniform_buffers,
-                model.textures(),
-                &dummy_texture,
-            );
+        let model_descriptors = Self::create_model_descriptors(
+            &context,
+            &uniform_buffers,
+            model.textures(),
+            &dummy_texture,
+            &cubemap,
+        );
+
+        let skybox_descriptors =
+            Self::create_skybox_descriptors(&context, &uniform_buffers, &cubemap);
 
         let pipelines = Pipelines::build(
             Rc::clone(&context),
             swapchain_properties,
             msaa_samples,
             render_pass,
-            descriptor_set_layout,
+            &skybox_descriptors,
+            &model_descriptors,
         );
 
         let color_texture =
@@ -114,7 +125,9 @@ impl BaseApp {
             &swapchain,
             render_pass,
             &pipelines,
-            &descriptor_sets,
+            &skybox_descriptors.sets(),
+            &skybox_model,
+            &model_descriptors.sets(),
             &model,
         );
 
@@ -127,13 +140,14 @@ impl BaseApp {
             camera: Default::default(),
             input_state: Default::default(),
             context,
+            _cubemap: cubemap,
             render_pass,
-            descriptor_set_layout,
-            descriptor_pool,
+            model_descriptors,
+            skybox_descriptors,
             uniform_buffers,
+            skybox_model,
             model,
             _dummy_texture: dummy_texture,
-            descriptor_sets,
             pipelines,
             msaa_samples,
             color_texture,
@@ -244,30 +258,28 @@ impl BaseApp {
             .collect::<Vec<_>>()
     }
 
-    fn create_descriptor_sets_resources(
+    fn create_model_descriptors(
         context: &Rc<Context>,
         uniform_buffers: &[Buffer],
         textures: &[Texture],
         dummy_texture: &Texture,
-    ) -> (
-        vk::DescriptorSetLayout,
-        vk::DescriptorPool,
-        Vec<vk::DescriptorSet>,
-    ) {
-        let layout = Self::create_descriptor_set_layout(context.device());
-        let pool = Self::create_descriptor_pool(context.device(), uniform_buffers.len() as _);
-        let sets = Self::create_descriptor_sets(
+        cubemap: &Texture,
+    ) -> Descriptors {
+        let layout = Self::create_model_descriptor_set_layout(context.device());
+        let pool = Self::create_model_descriptor_pool(context.device(), uniform_buffers.len() as _);
+        let sets = Self::create_model_descriptor_sets(
             context,
             pool,
             layout,
             uniform_buffers,
             textures,
             dummy_texture,
+            cubemap,
         );
-        (layout, pool, sets)
+        Descriptors::new(Rc::clone(context), layout, pool, sets)
     }
 
-    fn create_descriptor_set_layout(device: &Device) -> vk::DescriptorSetLayout {
+    fn create_model_descriptor_set_layout(device: &Device) -> vk::DescriptorSetLayout {
         let bindings = [
             vk::DescriptorSetLayoutBinding::builder()
                 .binding(0)
@@ -279,6 +291,12 @@ impl BaseApp {
                 .binding(1)
                 .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
                 .descriptor_count(MAX_TEXTURE_COUNT)
+                .stage_flags(vk::ShaderStageFlags::FRAGMENT)
+                .build(),
+            vk::DescriptorSetLayoutBinding::builder()
+                .binding(2)
+                .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
+                .descriptor_count(1)
                 .stage_flags(vk::ShaderStageFlags::FRAGMENT)
                 .build(),
         ];
@@ -294,7 +312,7 @@ impl BaseApp {
         }
     }
 
-    fn create_descriptor_pool(device: &Device, descriptor_count: u32) -> vk::DescriptorPool {
+    fn create_model_descriptor_pool(device: &Device, descriptor_count: u32) -> vk::DescriptorPool {
         let pool_sizes = [
             vk::DescriptorPoolSize {
                 ty: vk::DescriptorType::UNIFORM_BUFFER,
@@ -302,7 +320,7 @@ impl BaseApp {
             },
             vk::DescriptorPoolSize {
                 ty: vk::DescriptorType::COMBINED_IMAGE_SAMPLER,
-                descriptor_count: descriptor_count * MAX_TEXTURE_COUNT,
+                descriptor_count: descriptor_count * (MAX_TEXTURE_COUNT + 1),
             },
         ];
 
@@ -314,13 +332,14 @@ impl BaseApp {
         unsafe { device.create_descriptor_pool(&create_info, None).unwrap() }
     }
 
-    fn create_descriptor_sets(
+    fn create_model_descriptor_sets(
         context: &Rc<Context>,
         pool: vk::DescriptorPool,
         layout: vk::DescriptorSetLayout,
         buffers: &[Buffer],
         textures: &[Texture],
         dummy_texture: &Texture,
+        cubemap: &Texture,
     ) -> Vec<vk::DescriptorSet> {
         let layouts = (0..buffers.len()).map(|_| layout).collect::<Vec<_>>();
 
@@ -368,6 +387,12 @@ impl BaseApp {
                 infos
             };
 
+            let cubemap_info = [vk::DescriptorImageInfo::builder()
+                .image_layout(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL)
+                .image_view(cubemap.view)
+                .sampler(cubemap.sampler.unwrap())
+                .build()];
+
             let descriptor_writes = [
                 vk::WriteDescriptorSet::builder()
                     .dst_set(*set)
@@ -380,6 +405,130 @@ impl BaseApp {
                     .dst_binding(1)
                     .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
                     .image_info(&image_info)
+                    .build(),
+                vk::WriteDescriptorSet::builder()
+                    .dst_set(*set)
+                    .dst_binding(2)
+                    .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
+                    .image_info(&cubemap_info)
+                    .build(),
+            ];
+
+            unsafe {
+                context
+                    .device()
+                    .update_descriptor_sets(&descriptor_writes, &[])
+            }
+        });
+
+        sets
+    }
+
+    fn create_skybox_descriptors(
+        context: &Rc<Context>,
+        uniform_buffers: &[Buffer],
+        cubemap: &Texture,
+    ) -> Descriptors {
+        let layout = Self::create_skybox_descriptor_set_layout(context.device());
+        let pool =
+            Self::create_skybox_descriptor_pool(context.device(), uniform_buffers.len() as _);
+        let sets =
+            Self::create_skybox_descriptor_sets(context, pool, layout, uniform_buffers, cubemap);
+        Descriptors::new(Rc::clone(context), layout, pool, sets)
+    }
+
+    fn create_skybox_descriptor_set_layout(device: &Device) -> vk::DescriptorSetLayout {
+        let bindings = [
+            vk::DescriptorSetLayoutBinding::builder()
+                .binding(0)
+                .descriptor_type(vk::DescriptorType::UNIFORM_BUFFER)
+                .descriptor_count(1)
+                .stage_flags(vk::ShaderStageFlags::VERTEX | vk::ShaderStageFlags::FRAGMENT)
+                .build(),
+            vk::DescriptorSetLayoutBinding::builder()
+                .binding(1)
+                .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
+                .descriptor_count(1)
+                .stage_flags(vk::ShaderStageFlags::FRAGMENT)
+                .build(),
+        ];
+
+        let layout_info = vk::DescriptorSetLayoutCreateInfo::builder()
+            .bindings(&bindings)
+            .build();
+
+        unsafe {
+            device
+                .create_descriptor_set_layout(&layout_info, None)
+                .unwrap()
+        }
+    }
+
+    fn create_skybox_descriptor_pool(device: &Device, descriptor_count: u32) -> vk::DescriptorPool {
+        let pool_sizes = [
+            vk::DescriptorPoolSize {
+                ty: vk::DescriptorType::UNIFORM_BUFFER,
+                descriptor_count,
+            },
+            vk::DescriptorPoolSize {
+                ty: vk::DescriptorType::COMBINED_IMAGE_SAMPLER,
+                descriptor_count: descriptor_count,
+            },
+        ];
+
+        let create_info = vk::DescriptorPoolCreateInfo::builder()
+            .pool_sizes(&pool_sizes)
+            .max_sets(descriptor_count)
+            .build();
+
+        unsafe { device.create_descriptor_pool(&create_info, None).unwrap() }
+    }
+
+    fn create_skybox_descriptor_sets(
+        context: &Rc<Context>,
+        pool: vk::DescriptorPool,
+        layout: vk::DescriptorSetLayout,
+        buffers: &[Buffer],
+        cubemap: &Texture,
+    ) -> Vec<vk::DescriptorSet> {
+        let layouts = (0..buffers.len()).map(|_| layout).collect::<Vec<_>>();
+
+        let allocate_info = vk::DescriptorSetAllocateInfo::builder()
+            .descriptor_pool(pool)
+            .set_layouts(&layouts)
+            .build();
+        let sets = unsafe {
+            context
+                .device()
+                .allocate_descriptor_sets(&allocate_info)
+                .unwrap()
+        };
+
+        sets.iter().zip(buffers.iter()).for_each(|(set, buffer)| {
+            let buffer_info = [vk::DescriptorBufferInfo::builder()
+                .buffer(buffer.buffer)
+                .offset(0)
+                .range(size_of::<CameraUBO>() as _)
+                .build()];
+
+            let cubemap_info = [vk::DescriptorImageInfo::builder()
+                .image_layout(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL)
+                .image_view(cubemap.view)
+                .sampler(cubemap.sampler.unwrap())
+                .build()];
+
+            let descriptor_writes = [
+                vk::WriteDescriptorSet::builder()
+                    .dst_set(*set)
+                    .dst_binding(0)
+                    .descriptor_type(vk::DescriptorType::UNIFORM_BUFFER)
+                    .buffer_info(&buffer_info)
+                    .build(),
+                vk::WriteDescriptorSet::builder()
+                    .dst_set(*set)
+                    .dst_binding(1)
+                    .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
+                    .image_info(&cubemap_info)
                     .build(),
             ];
 
@@ -404,20 +553,20 @@ impl BaseApp {
             vk::MemoryPropertyFlags::DEVICE_LOCAL,
             swapchain_properties.extent,
             1,
+            1,
             msaa_samples,
             format,
             vk::ImageTiling::OPTIMAL,
             vk::ImageUsageFlags::TRANSIENT_ATTACHMENT | vk::ImageUsageFlags::COLOR_ATTACHMENT,
+            vk::ImageCreateFlags::empty(),
         );
 
         image.transition_image_layout(
-            1,
-            format,
             vk::ImageLayout::UNDEFINED,
             vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
         );
 
-        let view = image.create_view(1, format, vk::ImageAspectFlags::COLOR);
+        let view = image.create_view(vk::ImageViewType::TYPE_2D, vk::ImageAspectFlags::COLOR);
 
         Texture::new(Rc::clone(context), image, view, None)
     }
@@ -437,20 +586,20 @@ impl BaseApp {
             vk::MemoryPropertyFlags::DEVICE_LOCAL,
             extent,
             1,
+            1,
             msaa_samples,
             format,
             vk::ImageTiling::OPTIMAL,
             vk::ImageUsageFlags::DEPTH_STENCIL_ATTACHMENT,
+            vk::ImageCreateFlags::empty(),
         );
 
         image.transition_image_layout(
-            1,
-            format,
             vk::ImageLayout::UNDEFINED,
             vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
         );
 
-        let view = image.create_view(1, format, vk::ImageAspectFlags::DEPTH);
+        let view = image.create_view(vk::ImageViewType::TYPE_2D, vk::ImageAspectFlags::DEPTH);
 
         Texture::new(Rc::clone(context), image, view, None)
     }
@@ -475,6 +624,8 @@ impl BaseApp {
         swapchain: &Swapchain,
         render_pass: vk::RenderPass,
         pipelines: &Pipelines,
+        skybox_descriptor_sets: &[vk::DescriptorSet],
+        skybox_model: &SkyboxModel,
         descriptor_sets: &[vk::DescriptorSet],
         model: &Model,
     ) -> Vec<vk::CommandBuffer> {
@@ -537,6 +688,43 @@ impl BaseApp {
                 };
             }
 
+            // Bind skybox pipeline
+            unsafe {
+                device.cmd_bind_pipeline(
+                    buffer,
+                    vk::PipelineBindPoint::GRAPHICS,
+                    pipelines.skybox_pipeline(),
+                )
+            };
+
+            // Bind skybox descriptor sets
+            unsafe {
+                device.cmd_bind_descriptor_sets(
+                    buffer,
+                    vk::PipelineBindPoint::GRAPHICS,
+                    pipelines.skybox_layout(),
+                    0,
+                    &skybox_descriptor_sets[i..=i],
+                    &[],
+                )
+            };
+
+            unsafe {
+                device.cmd_bind_vertex_buffers(buffer, 0, &[skybox_model.vertices().buffer], &[0]);
+            }
+
+            unsafe {
+                device.cmd_bind_index_buffer(
+                    buffer,
+                    skybox_model.indices().buffer,
+                    0,
+                    vk::IndexType::UINT32,
+                );
+            }
+
+            // Draw skybox
+            unsafe { device.cmd_draw_indexed(buffer, 36, 1, 0, 0, 0) };
+
             // Bind opaque pipeline
             unsafe {
                 device.cmd_bind_pipeline(
@@ -551,7 +739,7 @@ impl BaseApp {
                 device.cmd_bind_descriptor_sets(
                     buffer,
                     vk::PipelineBindPoint::GRAPHICS,
-                    pipelines.layout(),
+                    pipelines.model_layout(),
                     0,
                     &descriptor_sets[i..=i],
                     &[],
@@ -559,9 +747,13 @@ impl BaseApp {
             };
 
             // Draw opaque primitives
-            Self::register_model_draw_commands(device, pipelines.layout(), buffer, model, |p| {
-                !p.material().is_transparent()
-            });
+            Self::register_model_draw_commands(
+                device,
+                pipelines.model_layout(),
+                buffer,
+                model,
+                |p| !p.material().is_transparent(),
+            );
 
             // Bind transparent pipeline
             unsafe {
@@ -573,9 +765,13 @@ impl BaseApp {
             };
 
             // Draw transparent primitives
-            Self::register_model_draw_commands(device, pipelines.layout(), buffer, model, |p| {
-                p.material().is_transparent()
-            });
+            Self::register_model_draw_commands(
+                device,
+                pipelines.model_layout(),
+                buffer,
+                model,
+                |p| p.material().is_transparent(),
+            );
 
             // End render pass
             unsafe { device.cmd_end_render_pass(buffer) };
@@ -877,7 +1073,8 @@ impl BaseApp {
             swapchain_properties,
             self.msaa_samples,
             render_pass,
-            self.descriptor_set_layout,
+            &self.skybox_descriptors,
+            &self.model_descriptors,
         );
 
         let color_texture =
@@ -904,7 +1101,9 @@ impl BaseApp {
             &swapchain,
             render_pass,
             &pipelines,
-            &self.descriptor_sets,
+            &self.skybox_descriptors.sets(),
+            &self.skybox_model,
+            &self.model_descriptors.sets(),
             &self.model,
         );
 
@@ -972,10 +1171,6 @@ impl Drop for BaseApp {
         self.cleanup_swapchain();
         let device = self.context.device();
         self.in_flight_frames.destroy(device);
-        unsafe {
-            device.destroy_descriptor_pool(self.descriptor_pool, None);
-            device.destroy_descriptor_set_layout(self.descriptor_set_layout, None);
-        }
     }
 }
 

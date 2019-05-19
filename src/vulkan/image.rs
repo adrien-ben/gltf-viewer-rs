@@ -9,14 +9,27 @@ pub struct Image {
     context: Rc<Context>,
     pub image: vk::Image,
     pub memory: vk::DeviceMemory,
+    format: vk::Format,
+    mip_levels: u32,
+    layers: u32,
 }
 
 impl Image {
-    fn new(context: Rc<Context>, image: vk::Image, memory: vk::DeviceMemory) -> Self {
+    fn new(
+        context: Rc<Context>,
+        image: vk::Image,
+        memory: vk::DeviceMemory,
+        format: vk::Format,
+        mip_levels: u32,
+        layers: u32,
+    ) -> Self {
         Self {
             context,
             image,
             memory,
+            format,
+            mip_levels,
+            layers,
         }
     }
 
@@ -24,12 +37,14 @@ impl Image {
         context: Rc<Context>,
         mem_properties: vk::MemoryPropertyFlags,
         extent: vk::Extent2D,
+        layers: u32,
         mip_levels: u32,
         sample_count: vk::SampleCountFlags,
         format: vk::Format,
         tiling: vk::ImageTiling,
         usage: vk::ImageUsageFlags,
-    ) -> Image {
+        create_flags: vk::ImageCreateFlags,
+    ) -> Self {
         let image_info = vk::ImageCreateInfo::builder()
             .image_type(vk::ImageType::TYPE_2D)
             .extent(vk::Extent3D {
@@ -38,14 +53,14 @@ impl Image {
                 depth: 1,
             })
             .mip_levels(mip_levels)
-            .array_layers(1)
+            .array_layers(layers)
             .format(format)
             .tiling(tiling)
             .initial_layout(vk::ImageLayout::UNDEFINED)
             .usage(usage)
             .sharing_mode(vk::SharingMode::EXCLUSIVE)
             .samples(sample_count)
-            .flags(vk::ImageCreateFlags::empty())
+            .flags(create_flags)
             .build();
 
         let device = context.device();
@@ -67,30 +82,29 @@ impl Image {
             mem
         };
 
-        Image::new(context, image, memory)
+        Image::new(context, image, memory, format, mip_levels, layers)
     }
 }
 
 impl Image {
     pub fn create_view(
         &self,
-        mip_levels: u32,
-        format: vk::Format,
+        view_type: vk::ImageViewType,
         aspect_mask: vk::ImageAspectFlags,
     ) -> vk::ImageView {
         create_image_view(
             self.context.device(),
             self.image,
-            mip_levels,
-            format,
+            view_type,
+            self.layers,
+            self.mip_levels,
+            self.format,
             aspect_mask,
         )
     }
 
     pub fn transition_image_layout(
         &self,
-        mip_levels: u32,
-        format: vk::Format,
         old_layout: vk::ImageLayout,
         new_layout: vk::ImageLayout,
     ) {
@@ -137,7 +151,7 @@ impl Image {
 
             let aspect_mask = if new_layout == vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL {
                 let mut mask = vk::ImageAspectFlags::DEPTH;
-                if has_stencil_component(format) {
+                if has_stencil_component(self.format) {
                     mask |= vk::ImageAspectFlags::STENCIL;
                 }
                 mask
@@ -154,9 +168,9 @@ impl Image {
                 .subresource_range(vk::ImageSubresourceRange {
                     aspect_mask,
                     base_mip_level: 0,
-                    level_count: mip_levels,
+                    level_count: self.mip_levels,
                     base_array_layer: 0,
-                    layer_count: 1,
+                    layer_count: self.layers,
                 })
                 .src_access_mask(src_access_mask)
                 .dst_access_mask(dst_access_mask)
@@ -187,7 +201,7 @@ impl Image {
                     aspect_mask: vk::ImageAspectFlags::COLOR,
                     mip_level: 0,
                     base_array_layer: 0,
-                    layer_count: 1,
+                    layer_count: self.layers,
                 })
                 .image_offset(vk::Offset3D { x: 0, y: 0, z: 0 })
                 .image_extent(vk::Extent3D {
@@ -209,17 +223,20 @@ impl Image {
         })
     }
 
-    pub fn generate_mipmaps(&self, extent: vk::Extent2D, format: vk::Format, mip_levels: u32) {
+    pub fn generate_mipmaps(&self, extent: vk::Extent2D) {
         let format_properties = unsafe {
             self.context
                 .instance()
-                .get_physical_device_format_properties(self.context.physical_device(), format)
+                .get_physical_device_format_properties(self.context.physical_device(), self.format)
         };
         if !format_properties
             .optimal_tiling_features
             .contains(vk::FormatFeatureFlags::SAMPLED_IMAGE_FILTER_LINEAR)
         {
-            panic!("Linear blitting is not supported for format {}.", format)
+            panic!(
+                "Linear blitting is not supported for format {}.",
+                self.format
+            )
         }
 
         self.context.execute_one_time_commands(|buffer| {
@@ -230,7 +247,7 @@ impl Image {
                 .subresource_range(vk::ImageSubresourceRange {
                     aspect_mask: vk::ImageAspectFlags::COLOR,
                     base_array_layer: 0,
-                    layer_count: 1,
+                    layer_count: self.layers,
                     level_count: 1,
                     ..Default::default()
                 })
@@ -238,7 +255,7 @@ impl Image {
 
             let mut mip_width = extent.width as i32;
             let mut mip_height = extent.height as i32;
-            for level in 1..mip_levels {
+            for level in 1..self.mip_levels {
                 let next_mip_width = if mip_width > 1 {
                     mip_width / 2
                 } else {
@@ -282,7 +299,7 @@ impl Image {
                         aspect_mask: vk::ImageAspectFlags::COLOR,
                         mip_level: level - 1,
                         base_array_layer: 0,
-                        layer_count: 1,
+                        layer_count: self.layers,
                     })
                     .dst_offsets([
                         vk::Offset3D { x: 0, y: 0, z: 0 },
@@ -296,7 +313,7 @@ impl Image {
                         aspect_mask: vk::ImageAspectFlags::COLOR,
                         mip_level: level,
                         base_array_layer: 0,
-                        layer_count: 1,
+                        layer_count: self.layers,
                     })
                     .build();
                 let blits = [blit];
@@ -335,7 +352,7 @@ impl Image {
                 mip_height = next_mip_height;
             }
 
-            barrier.subresource_range.base_mip_level = mip_levels - 1;
+            barrier.subresource_range.base_mip_level = self.mip_levels - 1;
             barrier.old_layout = vk::ImageLayout::TRANSFER_DST_OPTIMAL;
             barrier.new_layout = vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL;
             barrier.src_access_mask = vk::AccessFlags::TRANSFER_WRITE;
@@ -373,20 +390,22 @@ fn has_stencil_component(format: vk::Format) -> bool {
 pub fn create_image_view(
     device: &Device,
     image: vk::Image,
+    view_type: vk::ImageViewType,
+    layers: u32,
     mip_levels: u32,
     format: vk::Format,
     aspect_mask: vk::ImageAspectFlags,
 ) -> vk::ImageView {
     let create_info = vk::ImageViewCreateInfo::builder()
         .image(image)
-        .view_type(vk::ImageViewType::TYPE_2D)
+        .view_type(view_type)
         .format(format)
         .subresource_range(vk::ImageSubresourceRange {
             aspect_mask,
             base_mip_level: 0,
             level_count: mip_levels,
             base_array_layer: 0,
-            layer_count: 1,
+            layer_count: layers,
         })
         .build();
 

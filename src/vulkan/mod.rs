@@ -5,5 +5,6 @@ mod image;
 pub mod surface;
 mod swapchain;
 mod texture;
+mod descriptor;
 
-pub use self::{buffer::*, context::*, debug::*, image::*, swapchain::*, texture::*};
+pub use self::{buffer::*, context::*, debug::*, image::*, swapchain::*, texture::*, descriptor::*};

@@ -109,6 +109,8 @@ impl Swapchain {
                 create_image_view(
                     device,
                     *image,
+                    vk::ImageViewType::TYPE_2D,
+                    1,
                     1,
                     swapchain_properties.format.format,
                     vk::ImageAspectFlags::COLOR,

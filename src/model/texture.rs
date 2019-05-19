@@ -7,7 +7,7 @@ use std::rc::Rc;
 pub fn create_textures_from_gltf(context: &Rc<Context>, images: &[Data]) -> Vec<Texture> {
     if images.len() > MAX_TEXTURE_COUNT as _ {
         log::warn!(
-            "The model contains more than 64 textures ({}). Some textures might not display properly", images.len()
+            "The model contains more than {} textures ({}). Some textures might not display properly", MAX_TEXTURE_COUNT, images.len()
         );
     }
     images

@@ -1,6 +1,7 @@
 mod base;
 mod camera;
 mod controls;
+mod environment;
 mod math;
 mod model;
 mod pipelines;
