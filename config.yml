@@ -1,0 +1,6 @@
+resolution:
+  width: 1024
+  height: 768
+
+# 64, 32, 16, 8, 4, 2, 1. Optional(default = 1)
+msaa: 64

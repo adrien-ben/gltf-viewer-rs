@@ -1,0 +1,60 @@
+use crate::error::*;
+use serde::Deserialize;
+use std::fs::File;
+
+#[derive(Deserialize, Copy, Clone)]
+pub struct Config {
+    resolution: Resolution,
+    msaa: Option<u32>,
+}
+
+impl Config {
+    pub fn resolution(&self) -> Resolution {
+        self.resolution
+    }
+
+    pub fn msaa(&self) -> u32 {
+        self.msaa.unwrap_or(1)
+    }
+}
+
+impl Default for Config {
+    fn default() -> Self {
+        Config {
+            msaa: Some(1),
+            resolution: Default::default(),
+        }
+    }
+}
+
+#[derive(Deserialize, Copy, Clone)]
+pub struct Resolution {
+    width: u32,
+    height: u32,
+}
+
+impl Resolution {
+    pub fn width(&self) -> u32 {
+        self.width
+    }
+
+    pub fn height(&self) -> u32 {
+        self.height
+    }
+}
+
+impl Default for Resolution {
+    fn default() -> Self {
+        Resolution {
+            width: 120,
+            height: 120,
+        }
+    }
+}
+
+pub fn load_config(path: &str) -> Result<Config, AppError> {
+    let config_file = File::open(path)
+        .map_err(|e| AppError::ConfigLoadError(format!("Failed to load file: {}", e)))?;
+    serde_yaml::from_reader(config_file)
+        .map_err(|e| AppError::ConfigLoadError(format!("Failed to deserialize config: {}", e)))
+}

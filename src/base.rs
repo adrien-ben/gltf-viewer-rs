@@ -1,5 +1,6 @@
 use crate::{
-    camera::*, controls::*, environment::*, math, model::*, pipelines::*, util::*, vulkan::*,
+    camera::*, config::*, controls::*, environment::*, math, model::*, pipelines::*, util::*,
+    vulkan::*,
 };
 use ash::{version::DeviceV1_0, vk, Device};
 use cgmath::{Deg, Matrix4, Point3, Vector3};
@@ -9,8 +10,6 @@ use std::{
 };
 use winit::{dpi::LogicalSize, Event, EventsLoop, Window, WindowBuilder, WindowEvent};
 
-const WIDTH: u32 = 800;
-const HEIGHT: u32 = 600;
 const MAX_FRAMES_IN_FLIGHT: u32 = 2;
 
 pub struct BaseApp {
@@ -40,13 +39,18 @@ pub struct BaseApp {
 }
 
 impl BaseApp {
-    pub fn new(path: String) -> Self {
+    pub fn new(config: Config, path: &str) -> Self {
         log::debug!("Creating application.");
+
+        let resolution = [config.resolution().width(), config.resolution().height()];
 
         let events_loop = EventsLoop::new();
         let window = WindowBuilder::new()
             .with_title("GLTF Viewer")
-            .with_dimensions(LogicalSize::new(f64::from(WIDTH), f64::from(HEIGHT)))
+            .with_dimensions(LogicalSize::new(
+                f64::from(resolution[0]),
+                f64::from(resolution[1]),
+            ))
             .build(&events_loop)
             .unwrap();
 
@@ -60,9 +64,11 @@ impl BaseApp {
             context.surface_khr(),
         );
         let swapchain_properties =
-            swapchain_support_details.get_ideal_swapchain_properties([WIDTH, HEIGHT]);
+            swapchain_support_details.get_ideal_swapchain_properties(resolution);
 
-        let msaa_samples = context.get_max_usable_sample_count();
+        let msaa_samples = context.get_max_usable_sample_count(config.msaa());
+        log::debug!("msaa: {} - preferred was {}", msaa_samples, config.msaa());
+
         let depth_format = Self::find_depth_format(&context);
 
         let render_pass = Self::create_render_pass(
@@ -114,7 +120,7 @@ impl BaseApp {
         let swapchain = Swapchain::create(
             Rc::clone(&context),
             swapchain_support_details,
-            [WIDTH, HEIGHT],
+            resolution,
             &color_texture,
             &depth_texture,
             render_pass,

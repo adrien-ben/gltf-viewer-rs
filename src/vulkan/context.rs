@@ -10,6 +10,8 @@ use ash::{
 use std::ffi::{CStr, CString};
 use winit::Window;
 
+const POSSIBLE_SAMPLE_COUNTS: [u32; 7] = [1, 2, 4, 8, 16, 32, 64];
+
 pub struct Context {
     _entry: Entry,
     instance: Instance,
@@ -373,8 +375,15 @@ impl Context {
         })
     }
 
-    /// Return the maximim sample count supported.
-    pub fn get_max_usable_sample_count(&self) -> vk::SampleCountFlags {
+    /// Return the preferred sample count or the maximim supported below preferred.
+    pub fn get_max_usable_sample_count(&self, preferred: u32) -> vk::SampleCountFlags {
+        if !POSSIBLE_SAMPLE_COUNTS.contains(&preferred) {
+            panic!(
+                "Preferred sample count must be one of {:?}",
+                POSSIBLE_SAMPLE_COUNTS
+            );
+        }
+
         let props = unsafe {
             self.instance
                 .get_physical_device_properties(self.physical_device)
@@ -383,17 +392,17 @@ impl Context {
         let depth_sample_counts = props.limits.framebuffer_depth_sample_counts;
         let sample_counts = color_sample_counts.min(depth_sample_counts);
 
-        if sample_counts.contains(vk::SampleCountFlags::TYPE_64) {
+        if sample_counts.contains(vk::SampleCountFlags::TYPE_64) && preferred == 64 {
             vk::SampleCountFlags::TYPE_64
-        } else if sample_counts.contains(vk::SampleCountFlags::TYPE_32) {
+        } else if sample_counts.contains(vk::SampleCountFlags::TYPE_32) && preferred >= 32 {
             vk::SampleCountFlags::TYPE_32
-        } else if sample_counts.contains(vk::SampleCountFlags::TYPE_16) {
+        } else if sample_counts.contains(vk::SampleCountFlags::TYPE_16) && preferred >= 16 {
             vk::SampleCountFlags::TYPE_16
-        } else if sample_counts.contains(vk::SampleCountFlags::TYPE_8) {
+        } else if sample_counts.contains(vk::SampleCountFlags::TYPE_8) && preferred >= 8 {
             vk::SampleCountFlags::TYPE_8
-        } else if sample_counts.contains(vk::SampleCountFlags::TYPE_4) {
+        } else if sample_counts.contains(vk::SampleCountFlags::TYPE_4) && preferred >= 4 {
             vk::SampleCountFlags::TYPE_4
-        } else if sample_counts.contains(vk::SampleCountFlags::TYPE_2) {
+        } else if sample_counts.contains(vk::SampleCountFlags::TYPE_2) && preferred >= 2 {
             vk::SampleCountFlags::TYPE_2
         } else {
             vk::SampleCountFlags::TYPE_1

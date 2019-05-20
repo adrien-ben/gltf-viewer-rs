@@ -12,10 +12,10 @@ using [Ash][2]. It runs on Window, Linux and MacOS.
   - [x] Emissive factor and texture
   - [x] Ambient occlusion
   - [x] Normal maps
-  - [ ] Alpha
+  - [x] Alpha
     - [x] Opaque
     - [x] Mask
-    - [ ] Blend
+    - [x] Blend
   - [ ] Double sided surfaces
 - [ ] IBL
   - [ ] Diffuse irradiance
@@ -56,7 +56,13 @@ Building the project with the debug profile will activate Vulkan validation laye
 ## Run it
 
 ```sh
-RUST_LOG=gltf_viewer_rs=warn cargo run -- C:\\dev\\assets\\glTF-Sample-Models\\2.0\\Triangle\\glTF\\Triangle.gltf
+RUST_LOG=gltf_viewer_rs=warn cargo run -- -- C:\\dev\\assets\\glTF-Sample-Models\\2.0\\Triangle\\glTF\\Triangle.gltf
+```
+
+You can provide a yaml configuration file with the `--config` (or `-c`). Check [this example file](./config.yml).
+
+```sh
+RUST_LOG=gltf_viewer_rs=warn cargo run -- --config config.yml -- C:\\dev\\assets\\glTF-Sample-Models\\2.0\\Triangle\\glTF\\Triangle.gltf
 ```
 
 [0]: https://github.com/KhronosGroup/glTF
