@@ -143,6 +143,24 @@ impl Image {
                         vk::PipelineStageFlags::TOP_OF_PIPE,
                         vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT,
                     ),
+                    (
+                        vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
+                        vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
+                    ) => (
+                        vk::AccessFlags::COLOR_ATTACHMENT_WRITE,
+                        vk::AccessFlags::SHADER_READ,
+                        vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT,
+                        vk::PipelineStageFlags::FRAGMENT_SHADER,
+                    ),
+                    (
+                        vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
+                        vk::ImageLayout::TRANSFER_DST_OPTIMAL,
+                    ) => (
+                        vk::AccessFlags::COLOR_ATTACHMENT_WRITE,
+                        vk::AccessFlags::TRANSFER_WRITE,
+                        vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT,
+                        vk::PipelineStageFlags::TRANSFER,
+                    ),
                     _ => panic!(
                         "Unsupported layout transition({} => {}).",
                         old_layout, new_layout

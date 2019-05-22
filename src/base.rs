@@ -6,6 +6,7 @@ use ash::{version::DeviceV1_0, vk, Device};
 use cgmath::{Deg, Matrix4, Point3, Vector3};
 use std::{
     mem::{align_of, size_of},
+    path::Path,
     rc::Rc,
 };
 use winit::{dpi::LogicalSize, Event, EventsLoop, Window, WindowBuilder, WindowEvent};
@@ -20,7 +21,7 @@ pub struct BaseApp {
     camera: Camera,
     input_state: InputState,
     context: Rc<Context>,
-    _cubemap: Texture,
+    _environment: Environment,
     render_pass: vk::RenderPass,
     model_descriptors: Descriptors,
     skybox_descriptors: Descriptors,
@@ -39,7 +40,7 @@ pub struct BaseApp {
 }
 
 impl BaseApp {
-    pub fn new(config: Config, path: &str) -> Self {
+    pub fn new<P: AsRef<Path>>(config: Config, path: P) -> Self {
         log::debug!("Creating application.");
 
         let resolution = [config.resolution().width(), config.resolution().height()];
@@ -56,7 +57,7 @@ impl BaseApp {
 
         let context = Rc::new(Context::new(&window));
 
-        let cubemap = create_skybox_cubemap(&context);
+        let environment = Environment::new(&context, config.env());
 
         let swapchain_support_details = SwapchainSupportDetails::new(
             context.physical_device(),
@@ -92,11 +93,11 @@ impl BaseApp {
             &uniform_buffers,
             model.textures(),
             &dummy_texture,
-            &cubemap,
+            &environment,
         );
 
         let skybox_descriptors =
-            Self::create_skybox_descriptors(&context, &uniform_buffers, &cubemap);
+            Self::create_skybox_descriptors(&context, &uniform_buffers, &environment);
 
         let pipelines = Pipelines::build(
             Rc::clone(&context),
@@ -146,7 +147,7 @@ impl BaseApp {
             camera: Default::default(),
             input_state: Default::default(),
             context,
-            _cubemap: cubemap,
+            _environment: environment,
             render_pass,
             model_descriptors,
             skybox_descriptors,
@@ -269,7 +270,7 @@ impl BaseApp {
         uniform_buffers: &[Buffer],
         textures: &[Texture],
         dummy_texture: &Texture,
-        cubemap: &Texture,
+        environment: &Environment,
     ) -> Descriptors {
         let layout = Self::create_model_descriptor_set_layout(context.device());
         let pool = Self::create_model_descriptor_pool(context.device(), uniform_buffers.len() as _);
@@ -280,7 +281,7 @@ impl BaseApp {
             uniform_buffers,
             textures,
             dummy_texture,
-            cubemap,
+            environment,
         );
         Descriptors::new(Rc::clone(context), layout, pool, sets)
     }
@@ -301,6 +302,18 @@ impl BaseApp {
                 .build(),
             vk::DescriptorSetLayoutBinding::builder()
                 .binding(2)
+                .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
+                .descriptor_count(1)
+                .stage_flags(vk::ShaderStageFlags::FRAGMENT)
+                .build(),
+            vk::DescriptorSetLayoutBinding::builder()
+                .binding(3)
+                .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
+                .descriptor_count(1)
+                .stage_flags(vk::ShaderStageFlags::FRAGMENT)
+                .build(),
+            vk::DescriptorSetLayoutBinding::builder()
+                .binding(4)
                 .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
                 .descriptor_count(1)
                 .stage_flags(vk::ShaderStageFlags::FRAGMENT)
@@ -326,7 +339,7 @@ impl BaseApp {
             },
             vk::DescriptorPoolSize {
                 ty: vk::DescriptorType::COMBINED_IMAGE_SAMPLER,
-                descriptor_count: descriptor_count * (MAX_TEXTURE_COUNT + 1),
+                descriptor_count: descriptor_count * (MAX_TEXTURE_COUNT + 3),
             },
         ];
 
@@ -345,7 +358,7 @@ impl BaseApp {
         buffers: &[Buffer],
         textures: &[Texture],
         dummy_texture: &Texture,
-        cubemap: &Texture,
+        environment: &Environment,
     ) -> Vec<vk::DescriptorSet> {
         let layouts = (0..buffers.len()).map(|_| layout).collect::<Vec<_>>();
 
@@ -393,10 +406,22 @@ impl BaseApp {
                 infos
             };
 
-            let cubemap_info = [vk::DescriptorImageInfo::builder()
+            let irradiance_info = [vk::DescriptorImageInfo::builder()
                 .image_layout(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL)
-                .image_view(cubemap.view)
-                .sampler(cubemap.sampler.unwrap())
+                .image_view(environment.irradiance().view)
+                .sampler(environment.irradiance().sampler.unwrap())
+                .build()];
+
+            let pre_filtered_info = [vk::DescriptorImageInfo::builder()
+                .image_layout(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL)
+                .image_view(environment.pre_filtered().view)
+                .sampler(environment.pre_filtered().sampler.unwrap())
+                .build()];
+
+            let brdf_lookup_info = [vk::DescriptorImageInfo::builder()
+                .image_layout(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL)
+                .image_view(environment.brdf_lookup().view)
+                .sampler(environment.brdf_lookup().sampler.unwrap())
                 .build()];
 
             let descriptor_writes = [
@@ -416,7 +441,19 @@ impl BaseApp {
                     .dst_set(*set)
                     .dst_binding(2)
                     .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
-                    .image_info(&cubemap_info)
+                    .image_info(&irradiance_info)
+                    .build(),
+                vk::WriteDescriptorSet::builder()
+                    .dst_set(*set)
+                    .dst_binding(3)
+                    .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
+                    .image_info(&pre_filtered_info)
+                    .build(),
+                vk::WriteDescriptorSet::builder()
+                    .dst_set(*set)
+                    .dst_binding(4)
+                    .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
+                    .image_info(&brdf_lookup_info)
                     .build(),
             ];
 
@@ -433,13 +470,18 @@ impl BaseApp {
     fn create_skybox_descriptors(
         context: &Rc<Context>,
         uniform_buffers: &[Buffer],
-        cubemap: &Texture,
+        environment: &Environment,
     ) -> Descriptors {
         let layout = Self::create_skybox_descriptor_set_layout(context.device());
         let pool =
             Self::create_skybox_descriptor_pool(context.device(), uniform_buffers.len() as _);
-        let sets =
-            Self::create_skybox_descriptor_sets(context, pool, layout, uniform_buffers, cubemap);
+        let sets = Self::create_skybox_descriptor_sets(
+            context,
+            pool,
+            layout,
+            uniform_buffers,
+            environment.skybox(),
+        );
         Descriptors::new(Rc::clone(context), layout, pool, sets)
     }
 

@@ -26,7 +26,7 @@ impl Pipelines {
         let skybox_layout = create_skybox_pipeline_layout(device, skybox_descriptors.layout());
 
         let skybox_pipeline = create_skybox_pipeline(
-            device,
+            &context,
             swapchain_properties,
             msaa_samples,
             render_pass,
@@ -36,7 +36,7 @@ impl Pipelines {
         let model_layout = create_model_pipeline_layout(device, model_descriptors.layout());
 
         let opaque_pipeline = create_opaque_pipeline(
-            device,
+            &context,
             swapchain_properties,
             msaa_samples,
             render_pass,
@@ -44,7 +44,7 @@ impl Pipelines {
         );
 
         let transparent_pipeline = create_transparent_pipeline(
-            device,
+            &context,
             swapchain_properties,
             msaa_samples,
             render_pass,
@@ -110,19 +110,12 @@ fn create_skybox_pipeline_layout(
 }
 
 fn create_skybox_pipeline(
-    device: &Device,
+    context: &Rc<Context>,
     swapchain_properties: SwapchainProperties,
     msaa_samples: vk::SampleCountFlags,
     render_pass: vk::RenderPass,
     layout: vk::PipelineLayout,
 ) -> vk::Pipeline {
-    let bindings_descs = SkyboxVertex::get_bindings_descriptions();
-    let attributes_descs = SkyboxVertex::get_attributes_descriptions();
-    let vertex_input_info = vk::PipelineVertexInputStateCreateInfo::builder()
-        .vertex_binding_descriptions(&bindings_descs)
-        .vertex_attribute_descriptions(&attributes_descs)
-        .build();
-
     let depth_stencil_info = vk::PipelineDepthStencilStateCreateInfo::builder()
         .depth_test_enable(false)
         .depth_write_enable(false)
@@ -146,14 +139,13 @@ fn create_skybox_pipeline(
         .alpha_blend_op(vk::BlendOp::ADD)
         .build();
 
-    create_pipeline(
-        device,
+    create_pipeline::<SkyboxVertex>(
+        context,
         "skybox",
         swapchain_properties,
         msaa_samples,
         render_pass,
         layout,
-        vertex_input_info,
         depth_stencil_info,
         color_blend_attachment,
         None,
@@ -186,19 +178,12 @@ fn create_model_pipeline_layout(
 }
 
 fn create_opaque_pipeline(
-    device: &Device,
+    context: &Rc<Context>,
     swapchain_properties: SwapchainProperties,
     msaa_samples: vk::SampleCountFlags,
     render_pass: vk::RenderPass,
     layout: vk::PipelineLayout,
 ) -> vk::Pipeline {
-    let bindings_descs = Vertex::get_bindings_descriptions();
-    let attributes_descs = Vertex::get_attributes_descriptions();
-    let vertex_input_info = vk::PipelineVertexInputStateCreateInfo::builder()
-        .vertex_binding_descriptions(&bindings_descs)
-        .vertex_attribute_descriptions(&attributes_descs)
-        .build();
-
     let depth_stencil_info = vk::PipelineDepthStencilStateCreateInfo::builder()
         .depth_test_enable(true)
         .depth_write_enable(true)
@@ -222,14 +207,13 @@ fn create_opaque_pipeline(
         .alpha_blend_op(vk::BlendOp::ADD)
         .build();
 
-    create_pipeline(
-        device,
+    create_pipeline::<ModelVertex>(
+        context,
         "model",
         swapchain_properties,
         msaa_samples,
         render_pass,
         layout,
-        vertex_input_info,
         depth_stencil_info,
         color_blend_attachment,
         None,
@@ -237,20 +221,13 @@ fn create_opaque_pipeline(
 }
 
 fn create_transparent_pipeline(
-    device: &Device,
+    context: &Rc<Context>,
     swapchain_properties: SwapchainProperties,
     msaa_samples: vk::SampleCountFlags,
     render_pass: vk::RenderPass,
     layout: vk::PipelineLayout,
     parent: vk::Pipeline,
 ) -> vk::Pipeline {
-    let bindings_descs = Vertex::get_bindings_descriptions();
-    let attributes_descs = Vertex::get_attributes_descriptions();
-    let vertex_input_info = vk::PipelineVertexInputStateCreateInfo::builder()
-        .vertex_binding_descriptions(&bindings_descs)
-        .vertex_attribute_descriptions(&attributes_descs)
-        .build();
-
     let depth_stencil_info = vk::PipelineDepthStencilStateCreateInfo::builder()
         .depth_test_enable(true)
         .depth_write_enable(false)
@@ -274,51 +251,58 @@ fn create_transparent_pipeline(
         .alpha_blend_op(vk::BlendOp::ADD)
         .build();
 
-    create_pipeline(
-        device,
+    create_pipeline::<ModelVertex>(
+        context,
         "model",
         swapchain_properties,
         msaa_samples,
         render_pass,
         layout,
-        vertex_input_info,
         depth_stencil_info,
         color_blend_attachment,
         Some(parent),
     )
 }
 
-fn create_pipeline(
-    device: &Device,
+fn create_pipeline<V: Vertex>(
+    context: &Rc<Context>,
     shader_name: &str,
     swapchain_properties: SwapchainProperties,
     msaa_samples: vk::SampleCountFlags,
     render_pass: vk::RenderPass,
     layout: vk::PipelineLayout,
-    vertex_input_info: vk::PipelineVertexInputStateCreateInfo,
     depth_stencil_info: vk::PipelineDepthStencilStateCreateInfo,
     color_blend_attachment: vk::PipelineColorBlendAttachmentState,
     parent: Option<vk::Pipeline>,
 ) -> vk::Pipeline {
-    let vertex_source = read_shader_from_file(format!("assets/shaders/{}.vert.spv", &shader_name));
-    let fragment_source =
-        read_shader_from_file(format!("assets/shaders/{}.frag.spv", &shader_name));
-
-    let vertex_shader_module = create_shader_module(device, &vertex_source);
-    let fragment_shader_module = create_shader_module(device, &fragment_source);
+    let vertex_shader_module = ShaderModule::new(
+        Rc::clone(context),
+        format!("assets/shaders/{}.vert.spv", &shader_name),
+    );
+    let fragment_shader_module = ShaderModule::new(
+        Rc::clone(context),
+        format!("assets/shaders/{}.frag.spv", &shader_name),
+    );
 
     let entry_point_name = CString::new("main").unwrap();
     let vertex_shader_state_info = vk::PipelineShaderStageCreateInfo::builder()
         .stage(vk::ShaderStageFlags::VERTEX)
-        .module(vertex_shader_module)
+        .module(vertex_shader_module.module())
         .name(&entry_point_name)
         .build();
     let fragment_shader_state_info = vk::PipelineShaderStageCreateInfo::builder()
         .stage(vk::ShaderStageFlags::FRAGMENT)
-        .module(fragment_shader_module)
+        .module(fragment_shader_module.module())
         .name(&entry_point_name)
         .build();
     let shader_states_infos = [vertex_shader_state_info, fragment_shader_state_info];
+
+    let bindings_descs = V::get_bindings_descriptions();
+    let attributes_descs = V::get_attributes_descriptions();
+    let vertex_input_info = vk::PipelineVertexInputStateCreateInfo::builder()
+        .vertex_binding_descriptions(&bindings_descs)
+        .vertex_attribute_descriptions(&attributes_descs)
+        .build();
 
     let input_assembly_info = vk::PipelineInputAssemblyStateCreateInfo::builder()
         .topology(vk::PrimitiveTopology::TRIANGLE_LIST)
@@ -395,26 +379,11 @@ fn create_pipeline(
     let pipeline_infos = [pipeline_info];
 
     let pipeline = unsafe {
-        device
+        context
+            .device()
             .create_graphics_pipelines(vk::PipelineCache::null(), &pipeline_infos, None)
             .unwrap()[0]
     };
 
-    unsafe {
-        device.destroy_shader_module(vertex_shader_module, None);
-        device.destroy_shader_module(fragment_shader_module, None);
-    };
-
     pipeline
-}
-
-fn read_shader_from_file<P: AsRef<std::path::Path>>(path: P) -> Vec<u32> {
-    log::debug!("Loading shader file {}", path.as_ref().to_str().unwrap());
-    let mut file = std::fs::File::open(path).unwrap();
-    ash::util::read_spv(&mut file).unwrap()
-}
-
-fn create_shader_module(device: &Device, code: &[u32]) -> vk::ShaderModule {
-    let create_info = vk::ShaderModuleCreateInfo::builder().code(code).build();
-    unsafe { device.create_shader_module(&create_info, None).unwrap() }
 }

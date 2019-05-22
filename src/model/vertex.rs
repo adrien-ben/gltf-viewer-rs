@@ -4,24 +4,24 @@ use std::{mem::size_of, rc::Rc};
 
 #[derive(Clone, Copy)]
 #[allow(dead_code)]
-pub struct Vertex {
+pub struct ModelVertex {
     position: [f32; 3],
     normals: [f32; 3],
     tex_coords: [f32; 2],
     tangents: [f32; 4],
 }
 
-impl Vertex {
-    pub fn get_bindings_descriptions() -> [vk::VertexInputBindingDescription; 1] {
-        [vk::VertexInputBindingDescription {
+impl Vertex for ModelVertex {
+    fn get_bindings_descriptions() -> Vec<vk::VertexInputBindingDescription> {
+        vec![vk::VertexInputBindingDescription {
             binding: 0,
-            stride: size_of::<Vertex>() as _,
+            stride: size_of::<ModelVertex>() as _,
             input_rate: vk::VertexInputRate::VERTEX,
         }]
     }
 
-    pub fn get_attributes_descriptions() -> [vk::VertexInputAttributeDescription; 4] {
-        [
+    fn get_attributes_descriptions() -> Vec<vk::VertexInputAttributeDescription> {
+        vec![
             vk::VertexInputAttributeDescription {
                 location: 0,
                 binding: 0,

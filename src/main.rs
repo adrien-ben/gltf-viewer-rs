@@ -10,9 +10,9 @@ mod pipelines;
 mod util;
 mod vulkan;
 
-use base::BaseApp;
+use self::{base::BaseApp, error::AppError};
 use clap::{App, Arg};
-use std::{error::Error, result::Result};
+use std::{error::Error, path::Path, result::Result};
 
 fn main() -> Result<(), Box<dyn Error>> {
     env_logger::init();
@@ -24,7 +24,11 @@ fn main() -> Result<(), Box<dyn Error>> {
         .value_of("config")
         .map_or(Ok(Default::default()), config::load_config)?;
 
-    let file_path = matches.value_of("file").unwrap();
+    let file_path = Path::new(matches.value_of("file").unwrap());
+    if !file_path.exists() {
+        Err(AppError::FileNotFound(format!("{}", file_path.display())))?
+    }
+
     BaseApp::new(config, file_path).run();
 
     Ok(())

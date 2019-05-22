@@ -3,6 +3,8 @@
 This project is a [glTF 2.0][0] viewer written in Rust. Rendering is done using the [Vulkan API][1]
 using [Ash][2]. It runs on Window, Linux and MacOS.
 
+![Screenshot](images/screenshot0.PNG "Screenshot")
+
 ## Features
 
 - [x] Mesh vertices and normals
@@ -17,9 +19,7 @@ using [Ash][2]. It runs on Window, Linux and MacOS.
     - [x] Mask
     - [x] Blend
   - [ ] Double sided surfaces
-- [ ] IBL
-  - [ ] Diffuse irradiance
-  - [ ] Specular
+- [x] IBL
 - [ ] Animations
   - [ ] Node animation
   - [ ] Skinning
@@ -65,6 +65,17 @@ You can provide a yaml configuration file with the `--config` (or `-c`). Check [
 RUST_LOG=gltf_viewer_rs=warn cargo run -- --config config.yml -- C:\\dev\\assets\\glTF-Sample-Models\\2.0\\Triangle\\glTF\\Triangle.gltf
 ```
 
+## Credits
+
+Most of the shader code for BRDF lookup and pre-filtered map generation come from the excellent [Sasha Willems' vulkan samples repository][3].
+
+Cubemap faces have been generated using [matheowis' HDRi to cubemap tool][4].
+
+HDRi textures have been downloaded from [hdriheaven][5].
+
 [0]: https://github.com/KhronosGroup/glTF
 [1]: https://www.khronos.org/vulkan/
 [2]: https://github.com/MaikKlein/ash
+[3]: https://github.com/SaschaWillems/Vulkan
+[4]: https://github.com/matheowis/HDRI-to-CubeMap
+[5]: https://hdrihaven.com/

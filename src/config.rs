@@ -2,10 +2,11 @@ use crate::error::*;
 use serde::Deserialize;
 use std::fs::File;
 
-#[derive(Deserialize, Copy, Clone)]
+#[derive(Deserialize, Clone)]
 pub struct Config {
     resolution: Resolution,
     msaa: Option<u32>,
+    env: Option<String>,
 }
 
 impl Config {
@@ -16,6 +17,10 @@ impl Config {
     pub fn msaa(&self) -> u32 {
         self.msaa.unwrap_or(1)
     }
+
+    pub fn env(&self) -> Option<String> {
+        self.env.as_ref().cloned()
+    }
 }
 
 impl Default for Config {
@@ -23,6 +28,7 @@ impl Default for Config {
         Config {
             msaa: Some(1),
             resolution: Default::default(),
+            env: None,
         }
     }
 }

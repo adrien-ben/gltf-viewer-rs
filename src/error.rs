@@ -3,6 +3,7 @@ use std::{error::Error, fmt};
 #[derive(Debug)]
 pub enum AppError {
     ConfigLoadError(String),
+    FileNotFound(String),
 }
 
 impl fmt::Display for AppError {
@@ -11,6 +12,7 @@ impl fmt::Display for AppError {
             AppError::ConfigLoadError(message) => {
                 write!(f, "Failed to load app configuration: {}", message)
             }
+            AppError::FileNotFound(file) => write!(f, "File not found: {}", file),
         }
     }
 }

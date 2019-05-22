@@ -3,7 +3,7 @@ use gltf::{
     texture::Info,
 };
 
-pub const MAX_TEXTURE_COUNT: u32 = 63; // MUST be the same in the fragment shager
+pub const MAX_TEXTURE_COUNT: u32 = 61; // MUST be the same in the fragment shager
 const NO_TEXTURE_ID: u8 = std::u8::MAX;
 
 #[derive(Clone, Copy)]

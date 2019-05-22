@@ -40,8 +40,10 @@ layout(push_constant) uniform Material {
     layout(offset = 112) float alphaCutoff;
 } material;
 
-layout(binding = 1) uniform sampler2D texSamplers[63];
-layout(binding = 2) uniform samplerCube cubemapSampler;
+layout(binding = 1) uniform sampler2D texSamplers[61]; // TODO: Use specialization
+layout(binding = 2) uniform samplerCube irradianceMapSampler;
+layout(binding = 3) uniform samplerCube preFilteredSampler;
+layout(binding = 4) uniform sampler2D brdfLookupSampler;
 
 layout(location = 0) out vec4 outColor;
 
@@ -55,6 +57,7 @@ const float PI = 3.14159;
 const uint NO_TEXTURE_ID = 255;
 const uint ALPHA_MODE_MASK = 1;
 const uint ALPHA_MODE_BLEND = 2;
+const float MAX_REFLECTION_LOD = 9.0; // last mip mips for 512 px res TODO: specializations ?
 
 TextureIds getTextureIds() {
     return TextureIds(
@@ -134,6 +137,10 @@ vec3 f(vec3 f0, vec3 v, vec3 h) {
     return f0 + (1.0 - f0) * pow(1.0 - max(dot(v, h), 0.0), 5.0);
 }
 
+vec3 f(vec3 f0, vec3 v, vec3 n, float roughness) {
+    return f0 + (max(vec3(1.0 - roughness), f0) - f0) * pow(1.0 - max(dot(v, n), 0.0), 5.0);
+}
+
 float vis(vec3 n, vec3 l, vec3 v, float a) {
     float aa = a * a;
     float nl = max(dot(n, l), 0.0);
@@ -173,6 +180,37 @@ vec3 computeColor(vec3 baseColor, float metallic, float roughness, vec3 n, vec3 
     return color;
 }
 
+vec3 prefilteredReflectionLinear(vec3 R, float roughness) {
+	float lod = roughness * MAX_REFLECTION_LOD;
+	float lodf = floor(lod);
+	float lodc = ceil(lod);
+	vec3 a = textureLod(preFilteredSampler, R, lodf).rgb;
+	vec3 b = textureLod(preFilteredSampler, R, lodc).rgb;
+	return mix(a, b, lod - lodf);
+}
+
+vec3 prefilteredReflection(vec3 R, float roughness) {
+	float lod = roughness * MAX_REFLECTION_LOD;
+	return textureLod(preFilteredSampler, R, lod).rgb;
+}
+
+vec3 computeIBL(vec3 baseColor, vec3 v, vec3 n, float metallic, float roughness) {
+    vec3 f0 = mix(DIELECTRIC_SPECULAR, baseColor, metallic);
+    vec3 f = f(f0, v, n, roughness);
+    vec3 kD = 1.0 - f;
+    kD *= 1.0 - metallic;
+
+    vec3 irradiance = texture(irradianceMapSampler, n).rgb;
+    vec3 diffuse = irradiance * baseColor.rgb;
+
+    vec3 r = normalize(reflect(-v, n));
+    vec3 reflection = prefilteredReflection(r, roughness);
+    vec2 envBRDF = texture(brdfLookupSampler, vec2(max(dot(n, v), 0.0), roughness)).rg;
+    vec3 specular = reflection * (f * envBRDF.x + envBRDF.y);
+
+    return kD * diffuse + specular;
+}
+
 void main() {
     TextureIds textureIds = getTextureIds();
 
@@ -190,18 +228,20 @@ void main() {
     vec3 v = normalize(cameraUBO.eye - oPositions);
 
     vec3 color = vec3(0.0);
-    for (int i = 0; i < 2; i++) {
-        vec3 light_dir = LIGHTS_DIR[i];
-        vec3 l = -normalize(light_dir);
-        vec3 h = normalize(l + v);
-        color += computeColor(baseColor.rgb, metallic, roughness, n, l, v, h);
-    }
+    // for (int i = 0; i < 2; i++) {
+    //     vec3 light_dir = LIGHTS_DIR[i];
+    //     vec3 l = -normalize(light_dir);
+    //     vec3 h = normalize(l + v);
+    //     color += computeColor(baseColor.rgb, metallic, roughness, n, l, v, h);
+    // }
 
-    color += emissive + occludeAmbientColor(baseColor.rgb*0.05, textureIds);
+    vec3 ambient = computeIBL(baseColor.rgb, v, n, metallic, roughness);
+
+    color += emissive + occludeAmbientColor(ambient, textureIds);
 
     color = color/(color + 1.0);
     color = pow(color, vec3(1.0/2.2));
-    outColor = vec4(color, alpha);    
+    outColor = vec4(color, alpha);
 
 #ifdef DEBUG_COLOR
     outColor = vec4(baseColor, 1.0);
