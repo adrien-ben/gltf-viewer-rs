@@ -37,10 +37,22 @@ fn get_next_rgba(pixels: &[u8], format: Format, index: usize) -> [u8; 4] {
             pixels[index * 3 + 2],
             std::u8::MAX,
         ],
+        Format::B8G8R8 => [
+            pixels[index * 3 + 2],
+            pixels[index * 3 + 1],
+            pixels[index * 3],
+            std::u8::MAX,
+        ],
         Format::R8G8B8A8 => [
             pixels[index * 4],
             pixels[index * 4 + 1],
             pixels[index * 4 + 2],
+            pixels[index * 4 + 3],
+        ],
+        Format::B8G8R8A8 =>[
+            pixels[index * 4 + 2],
+            pixels[index * 4 + 1],
+            pixels[index * 4],
             pixels[index * 4 + 3],
         ],
     }

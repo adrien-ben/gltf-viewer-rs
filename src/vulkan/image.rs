@@ -162,7 +162,7 @@ impl Image {
                         vk::PipelineStageFlags::TRANSFER,
                     ),
                     _ => panic!(
-                        "Unsupported layout transition({} => {}).",
+                        "Unsupported layout transition({:?} => {:?}).",
                         old_layout, new_layout
                     ),
                 };
@@ -252,7 +252,7 @@ impl Image {
             .contains(vk::FormatFeatureFlags::SAMPLED_IMAGE_FILTER_LINEAR)
         {
             panic!(
-                "Linear blitting is not supported for format {}.",
+                "Linear blitting is not supported for format {:?}.",
                 self.format
             )
         }

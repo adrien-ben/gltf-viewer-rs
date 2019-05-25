@@ -42,7 +42,7 @@ impl Swapchain {
         let image_count = properties.image_count;
 
         log::debug!(
-            "Creating swapchain.\n\tFormat: {}\n\tColorSpace: {}\n\tPresentMode: {}\n\tExtent: {:?}\n\tImageCount: {}",
+            "Creating swapchain.\n\tFormat: {:?}\n\tColorSpace: {:?}\n\tPresentMode: {:?}\n\tExtent: {:?}\n\tImageCount: {:?}",
             format.format,
             format.color_space,
             present_mode,

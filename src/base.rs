@@ -69,7 +69,7 @@ impl BaseApp {
             swapchain_support_details.get_ideal_swapchain_properties(resolution, config.vsync());
 
         let msaa_samples = context.get_max_usable_sample_count(config.msaa());
-        log::debug!("msaa: {} - preferred was {}", msaa_samples, config.msaa());
+        log::debug!("msaa: {:?} - preferred was {}", msaa_samples, config.msaa());
 
         let depth_format = Self::find_depth_format(&context);
 
