@@ -1,4 +1,4 @@
-use crate::{math::clamp, controls::*};
+use crate::{controls::*, math::clamp};
 use cgmath::{Matrix4, Point3};
 
 const MIN_ORBITAL_CAMERA_DISTANCE: f32 = 0.05;
@@ -22,11 +22,11 @@ impl Camera {
 }
 
 impl Camera {
-    pub fn update(&mut self, input: &InputState)  {
-        if input.is_left_clicked() && input.cursor_delta().is_some() {
-            let delta = input.cursor_delta().take().unwrap();
-            let theta = delta[0] as f32 * 0.2_f32.to_radians();
-            let phi = delta[1] as f32 * 0.2_f32.to_radians();
+    pub fn update(&mut self, input: &InputState) {
+        if input.is_left_clicked() {
+            let delta = input.cursor_delta();
+            let theta = delta[0] as f32 * (0.2_f32).to_radians();
+            let phi = delta[1] as f32 * (0.2_f32).to_radians();
             self.rotate(theta, phi);
         }
         if let Some(wheel_delta) = input.wheel_delta() {

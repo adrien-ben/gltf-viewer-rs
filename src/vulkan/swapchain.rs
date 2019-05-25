@@ -28,11 +28,13 @@ impl Swapchain {
         context: Rc<Context>,
         swapchain_support_details: SwapchainSupportDetails,
         dimensions: [u32; 2],
+        preferred_vsync: bool,
         color_texture: &Texture,
         depth_texture: &Texture,
         render_pass: vk::RenderPass,
     ) -> Self {
-        let properties = swapchain_support_details.get_ideal_swapchain_properties(dimensions);
+        let properties =
+            swapchain_support_details.get_ideal_swapchain_properties(dimensions, preferred_vsync);
 
         let format = properties.format;
         let present_mode = properties.present_mode;
@@ -259,9 +261,11 @@ impl SwapchainSupportDetails {
     pub fn get_ideal_swapchain_properties(
         &self,
         preferred_dimensions: [u32; 2],
+        preferred_vsync: bool,
     ) -> SwapchainProperties {
         let format = Self::choose_swapchain_surface_format(&self.formats);
-        let present_mode = Self::choose_swapchain_surface_present_mode(&self.present_modes);
+        let present_mode =
+            Self::choose_swapchain_surface_present_mode(&self.present_modes, preferred_vsync);
         let extent = Self::choose_swapchain_extent(self.capabilities, preferred_dimensions);
         let image_count = Self::choose_image_count(self.capabilities);
         SwapchainProperties {
@@ -301,8 +305,15 @@ impl SwapchainSupportDetails {
     /// If none is present it will fallback to IMMEDIATE.
     fn choose_swapchain_surface_present_mode(
         available_present_modes: &[vk::PresentModeKHR],
+        preferred_vsync: bool,
     ) -> vk::PresentModeKHR {
-        if available_present_modes.contains(&vk::PresentModeKHR::MAILBOX) {
+        if preferred_vsync && !available_present_modes.contains(&vk::PresentModeKHR::FIFO) {
+            log::warn!("Vsync was requested but FIFO present mode is not supported");
+        }
+
+        if preferred_vsync && available_present_modes.contains(&vk::PresentModeKHR::FIFO) {
+            vk::PresentModeKHR::FIFO
+        } else if available_present_modes.contains(&vk::PresentModeKHR::MAILBOX) {
             vk::PresentModeKHR::MAILBOX
         } else if available_present_modes.contains(&vk::PresentModeKHR::FIFO) {
             vk::PresentModeKHR::FIFO

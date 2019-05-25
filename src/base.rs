@@ -16,6 +16,7 @@ const MAX_FRAMES_IN_FLIGHT: u32 = 2;
 pub struct BaseApp {
     events_loop: EventsLoop,
     _window: Window,
+    config: Config,
     resize_dimensions: Option<[u32; 2]>,
 
     camera: Camera,
@@ -65,7 +66,7 @@ impl BaseApp {
             context.surface_khr(),
         );
         let swapchain_properties =
-            swapchain_support_details.get_ideal_swapchain_properties(resolution);
+            swapchain_support_details.get_ideal_swapchain_properties(resolution, config.vsync());
 
         let msaa_samples = context.get_max_usable_sample_count(config.msaa());
         log::debug!("msaa: {} - preferred was {}", msaa_samples, config.msaa());
@@ -122,6 +123,7 @@ impl BaseApp {
             Rc::clone(&context),
             swapchain_support_details,
             resolution,
+            config.vsync(),
             &color_texture,
             &depth_texture,
             render_pass,
@@ -143,6 +145,7 @@ impl BaseApp {
         Self {
             events_loop,
             _window: window,
+            config,
             resize_dimensions: None,
             camera: Default::default(),
             input_state: Default::default(),
@@ -1106,8 +1109,8 @@ impl BaseApp {
             self.context.surface(),
             self.context.surface_khr(),
         );
-        let swapchain_properties =
-            swapchain_support_details.get_ideal_swapchain_properties(dimensions);
+        let swapchain_properties = swapchain_support_details
+            .get_ideal_swapchain_properties(dimensions, self.config.vsync());
 
         let render_pass = Self::create_render_pass(
             device,
@@ -1139,6 +1142,7 @@ impl BaseApp {
             Rc::clone(&self.context),
             swapchain_support_details,
             dimensions,
+            self.config.vsync(),
             &color_texture,
             &depth_texture,
             render_pass,

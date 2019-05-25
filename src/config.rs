@@ -5,6 +5,7 @@ use std::fs::File;
 #[derive(Deserialize, Clone)]
 pub struct Config {
     resolution: Resolution,
+    vsync: Option<bool>,
     msaa: Option<u32>,
     env: Option<String>,
 }
@@ -12,6 +13,10 @@ pub struct Config {
 impl Config {
     pub fn resolution(&self) -> Resolution {
         self.resolution
+    }
+
+    pub fn vsync(&self) -> bool {
+        self.vsync.unwrap_or(false)
     }
 
     pub fn msaa(&self) -> u32 {
@@ -26,8 +31,9 @@ impl Config {
 impl Default for Config {
     fn default() -> Self {
         Config {
-            msaa: Some(1),
             resolution: Default::default(),
+            vsync: Some(false),
+            msaa: Some(1),
             env: None,
         }
     }

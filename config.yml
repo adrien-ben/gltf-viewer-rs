@@ -2,7 +2,11 @@ resolution:
   width: 1024
   height: 768
 
+# Enable vertical synchronization (if supported)
+vsync: true
+
 # 64, 32, 16, 8, 4, 2, 1. Optional(default = 1)
+# If the requested value is not supported it will drop until one is found.
 msaa: 64
 
 # Path to an HDRi file to use as environment map
