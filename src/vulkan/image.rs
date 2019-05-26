@@ -5,6 +5,38 @@ use ash::{
 };
 use std::rc::Rc;
 
+#[derive(Copy, Clone)]
+pub struct ImageParameters {
+    pub mem_properties: vk::MemoryPropertyFlags,
+    pub extent: vk::Extent2D,
+    pub layers: u32,
+    pub mip_levels: u32,
+    pub sample_count: vk::SampleCountFlags,
+    pub format: vk::Format,
+    pub tiling: vk::ImageTiling,
+    pub usage: vk::ImageUsageFlags,
+    pub create_flags: vk::ImageCreateFlags,
+}
+
+impl Default for ImageParameters {
+    fn default() -> Self {
+        Self {
+            mem_properties: vk::MemoryPropertyFlags::empty(),
+            extent: vk::Extent2D {
+                width: 0,
+                height: 0,
+            },
+            layers: 1,
+            mip_levels: 1,
+            sample_count: vk::SampleCountFlags::TYPE_1,
+            format: vk::Format::R8G8B8A8_UNORM,
+            tiling: vk::ImageTiling::OPTIMAL,
+            usage: vk::ImageUsageFlags::SAMPLED,
+            create_flags: vk::ImageCreateFlags::empty(),
+        }
+    }
+}
+
 pub struct Image {
     context: Rc<Context>,
     pub image: vk::Image,
@@ -33,35 +65,23 @@ impl Image {
         }
     }
 
-    pub fn create(
-        context: Rc<Context>,
-        mem_properties: vk::MemoryPropertyFlags,
-        extent: vk::Extent2D,
-        layers: u32,
-        mip_levels: u32,
-        sample_count: vk::SampleCountFlags,
-        format: vk::Format,
-        tiling: vk::ImageTiling,
-        usage: vk::ImageUsageFlags,
-        create_flags: vk::ImageCreateFlags,
-    ) -> Self {
+    pub fn create(context: Rc<Context>, parameters: ImageParameters) -> Self {
         let image_info = vk::ImageCreateInfo::builder()
             .image_type(vk::ImageType::TYPE_2D)
             .extent(vk::Extent3D {
-                width: extent.width,
-                height: extent.height,
+                width: parameters.extent.width,
+                height: parameters.extent.height,
                 depth: 1,
             })
-            .mip_levels(mip_levels)
-            .array_layers(layers)
-            .format(format)
-            .tiling(tiling)
+            .mip_levels(parameters.mip_levels)
+            .array_layers(parameters.layers)
+            .format(parameters.format)
+            .tiling(parameters.tiling)
             .initial_layout(vk::ImageLayout::UNDEFINED)
-            .usage(usage)
+            .usage(parameters.usage)
             .sharing_mode(vk::SharingMode::EXCLUSIVE)
-            .samples(sample_count)
-            .flags(create_flags)
-            .build();
+            .samples(parameters.sample_count)
+            .flags(parameters.create_flags);
 
         let device = context.device();
         let image = unsafe { device.create_image(&image_info, None).unwrap() };
@@ -69,20 +89,26 @@ impl Image {
         let mem_type_index = find_memory_type(
             mem_requirements,
             context.get_mem_properties(),
-            mem_properties,
+            parameters.mem_properties,
         );
 
         let alloc_info = vk::MemoryAllocateInfo::builder()
             .allocation_size(mem_requirements.size)
-            .memory_type_index(mem_type_index)
-            .build();
+            .memory_type_index(mem_type_index);
         let memory = unsafe {
             let mem = device.allocate_memory(&alloc_info, None).unwrap();
             device.bind_image_memory(image, mem, 0).unwrap();
             mem
         };
 
-        Image::new(context, image, memory, format, mip_levels, layers)
+        Image::new(
+            context,
+            image,
+            memory,
+            parameters.format,
+            parameters.mip_levels,
+            parameters.layers,
+        )
     }
 }
 
@@ -424,8 +450,7 @@ pub fn create_image_view(
             level_count: mip_levels,
             base_array_layer: 0,
             layer_count: layers,
-        })
-        .build();
+        });
 
     unsafe { device.create_image_view(&create_info, None).unwrap() }
 }

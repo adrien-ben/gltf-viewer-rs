@@ -2,7 +2,8 @@ use crate::{
     math::*,
     util::*,
     vulkan::{
-        create_device_local_buffer_with_data, Buffer, Context, ShaderModule, Texture, Vertex,
+        create_device_local_buffer_with_data, Buffer, Context, Descriptors, ShaderModule, Texture,
+        Vertex,
     },
 };
 use ash::{version::DeviceV1_0, vk};
@@ -253,123 +254,13 @@ fn create_cubemap_from_equirectangular_texture<P: AsRef<Path>>(
 
     let skybox_model = SkyboxModel::new(context);
 
-    let renderpass = {
-        let attachments_descs = [vk::AttachmentDescription::builder()
-            .format(vk::Format::R32G32B32A32_SFLOAT)
-            .samples(vk::SampleCountFlags::TYPE_1)
-            .load_op(vk::AttachmentLoadOp::CLEAR)
-            .store_op(vk::AttachmentStoreOp::STORE)
-            .initial_layout(vk::ImageLayout::UNDEFINED)
-            .final_layout(vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL)
-            .build()];
+    let renderpass = create_renderpass(context, vk::Format::R32G32B32A32_SFLOAT);
 
-        let color_attachment_ref = [vk::AttachmentReference::builder()
-            .attachment(0)
-            .layout(vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL)
-            .build()];
-
-        let subpass_descs = [vk::SubpassDescription::builder()
-            .pipeline_bind_point(vk::PipelineBindPoint::GRAPHICS)
-            .color_attachments(&color_attachment_ref)
-            .build()];
-
-        let subpass_deps = [vk::SubpassDependency::builder()
-            .src_subpass(vk::SUBPASS_EXTERNAL)
-            .src_stage_mask(vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT)
-            .src_access_mask(vk::AccessFlags::empty())
-            .dst_subpass(0)
-            .dst_stage_mask(vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT)
-            .dst_access_mask(
-                vk::AccessFlags::COLOR_ATTACHMENT_READ | vk::AccessFlags::COLOR_ATTACHMENT_WRITE,
-            )
-            .build()];
-
-        let renderpass_info = vk::RenderPassCreateInfo::builder()
-            .attachments(&attachments_descs)
-            .subpasses(&subpass_descs)
-            .dependencies(&subpass_deps)
-            .build();
-
-        unsafe { device.create_render_pass(&renderpass_info, None).unwrap() }
-    };
-
-    let (descriptor_layout, descriptor_pool, descriptor_sets) = {
-        let descriptor_layout = {
-            let bindings = [vk::DescriptorSetLayoutBinding::builder()
-                .binding(0)
-                .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
-                .descriptor_count(1)
-                .stage_flags(vk::ShaderStageFlags::FRAGMENT)
-                .build()];
-
-            let layout_info = vk::DescriptorSetLayoutCreateInfo::builder()
-                .bindings(&bindings)
-                .build();
-
-            unsafe {
-                device
-                    .create_descriptor_set_layout(&layout_info, None)
-                    .unwrap()
-            }
-        };
-
-        let descriptor_pool = {
-            let pool_sizes = [vk::DescriptorPoolSize {
-                ty: vk::DescriptorType::COMBINED_IMAGE_SAMPLER,
-                descriptor_count: 1,
-            }];
-
-            let create_info = vk::DescriptorPoolCreateInfo::builder()
-                .pool_sizes(&pool_sizes)
-                .max_sets(1)
-                .build();
-
-            unsafe { device.create_descriptor_pool(&create_info, None).unwrap() }
-        };
-
-        let descriptor_sets = {
-            let layouts = [descriptor_layout];
-
-            let allocate_info = vk::DescriptorSetAllocateInfo::builder()
-                .descriptor_pool(descriptor_pool)
-                .set_layouts(&layouts)
-                .build();
-
-            let sets = unsafe {
-                context
-                    .device()
-                    .allocate_descriptor_sets(&allocate_info)
-                    .unwrap()
-            };
-
-            let cubemap_info = [vk::DescriptorImageInfo::builder()
-                .image_layout(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL)
-                .image_view(texture.view)
-                .sampler(texture.sampler.unwrap())
-                .build()];
-
-            let descriptor_writes = [vk::WriteDescriptorSet::builder()
-                .dst_set(sets[0])
-                .dst_binding(0)
-                .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
-                .image_info(&cubemap_info)
-                .build()];
-
-            unsafe {
-                context
-                    .device()
-                    .update_descriptor_sets(&descriptor_writes, &[])
-            }
-
-            sets
-        };
-
-        (descriptor_layout, descriptor_pool, descriptor_sets)
-    };
+    let descriptors = create_descriptors(context, &texture);
 
     let (pipeline_layout, pipeline) = {
         let layout = {
-            let layouts = [descriptor_layout];
+            let layouts = [descriptors.layout()];
             let push_constant_range = [vk::PushConstantRange {
                 stage_flags: vk::ShaderStageFlags::VERTEX,
                 offset: 0,
@@ -377,43 +268,12 @@ fn create_cubemap_from_equirectangular_texture<P: AsRef<Path>>(
             }];
             let layout_info = vk::PipelineLayoutCreateInfo::builder()
                 .set_layouts(&layouts)
-                .push_constant_ranges(&push_constant_range)
-                .build();
+                .push_constant_ranges(&push_constant_range);
 
             unsafe { device.create_pipeline_layout(&layout_info, None).unwrap() }
         };
 
         let pipeline = {
-            let vertex_shader_module =
-                ShaderModule::new(Rc::clone(context), "assets/shaders/cubemap.vert.spv");
-            let fragment_shader_module =
-                ShaderModule::new(Rc::clone(context), "assets/shaders/spherical.frag.spv");
-
-            let entry_point_name = CString::new("main").unwrap();
-            let vertex_shader_state_info = vk::PipelineShaderStageCreateInfo::builder()
-                .stage(vk::ShaderStageFlags::VERTEX)
-                .module(vertex_shader_module.module())
-                .name(&entry_point_name)
-                .build();
-            let fragment_shader_state_info = vk::PipelineShaderStageCreateInfo::builder()
-                .stage(vk::ShaderStageFlags::FRAGMENT)
-                .module(fragment_shader_module.module())
-                .name(&entry_point_name)
-                .build();
-            let shader_states_infos = [vertex_shader_state_info, fragment_shader_state_info];
-
-            let bindings_descs = SkyboxVertex::get_bindings_descriptions();
-            let attributes_descs = SkyboxVertex::get_attributes_descriptions();
-            let vertex_input_info = vk::PipelineVertexInputStateCreateInfo::builder()
-                .vertex_binding_descriptions(&bindings_descs)
-                .vertex_attribute_descriptions(&attributes_descs)
-                .build();
-
-            let input_assembly_info = vk::PipelineInputAssemblyStateCreateInfo::builder()
-                .topology(vk::PrimitiveTopology::TRIANGLE_LIST)
-                .primitive_restart_enable(false)
-                .build();
-
             let viewport = vk::Viewport {
                 x: 0.0,
                 y: 0.0,
@@ -434,8 +294,7 @@ fn create_cubemap_from_equirectangular_texture<P: AsRef<Path>>(
             let scissors = [scissor];
             let viewport_info = vk::PipelineViewportStateCreateInfo::builder()
                 .viewports(&viewports)
-                .scissors(&scissors)
-                .build();
+                .scissors(&scissors);
 
             let rasterizer_info = vk::PipelineRasterizationStateCreateInfo::builder()
                 .depth_clamp_enable(false)
@@ -447,57 +306,18 @@ fn create_cubemap_from_equirectangular_texture<P: AsRef<Path>>(
                 .depth_bias_enable(false)
                 .depth_bias_constant_factor(0.0)
                 .depth_bias_clamp(0.0)
-                .depth_bias_slope_factor(0.0)
-                .build();
+                .depth_bias_slope_factor(0.0);
 
-            let multisampling_info = vk::PipelineMultisampleStateCreateInfo::builder()
-                .sample_shading_enable(false)
-                .rasterization_samples(vk::SampleCountFlags::TYPE_1)
-                .min_sample_shading(1.0)
-                .alpha_to_coverage_enable(false)
-                .alpha_to_one_enable(false)
-                .build();
-
-            let color_blend_attachment = vk::PipelineColorBlendAttachmentState::builder()
-                .color_write_mask(vk::ColorComponentFlags::all())
-                .blend_enable(false)
-                .src_color_blend_factor(vk::BlendFactor::ONE)
-                .dst_color_blend_factor(vk::BlendFactor::ZERO)
-                .color_blend_op(vk::BlendOp::ADD)
-                .src_alpha_blend_factor(vk::BlendFactor::ONE)
-                .dst_alpha_blend_factor(vk::BlendFactor::ZERO)
-                .alpha_blend_op(vk::BlendOp::ADD)
-                .build();
-            let color_blend_attachments = [color_blend_attachment];
-
-            let color_blending_info = vk::PipelineColorBlendStateCreateInfo::builder()
-                .logic_op_enable(false)
-                .logic_op(vk::LogicOp::COPY)
-                .attachments(&color_blend_attachments)
-                .blend_constants([0.0, 0.0, 0.0, 0.0])
-                .build();
-
-            let pipeline_info = vk::GraphicsPipelineCreateInfo::builder()
-                .stages(&shader_states_infos)
-                .vertex_input_state(&vertex_input_info)
-                .input_assembly_state(&input_assembly_info)
-                .viewport_state(&viewport_info)
-                .rasterization_state(&rasterizer_info)
-                .multisample_state(&multisampling_info)
-                .color_blend_state(&color_blending_info)
-                .layout(layout)
-                .render_pass(renderpass)
-                .subpass(0)
-                .build();
-            let pipeline_infos = [pipeline_info];
-
-            let pipeline = unsafe {
-                device
-                    .create_graphics_pipelines(vk::PipelineCache::null(), &pipeline_infos, None)
-                    .unwrap()[0]
-            };
-
-            pipeline
+            create_pipeline::<SkyboxVertex>(
+                context,
+                "cubemap",
+                "spherical",
+                &viewport_info,
+                &rasterizer_info,
+                None,
+                layout,
+                renderpass,
+            )
         };
 
         (layout, pipeline)
@@ -515,8 +335,7 @@ fn create_cubemap_from_equirectangular_texture<P: AsRef<Path>>(
                     level_count: 1,
                     base_array_layer: i,
                     layer_count: 1,
-                })
-                .build();
+                });
 
             unsafe { device.create_image_view(&create_info, None).unwrap() }
         })
@@ -531,8 +350,7 @@ fn create_cubemap_from_equirectangular_texture<P: AsRef<Path>>(
                 .attachments(&attachments)
                 .width(size)
                 .height(size)
-                .layers(1)
-                .build();
+                .layers(1);
             unsafe { device.create_framebuffer(&create_info, None).unwrap() }
         })
         .collect::<Vec<_>>();
@@ -569,8 +387,7 @@ fn create_cubemap_from_equirectangular_texture<P: AsRef<Path>>(
                             height: size,
                         },
                     })
-                    .clear_values(&clear_values)
-                    .build();
+                    .clear_values(&clear_values);
 
                 unsafe {
                     device.cmd_begin_render_pass(
@@ -590,7 +407,7 @@ fn create_cubemap_from_equirectangular_texture<P: AsRef<Path>>(
                         vk::PipelineBindPoint::GRAPHICS,
                         pipeline_layout,
                         0,
-                        &descriptor_sets[0..=0],
+                        &descriptors.sets()[0..=0],
                         &[],
                     )
                 };
@@ -655,8 +472,6 @@ fn create_cubemap_from_equirectangular_texture<P: AsRef<Path>>(
             .for_each(|fb| device.destroy_framebuffer(*fb, None));
         device.destroy_pipeline(pipeline, None);
         device.destroy_pipeline_layout(pipeline_layout, None);
-        device.destroy_descriptor_set_layout(descriptor_layout, None);
-        device.destroy_descriptor_pool(descriptor_pool, None);
         device.destroy_render_pass(renderpass, None);
     }
 
@@ -677,123 +492,13 @@ fn create_irradiance_map(context: &Rc<Context>, cubemap: &Texture, size: u32) ->
 
     let skybox_model = SkyboxModel::new(context);
 
-    let renderpass = {
-        let attachments_descs = [vk::AttachmentDescription::builder()
-            .format(vk::Format::R32G32B32A32_SFLOAT)
-            .samples(vk::SampleCountFlags::TYPE_1)
-            .load_op(vk::AttachmentLoadOp::CLEAR)
-            .store_op(vk::AttachmentStoreOp::STORE)
-            .initial_layout(vk::ImageLayout::UNDEFINED)
-            .final_layout(vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL)
-            .build()];
+    let renderpass = create_renderpass(context, vk::Format::R32G32B32A32_SFLOAT);
 
-        let color_attachment_ref = [vk::AttachmentReference::builder()
-            .attachment(0)
-            .layout(vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL)
-            .build()];
-
-        let subpass_descs = [vk::SubpassDescription::builder()
-            .pipeline_bind_point(vk::PipelineBindPoint::GRAPHICS)
-            .color_attachments(&color_attachment_ref)
-            .build()];
-
-        let subpass_deps = [vk::SubpassDependency::builder()
-            .src_subpass(vk::SUBPASS_EXTERNAL)
-            .src_stage_mask(vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT)
-            .src_access_mask(vk::AccessFlags::empty())
-            .dst_subpass(0)
-            .dst_stage_mask(vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT)
-            .dst_access_mask(
-                vk::AccessFlags::COLOR_ATTACHMENT_READ | vk::AccessFlags::COLOR_ATTACHMENT_WRITE,
-            )
-            .build()];
-
-        let renderpass_info = vk::RenderPassCreateInfo::builder()
-            .attachments(&attachments_descs)
-            .subpasses(&subpass_descs)
-            .dependencies(&subpass_deps)
-            .build();
-
-        unsafe { device.create_render_pass(&renderpass_info, None).unwrap() }
-    };
-
-    let (descriptor_layout, descriptor_pool, descriptor_sets) = {
-        let descriptor_layout = {
-            let bindings = [vk::DescriptorSetLayoutBinding::builder()
-                .binding(0)
-                .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
-                .descriptor_count(1)
-                .stage_flags(vk::ShaderStageFlags::FRAGMENT)
-                .build()];
-
-            let layout_info = vk::DescriptorSetLayoutCreateInfo::builder()
-                .bindings(&bindings)
-                .build();
-
-            unsafe {
-                device
-                    .create_descriptor_set_layout(&layout_info, None)
-                    .unwrap()
-            }
-        };
-
-        let descriptor_pool = {
-            let pool_sizes = [vk::DescriptorPoolSize {
-                ty: vk::DescriptorType::COMBINED_IMAGE_SAMPLER,
-                descriptor_count: 1,
-            }];
-
-            let create_info = vk::DescriptorPoolCreateInfo::builder()
-                .pool_sizes(&pool_sizes)
-                .max_sets(1)
-                .build();
-
-            unsafe { device.create_descriptor_pool(&create_info, None).unwrap() }
-        };
-
-        let descriptor_sets = {
-            let layouts = [descriptor_layout];
-
-            let allocate_info = vk::DescriptorSetAllocateInfo::builder()
-                .descriptor_pool(descriptor_pool)
-                .set_layouts(&layouts)
-                .build();
-
-            let sets = unsafe {
-                context
-                    .device()
-                    .allocate_descriptor_sets(&allocate_info)
-                    .unwrap()
-            };
-
-            let cubemap_info = [vk::DescriptorImageInfo::builder()
-                .image_layout(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL)
-                .image_view(cubemap.view)
-                .sampler(cubemap.sampler.unwrap())
-                .build()];
-
-            let descriptor_writes = [vk::WriteDescriptorSet::builder()
-                .dst_set(sets[0])
-                .dst_binding(0)
-                .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
-                .image_info(&cubemap_info)
-                .build()];
-
-            unsafe {
-                context
-                    .device()
-                    .update_descriptor_sets(&descriptor_writes, &[])
-            }
-
-            sets
-        };
-
-        (descriptor_layout, descriptor_pool, descriptor_sets)
-    };
+    let descriptors = create_descriptors(context, &cubemap);
 
     let (pipeline_layout, pipeline) = {
         let layout = {
-            let layouts = [descriptor_layout];
+            let layouts = [descriptors.layout()];
             let push_constant_range = [vk::PushConstantRange {
                 stage_flags: vk::ShaderStageFlags::VERTEX,
                 offset: 0,
@@ -801,43 +506,12 @@ fn create_irradiance_map(context: &Rc<Context>, cubemap: &Texture, size: u32) ->
             }];
             let layout_info = vk::PipelineLayoutCreateInfo::builder()
                 .set_layouts(&layouts)
-                .push_constant_ranges(&push_constant_range)
-                .build();
+                .push_constant_ranges(&push_constant_range);
 
             unsafe { device.create_pipeline_layout(&layout_info, None).unwrap() }
         };
 
         let pipeline = {
-            let vertex_shader_module =
-                ShaderModule::new(Rc::clone(context), "assets/shaders/cubemap.vert.spv");
-            let fragment_shader_module =
-                ShaderModule::new(Rc::clone(context), "assets/shaders/irradiance.frag.spv");
-
-            let entry_point_name = CString::new("main").unwrap();
-            let vertex_shader_state_info = vk::PipelineShaderStageCreateInfo::builder()
-                .stage(vk::ShaderStageFlags::VERTEX)
-                .module(vertex_shader_module.module())
-                .name(&entry_point_name)
-                .build();
-            let fragment_shader_state_info = vk::PipelineShaderStageCreateInfo::builder()
-                .stage(vk::ShaderStageFlags::FRAGMENT)
-                .module(fragment_shader_module.module())
-                .name(&entry_point_name)
-                .build();
-            let shader_states_infos = [vertex_shader_state_info, fragment_shader_state_info];
-
-            let bindings_descs = SkyboxVertex::get_bindings_descriptions();
-            let attributes_descs = SkyboxVertex::get_attributes_descriptions();
-            let vertex_input_info = vk::PipelineVertexInputStateCreateInfo::builder()
-                .vertex_binding_descriptions(&bindings_descs)
-                .vertex_attribute_descriptions(&attributes_descs)
-                .build();
-
-            let input_assembly_info = vk::PipelineInputAssemblyStateCreateInfo::builder()
-                .topology(vk::PrimitiveTopology::TRIANGLE_LIST)
-                .primitive_restart_enable(false)
-                .build();
-
             let viewport = vk::Viewport {
                 x: 0.0,
                 y: 0.0,
@@ -858,8 +532,7 @@ fn create_irradiance_map(context: &Rc<Context>, cubemap: &Texture, size: u32) ->
             let scissors = [scissor];
             let viewport_info = vk::PipelineViewportStateCreateInfo::builder()
                 .viewports(&viewports)
-                .scissors(&scissors)
-                .build();
+                .scissors(&scissors);
 
             let rasterizer_info = vk::PipelineRasterizationStateCreateInfo::builder()
                 .depth_clamp_enable(false)
@@ -871,57 +544,18 @@ fn create_irradiance_map(context: &Rc<Context>, cubemap: &Texture, size: u32) ->
                 .depth_bias_enable(false)
                 .depth_bias_constant_factor(0.0)
                 .depth_bias_clamp(0.0)
-                .depth_bias_slope_factor(0.0)
-                .build();
+                .depth_bias_slope_factor(0.0);
 
-            let multisampling_info = vk::PipelineMultisampleStateCreateInfo::builder()
-                .sample_shading_enable(false)
-                .rasterization_samples(vk::SampleCountFlags::TYPE_1)
-                .min_sample_shading(1.0)
-                .alpha_to_coverage_enable(false)
-                .alpha_to_one_enable(false)
-                .build();
-
-            let color_blend_attachment = vk::PipelineColorBlendAttachmentState::builder()
-                .color_write_mask(vk::ColorComponentFlags::all())
-                .blend_enable(false)
-                .src_color_blend_factor(vk::BlendFactor::ONE)
-                .dst_color_blend_factor(vk::BlendFactor::ZERO)
-                .color_blend_op(vk::BlendOp::ADD)
-                .src_alpha_blend_factor(vk::BlendFactor::ONE)
-                .dst_alpha_blend_factor(vk::BlendFactor::ZERO)
-                .alpha_blend_op(vk::BlendOp::ADD)
-                .build();
-            let color_blend_attachments = [color_blend_attachment];
-
-            let color_blending_info = vk::PipelineColorBlendStateCreateInfo::builder()
-                .logic_op_enable(false)
-                .logic_op(vk::LogicOp::COPY)
-                .attachments(&color_blend_attachments)
-                .blend_constants([0.0, 0.0, 0.0, 0.0])
-                .build();
-
-            let pipeline_info = vk::GraphicsPipelineCreateInfo::builder()
-                .stages(&shader_states_infos)
-                .vertex_input_state(&vertex_input_info)
-                .input_assembly_state(&input_assembly_info)
-                .viewport_state(&viewport_info)
-                .rasterization_state(&rasterizer_info)
-                .multisample_state(&multisampling_info)
-                .color_blend_state(&color_blending_info)
-                .layout(layout)
-                .render_pass(renderpass)
-                .subpass(0)
-                .build();
-            let pipeline_infos = [pipeline_info];
-
-            let pipeline = unsafe {
-                device
-                    .create_graphics_pipelines(vk::PipelineCache::null(), &pipeline_infos, None)
-                    .unwrap()[0]
-            };
-
-            pipeline
+            create_pipeline::<SkyboxVertex>(
+                context,
+                "cubemap",
+                "irradiance",
+                &viewport_info,
+                &rasterizer_info,
+                None,
+                layout,
+                renderpass,
+            )
         };
 
         (layout, pipeline)
@@ -942,8 +576,7 @@ fn create_irradiance_map(context: &Rc<Context>, cubemap: &Texture, size: u32) ->
                     level_count: 1,
                     base_array_layer: i,
                     layer_count: 1,
-                })
-                .build();
+                });
 
             unsafe { device.create_image_view(&create_info, None).unwrap() }
         })
@@ -958,8 +591,7 @@ fn create_irradiance_map(context: &Rc<Context>, cubemap: &Texture, size: u32) ->
                 .attachments(&attachments)
                 .width(size)
                 .height(size)
-                .layers(1)
-                .build();
+                .layers(1);
             unsafe { device.create_framebuffer(&create_info, None).unwrap() }
         })
         .collect::<Vec<_>>();
@@ -996,8 +628,7 @@ fn create_irradiance_map(context: &Rc<Context>, cubemap: &Texture, size: u32) ->
                             height: size,
                         },
                     })
-                    .clear_values(&clear_values)
-                    .build();
+                    .clear_values(&clear_values);
 
                 unsafe {
                     device.cmd_begin_render_pass(
@@ -1017,7 +648,7 @@ fn create_irradiance_map(context: &Rc<Context>, cubemap: &Texture, size: u32) ->
                         vk::PipelineBindPoint::GRAPHICS,
                         pipeline_layout,
                         0,
-                        &descriptor_sets[0..=0],
+                        &descriptors.sets()[0..=0],
                         &[],
                     )
                 };
@@ -1077,8 +708,6 @@ fn create_irradiance_map(context: &Rc<Context>, cubemap: &Texture, size: u32) ->
             .for_each(|fb| device.destroy_framebuffer(*fb, None));
         device.destroy_pipeline(pipeline, None);
         device.destroy_pipeline_layout(pipeline_layout, None);
-        device.destroy_descriptor_set_layout(descriptor_layout, None);
-        device.destroy_descriptor_pool(descriptor_pool, None);
         device.destroy_render_pass(renderpass, None);
     }
 
@@ -1098,123 +727,13 @@ fn create_pre_filtered_map(context: &Rc<Context>, cubemap: &Texture, size: u32) 
 
     let max_mip_levels = (size as f32).log2().floor() as u32 + 1;
 
-    let renderpass = {
-        let attachments_descs = [vk::AttachmentDescription::builder()
-            .format(vk::Format::R32G32B32A32_SFLOAT)
-            .samples(vk::SampleCountFlags::TYPE_1)
-            .load_op(vk::AttachmentLoadOp::CLEAR)
-            .store_op(vk::AttachmentStoreOp::STORE)
-            .initial_layout(vk::ImageLayout::UNDEFINED)
-            .final_layout(vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL)
-            .build()];
+    let renderpass = create_renderpass(context, vk::Format::R32G32B32A32_SFLOAT);
 
-        let color_attachment_ref = [vk::AttachmentReference::builder()
-            .attachment(0)
-            .layout(vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL)
-            .build()];
-
-        let subpass_descs = [vk::SubpassDescription::builder()
-            .pipeline_bind_point(vk::PipelineBindPoint::GRAPHICS)
-            .color_attachments(&color_attachment_ref)
-            .build()];
-
-        let subpass_deps = [vk::SubpassDependency::builder()
-            .src_subpass(vk::SUBPASS_EXTERNAL)
-            .src_stage_mask(vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT)
-            .src_access_mask(vk::AccessFlags::empty())
-            .dst_subpass(0)
-            .dst_stage_mask(vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT)
-            .dst_access_mask(
-                vk::AccessFlags::COLOR_ATTACHMENT_READ | vk::AccessFlags::COLOR_ATTACHMENT_WRITE,
-            )
-            .build()];
-
-        let renderpass_info = vk::RenderPassCreateInfo::builder()
-            .attachments(&attachments_descs)
-            .subpasses(&subpass_descs)
-            .dependencies(&subpass_deps)
-            .build();
-
-        unsafe { device.create_render_pass(&renderpass_info, None).unwrap() }
-    };
-
-    let (descriptor_layout, descriptor_pool, descriptor_sets) = {
-        let descriptor_layout = {
-            let bindings = [vk::DescriptorSetLayoutBinding::builder()
-                .binding(0)
-                .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
-                .descriptor_count(1)
-                .stage_flags(vk::ShaderStageFlags::FRAGMENT)
-                .build()];
-
-            let layout_info = vk::DescriptorSetLayoutCreateInfo::builder()
-                .bindings(&bindings)
-                .build();
-
-            unsafe {
-                device
-                    .create_descriptor_set_layout(&layout_info, None)
-                    .unwrap()
-            }
-        };
-
-        let descriptor_pool = {
-            let pool_sizes = [vk::DescriptorPoolSize {
-                ty: vk::DescriptorType::COMBINED_IMAGE_SAMPLER,
-                descriptor_count: 1,
-            }];
-
-            let create_info = vk::DescriptorPoolCreateInfo::builder()
-                .pool_sizes(&pool_sizes)
-                .max_sets(1)
-                .build();
-
-            unsafe { device.create_descriptor_pool(&create_info, None).unwrap() }
-        };
-
-        let descriptor_sets = {
-            let layouts = [descriptor_layout];
-
-            let allocate_info = vk::DescriptorSetAllocateInfo::builder()
-                .descriptor_pool(descriptor_pool)
-                .set_layouts(&layouts)
-                .build();
-
-            let sets = unsafe {
-                context
-                    .device()
-                    .allocate_descriptor_sets(&allocate_info)
-                    .unwrap()
-            };
-
-            let cubemap_info = [vk::DescriptorImageInfo::builder()
-                .image_layout(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL)
-                .image_view(cubemap.view)
-                .sampler(cubemap.sampler.unwrap())
-                .build()];
-
-            let descriptor_writes = [vk::WriteDescriptorSet::builder()
-                .dst_set(sets[0])
-                .dst_binding(0)
-                .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
-                .image_info(&cubemap_info)
-                .build()];
-
-            unsafe {
-                context
-                    .device()
-                    .update_descriptor_sets(&descriptor_writes, &[])
-            }
-
-            sets
-        };
-
-        (descriptor_layout, descriptor_pool, descriptor_sets)
-    };
+    let descriptors = create_descriptors(context, &cubemap);
 
     let (pipeline_layout, pipeline) = {
         let layout = {
-            let layouts = [descriptor_layout];
+            let layouts = [descriptors.layout()];
             let push_constant_range = [
                 vk::PushConstantRange {
                     stage_flags: vk::ShaderStageFlags::VERTEX,
@@ -1229,47 +748,15 @@ fn create_pre_filtered_map(context: &Rc<Context>, cubemap: &Texture, size: u32) 
             ];
             let layout_info = vk::PipelineLayoutCreateInfo::builder()
                 .set_layouts(&layouts)
-                .push_constant_ranges(&push_constant_range)
-                .build();
+                .push_constant_ranges(&push_constant_range);
 
             unsafe { device.create_pipeline_layout(&layout_info, None).unwrap() }
         };
 
         let pipeline = {
-            let vertex_shader_module =
-                ShaderModule::new(Rc::clone(context), "assets/shaders/cubemap.vert.spv");
-            let fragment_shader_module =
-                ShaderModule::new(Rc::clone(context), "assets/shaders/pre_filtered.frag.spv");
-
-            let entry_point_name = CString::new("main").unwrap();
-            let vertex_shader_state_info = vk::PipelineShaderStageCreateInfo::builder()
-                .stage(vk::ShaderStageFlags::VERTEX)
-                .module(vertex_shader_module.module())
-                .name(&entry_point_name)
-                .build();
-            let fragment_shader_state_info = vk::PipelineShaderStageCreateInfo::builder()
-                .stage(vk::ShaderStageFlags::FRAGMENT)
-                .module(fragment_shader_module.module())
-                .name(&entry_point_name)
-                .build();
-            let shader_states_infos = [vertex_shader_state_info, fragment_shader_state_info];
-
-            let bindings_descs = SkyboxVertex::get_bindings_descriptions();
-            let attributes_descs = SkyboxVertex::get_attributes_descriptions();
-            let vertex_input_info = vk::PipelineVertexInputStateCreateInfo::builder()
-                .vertex_binding_descriptions(&bindings_descs)
-                .vertex_attribute_descriptions(&attributes_descs)
-                .build();
-
-            let input_assembly_info = vk::PipelineInputAssemblyStateCreateInfo::builder()
-                .topology(vk::PrimitiveTopology::TRIANGLE_LIST)
-                .primitive_restart_enable(false)
-                .build();
-
             let viewport_info = vk::PipelineViewportStateCreateInfo::builder()
                 .viewport_count(1)
-                .scissor_count(1)
-                .build();
+                .scissor_count(1);
 
             let rasterizer_info = vk::PipelineRasterizationStateCreateInfo::builder()
                 .depth_clamp_enable(false)
@@ -1281,62 +768,24 @@ fn create_pre_filtered_map(context: &Rc<Context>, cubemap: &Texture, size: u32) 
                 .depth_bias_enable(false)
                 .depth_bias_constant_factor(0.0)
                 .depth_bias_clamp(0.0)
-                .depth_bias_slope_factor(0.0)
-                .build();
+                .depth_bias_slope_factor(0.0);
 
-            let multisampling_info = vk::PipelineMultisampleStateCreateInfo::builder()
-                .sample_shading_enable(false)
-                .rasterization_samples(vk::SampleCountFlags::TYPE_1)
-                .min_sample_shading(1.0)
-                .alpha_to_coverage_enable(false)
-                .alpha_to_one_enable(false)
-                .build();
-
-            let color_blend_attachment = vk::PipelineColorBlendAttachmentState::builder()
-                .color_write_mask(vk::ColorComponentFlags::all())
-                .blend_enable(false)
-                .src_color_blend_factor(vk::BlendFactor::ONE)
-                .dst_color_blend_factor(vk::BlendFactor::ZERO)
-                .color_blend_op(vk::BlendOp::ADD)
-                .src_alpha_blend_factor(vk::BlendFactor::ONE)
-                .dst_alpha_blend_factor(vk::BlendFactor::ZERO)
-                .alpha_blend_op(vk::BlendOp::ADD)
-                .build();
-            let color_blend_attachments = [color_blend_attachment];
-
-            let color_blending_info = vk::PipelineColorBlendStateCreateInfo::builder()
-                .logic_op_enable(false)
-                .logic_op(vk::LogicOp::COPY)
-                .attachments(&color_blend_attachments)
-                .blend_constants([0.0, 0.0, 0.0, 0.0])
-                .build();
 
             let dynamic_state = [vk::DynamicState::VIEWPORT, vk::DynamicState::SCISSOR];
-            let dynamic_state_info = vk::PipelineDynamicStateCreateInfo::builder()
-                .dynamic_states(&dynamic_state)
-                .build();
+            let dynamic_state_info =
+                vk::PipelineDynamicStateCreateInfo::builder().dynamic_states(&dynamic_state);
 
-            let pipeline_info = vk::GraphicsPipelineCreateInfo::builder()
-                .stages(&shader_states_infos)
-                .vertex_input_state(&vertex_input_info)
-                .input_assembly_state(&input_assembly_info)
-                .viewport_state(&viewport_info)
-                .rasterization_state(&rasterizer_info)
-                .multisample_state(&multisampling_info)
-                .color_blend_state(&color_blending_info)
-                .dynamic_state(&dynamic_state_info)
-                .layout(layout)
-                .render_pass(renderpass)
-                .subpass(0)
-                .build();
-            let pipeline_infos = [pipeline_info];
 
-            let pipeline = unsafe {
-                device
-                    .create_graphics_pipelines(vk::PipelineCache::null(), &pipeline_infos, None)
-                    .unwrap()[0]
-            };
-            pipeline
+            create_pipeline::<SkyboxVertex>(
+                context,
+                "cubemap",
+                "pre_filtered",
+                &viewport_info,
+                &rasterizer_info,
+                Some(&dynamic_state_info),
+                layout,
+                renderpass,
+            )
         };
 
         (layout, pipeline)
@@ -1363,8 +812,7 @@ fn create_pre_filtered_map(context: &Rc<Context>, cubemap: &Texture, size: u32) 
                         level_count: 1,
                         base_array_layer: i,
                         layer_count: 1,
-                    })
-                    .build();
+                    });
 
                 unsafe { device.create_image_view(&create_info, None).unwrap() }
             })
@@ -1379,8 +827,7 @@ fn create_pre_filtered_map(context: &Rc<Context>, cubemap: &Texture, size: u32) 
                     .attachments(&attachments)
                     .width(viewport_size)
                     .height(viewport_size)
-                    .layers(1)
-                    .build();
+                    .layers(1);
                 unsafe { device.create_framebuffer(&create_info, None).unwrap() }
             })
             .collect::<Vec<_>>();
@@ -1433,7 +880,7 @@ fn create_pre_filtered_map(context: &Rc<Context>, cubemap: &Texture, size: u32) 
                 }];
                 unsafe { device.cmd_set_viewport(buffer, 0, &viewport) };
 
-                for face in 0..6 {
+                for (face, view) in view_matrices.iter().enumerate() {
                     let framebuffer = framebuffers[lod as usize][face];
 
                     let render_pass_begin_info = vk::RenderPassBeginInfo::builder()
@@ -1446,8 +893,7 @@ fn create_pre_filtered_map(context: &Rc<Context>, cubemap: &Texture, size: u32) 
                                 height: viewport_size,
                             },
                         })
-                        .clear_values(&clear_values)
-                        .build();
+                        .clear_values(&clear_values);
 
                     unsafe {
                         device.cmd_begin_render_pass(
@@ -1467,12 +913,11 @@ fn create_pre_filtered_map(context: &Rc<Context>, cubemap: &Texture, size: u32) 
                             vk::PipelineBindPoint::GRAPHICS,
                             pipeline_layout,
                             0,
-                            &descriptor_sets[0..=0],
+                            &descriptors.sets()[0..=0],
                             &[],
                         )
                     };
 
-                    let view = view_matrices[face];
                     let view_proj = proj * view;
                     unsafe {
                         let matrix_constant = any_as_u8_slice(&view_proj);
@@ -1540,8 +985,6 @@ fn create_pre_filtered_map(context: &Rc<Context>, cubemap: &Texture, size: u32) 
             .for_each(|fb| device.destroy_framebuffer(*fb, None));
         device.destroy_pipeline(pipeline, None);
         device.destroy_pipeline_layout(pipeline_layout, None);
-        device.destroy_descriptor_set_layout(descriptor_layout, None);
-        device.destroy_descriptor_pool(descriptor_pool, None);
         device.destroy_render_pass(renderpass, None);
     }
 
@@ -1559,106 +1002,36 @@ fn create_brdf_lookup(context: &Rc<Context>, size: u32) -> Texture {
 
     let quad_model = QuadModel::new(&context);
 
-    let renderpass = {
-        let attachments_descs = [vk::AttachmentDescription::builder()
-            .format(vk::Format::R16G16_SFLOAT)
-            .samples(vk::SampleCountFlags::TYPE_1)
-            .load_op(vk::AttachmentLoadOp::CLEAR)
-            .store_op(vk::AttachmentStoreOp::STORE)
-            .initial_layout(vk::ImageLayout::UNDEFINED)
-            .final_layout(vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL)
-            .build()];
-
-        let color_attachment_ref = [vk::AttachmentReference::builder()
-            .attachment(0)
-            .layout(vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL)
-            .build()];
-
-        let subpass_descs = [vk::SubpassDescription::builder()
-            .pipeline_bind_point(vk::PipelineBindPoint::GRAPHICS)
-            .color_attachments(&color_attachment_ref)
-            .build()];
-
-        let subpass_deps = [vk::SubpassDependency::builder()
-            .src_subpass(vk::SUBPASS_EXTERNAL)
-            .src_stage_mask(vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT)
-            .src_access_mask(vk::AccessFlags::empty())
-            .dst_subpass(0)
-            .dst_stage_mask(vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT)
-            .dst_access_mask(
-                vk::AccessFlags::COLOR_ATTACHMENT_READ | vk::AccessFlags::COLOR_ATTACHMENT_WRITE,
-            )
-            .build()];
-
-        let renderpass_info = vk::RenderPassCreateInfo::builder()
-            .attachments(&attachments_descs)
-            .subpasses(&subpass_descs)
-            .dependencies(&subpass_deps)
-            .build();
-
-        unsafe { device.create_render_pass(&renderpass_info, None).unwrap() }
-    };
+    let renderpass = create_renderpass(context, vk::Format::R16G16_SFLOAT);
 
     let (pipeline_layout, pipeline) = {
         let layout = {
-            let layout_info = vk::PipelineLayoutCreateInfo::builder().build();
+            let layout_info = vk::PipelineLayoutCreateInfo::builder();
 
             unsafe { device.create_pipeline_layout(&layout_info, None).unwrap() }
         };
 
         let pipeline = {
-            let vertex_shader_module =
-                ShaderModule::new(Rc::clone(context), "assets/shaders/brdf_lookup.vert.spv");
-            let fragment_shader_module =
-                ShaderModule::new(Rc::clone(context), "assets/shaders/brdf_lookup.frag.spv");
 
-            let entry_point_name = CString::new("main").unwrap();
-            let vertex_shader_state_info = vk::PipelineShaderStageCreateInfo::builder()
-                .stage(vk::ShaderStageFlags::VERTEX)
-                .module(vertex_shader_module.module())
-                .name(&entry_point_name)
-                .build();
-            let fragment_shader_state_info = vk::PipelineShaderStageCreateInfo::builder()
-                .stage(vk::ShaderStageFlags::FRAGMENT)
-                .module(fragment_shader_module.module())
-                .name(&entry_point_name)
-                .build();
-            let shader_states_infos = [vertex_shader_state_info, fragment_shader_state_info];
-
-            let bindings_descs = QuadVertex::get_bindings_descriptions();
-            let attributes_descs = QuadVertex::get_attributes_descriptions();
-            let vertex_input_info = vk::PipelineVertexInputStateCreateInfo::builder()
-                .vertex_binding_descriptions(&bindings_descs)
-                .vertex_attribute_descriptions(&attributes_descs)
-                .build();
-
-            let input_assembly_info = vk::PipelineInputAssemblyStateCreateInfo::builder()
-                .topology(vk::PrimitiveTopology::TRIANGLE_LIST)
-                .primitive_restart_enable(false)
-                .build();
-
-            let viewport = vk::Viewport {
+            let viewports = [vk::Viewport {
                 x: 0.0,
                 y: 0.0,
                 width: size as _,
                 height: size as _,
                 min_depth: 0.0,
                 max_depth: 1.0,
-            };
-            let viewports = [viewport];
+            }];
 
-            let scissor = vk::Rect2D {
+            let scissors = [vk::Rect2D {
                 offset: vk::Offset2D { x: 0, y: 0 },
                 extent: vk::Extent2D {
                     width: size,
                     height: size,
                 },
-            };
-            let scissors = [scissor];
+            }];
             let viewport_info = vk::PipelineViewportStateCreateInfo::builder()
                 .viewports(&viewports)
-                .scissors(&scissors)
-                .build();
+                .scissors(&scissors);
 
             let rasterizer_info = vk::PipelineRasterizationStateCreateInfo::builder()
                 .depth_clamp_enable(false)
@@ -1670,57 +1043,18 @@ fn create_brdf_lookup(context: &Rc<Context>, size: u32) -> Texture {
                 .depth_bias_enable(false)
                 .depth_bias_constant_factor(0.0)
                 .depth_bias_clamp(0.0)
-                .depth_bias_slope_factor(0.0)
-                .build();
+                .depth_bias_slope_factor(0.0);
 
-            let multisampling_info = vk::PipelineMultisampleStateCreateInfo::builder()
-                .sample_shading_enable(false)
-                .rasterization_samples(vk::SampleCountFlags::TYPE_1)
-                .min_sample_shading(1.0)
-                .alpha_to_coverage_enable(false)
-                .alpha_to_one_enable(false)
-                .build();
-
-            let color_blend_attachment = vk::PipelineColorBlendAttachmentState::builder()
-                .color_write_mask(vk::ColorComponentFlags::all())
-                .blend_enable(false)
-                .src_color_blend_factor(vk::BlendFactor::ONE)
-                .dst_color_blend_factor(vk::BlendFactor::ZERO)
-                .color_blend_op(vk::BlendOp::ADD)
-                .src_alpha_blend_factor(vk::BlendFactor::ONE)
-                .dst_alpha_blend_factor(vk::BlendFactor::ZERO)
-                .alpha_blend_op(vk::BlendOp::ADD)
-                .build();
-            let color_blend_attachments = [color_blend_attachment];
-
-            let color_blending_info = vk::PipelineColorBlendStateCreateInfo::builder()
-                .logic_op_enable(false)
-                .logic_op(vk::LogicOp::COPY)
-                .attachments(&color_blend_attachments)
-                .blend_constants([0.0, 0.0, 0.0, 0.0])
-                .build();
-
-            let pipeline_info = vk::GraphicsPipelineCreateInfo::builder()
-                .stages(&shader_states_infos)
-                .vertex_input_state(&vertex_input_info)
-                .input_assembly_state(&input_assembly_info)
-                .viewport_state(&viewport_info)
-                .rasterization_state(&rasterizer_info)
-                .multisample_state(&multisampling_info)
-                .color_blend_state(&color_blending_info)
-                .layout(layout)
-                .render_pass(renderpass)
-                .subpass(0)
-                .build();
-            let pipeline_infos = [pipeline_info];
-
-            let pipeline = unsafe {
-                device
-                    .create_graphics_pipelines(vk::PipelineCache::null(), &pipeline_infos, None)
-                    .unwrap()[0]
-            };
-
-            pipeline
+            create_pipeline::<QuadVertex>(
+                context,
+                "brdf_lookup",
+                "brdf_lookup",
+                &viewport_info,
+                &rasterizer_info,
+                None,
+                layout,
+                renderpass,
+            )
         };
 
         (layout, pipeline)
@@ -1736,8 +1070,7 @@ fn create_brdf_lookup(context: &Rc<Context>, size: u32) -> Texture {
             .attachments(&attachments)
             .width(size)
             .height(size)
-            .layers(1)
-            .build();
+            .layers(1);
         unsafe { device.create_framebuffer(&create_info, None).unwrap() }
     };
 
@@ -1768,8 +1101,7 @@ fn create_brdf_lookup(context: &Rc<Context>, size: u32) -> Texture {
                         height: size,
                     },
                 })
-                .clear_values(&clear_values)
-                .build();
+                .clear_values(&clear_values);
 
             unsafe {
                 device.cmd_begin_render_pass(
@@ -1854,4 +1186,213 @@ fn get_view_matrices() -> [Matrix4<f32>; 6] {
             Vector3::new(0.0, 1.0, 0.0),
         ),
     ]
+}
+
+fn create_renderpass(context: &Rc<Context>, format: vk::Format) -> vk::RenderPass {
+    let attachments_descs = [vk::AttachmentDescription::builder()
+        .format(format)
+        .samples(vk::SampleCountFlags::TYPE_1)
+        .load_op(vk::AttachmentLoadOp::CLEAR)
+        .store_op(vk::AttachmentStoreOp::STORE)
+        .initial_layout(vk::ImageLayout::UNDEFINED)
+        .final_layout(vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL)
+        .build()];
+
+    let color_attachment_ref = [vk::AttachmentReference::builder()
+        .attachment(0)
+        .layout(vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL)
+        .build()];
+
+    let subpass_descs = [vk::SubpassDescription::builder()
+        .pipeline_bind_point(vk::PipelineBindPoint::GRAPHICS)
+        .color_attachments(&color_attachment_ref)
+        .build()];
+
+    let subpass_deps = [vk::SubpassDependency::builder()
+        .src_subpass(vk::SUBPASS_EXTERNAL)
+        .src_stage_mask(vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT)
+        .src_access_mask(vk::AccessFlags::empty())
+        .dst_subpass(0)
+        .dst_stage_mask(vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT)
+        .dst_access_mask(
+            vk::AccessFlags::COLOR_ATTACHMENT_READ | vk::AccessFlags::COLOR_ATTACHMENT_WRITE,
+        )
+        .build()];
+
+    let renderpass_info = vk::RenderPassCreateInfo::builder()
+        .attachments(&attachments_descs)
+        .subpasses(&subpass_descs)
+        .dependencies(&subpass_deps);
+
+    unsafe {
+        context
+            .device()
+            .create_render_pass(&renderpass_info, None)
+            .unwrap()
+    }
+}
+
+fn create_descriptors(context: &Rc<Context>, texture: &Texture) -> Descriptors {
+    let device = context.device();
+
+    let layout = {
+        let bindings = [vk::DescriptorSetLayoutBinding::builder()
+            .binding(0)
+            .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
+            .descriptor_count(1)
+            .stage_flags(vk::ShaderStageFlags::FRAGMENT)
+            .build()];
+
+        let layout_info = vk::DescriptorSetLayoutCreateInfo::builder().bindings(&bindings);
+
+        unsafe {
+            device
+                .create_descriptor_set_layout(&layout_info, None)
+                .unwrap()
+        }
+    };
+
+    let pool = {
+        let pool_sizes = [vk::DescriptorPoolSize {
+            ty: vk::DescriptorType::COMBINED_IMAGE_SAMPLER,
+            descriptor_count: 1,
+        }];
+
+        let create_info = vk::DescriptorPoolCreateInfo::builder()
+            .pool_sizes(&pool_sizes)
+            .max_sets(1);
+
+        unsafe { device.create_descriptor_pool(&create_info, None).unwrap() }
+    };
+
+    let sets = {
+        let layouts = [layout];
+
+        let allocate_info = vk::DescriptorSetAllocateInfo::builder()
+            .descriptor_pool(pool)
+            .set_layouts(&layouts);
+
+        let sets = unsafe {
+            context
+                .device()
+                .allocate_descriptor_sets(&allocate_info)
+                .unwrap()
+        };
+
+        let cubemap_info = [vk::DescriptorImageInfo::builder()
+            .image_layout(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL)
+            .image_view(texture.view)
+            .sampler(texture.sampler.unwrap())
+            .build()];
+
+        let descriptor_writes = [vk::WriteDescriptorSet::builder()
+            .dst_set(sets[0])
+            .dst_binding(0)
+            .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
+            .image_info(&cubemap_info)
+            .build()];
+
+        unsafe {
+            context
+                .device()
+                .update_descriptor_sets(&descriptor_writes, &[])
+        }
+
+        sets
+    };
+
+    Descriptors::new(Rc::clone(context), layout, pool, sets)
+}
+
+fn create_pipeline<V: Vertex>(
+    context: &Rc<Context>,
+    vertex_shader_name: &str,
+    fragment_shader_name: &str,
+    viewport_info: &vk::PipelineViewportStateCreateInfo,
+    rasterizer_info: &vk::PipelineRasterizationStateCreateInfo,
+    dynamic_state_info: Option<&vk::PipelineDynamicStateCreateInfo>,
+    layout: vk::PipelineLayout,
+    renderpass: vk::RenderPass,
+) -> vk::Pipeline {
+    let vertex_shader_module = ShaderModule::new(
+        Rc::clone(context),
+        format!("assets/shaders/{}.vert.spv", vertex_shader_name),
+    );
+    let fragment_shader_module = ShaderModule::new(
+        Rc::clone(context),
+        format!("assets/shaders/{}.frag.spv", fragment_shader_name),
+    );
+
+
+    let entry_point_name = CString::new("main").unwrap();
+    let vertex_shader_state_info = vk::PipelineShaderStageCreateInfo::builder()
+        .stage(vk::ShaderStageFlags::VERTEX)
+        .module(vertex_shader_module.module())
+        .name(&entry_point_name)
+        .build();
+    let fragment_shader_state_info = vk::PipelineShaderStageCreateInfo::builder()
+        .stage(vk::ShaderStageFlags::FRAGMENT)
+        .module(fragment_shader_module.module())
+        .name(&entry_point_name)
+        .build();
+    let shader_states_infos = [vertex_shader_state_info, fragment_shader_state_info];
+
+    let bindings_descs = V::get_bindings_descriptions();
+    let attributes_descs = V::get_attributes_descriptions();
+    let vertex_input_info = vk::PipelineVertexInputStateCreateInfo::builder()
+        .vertex_binding_descriptions(&bindings_descs)
+        .vertex_attribute_descriptions(&attributes_descs);
+
+    let input_assembly_info = vk::PipelineInputAssemblyStateCreateInfo::builder()
+        .topology(vk::PrimitiveTopology::TRIANGLE_LIST)
+        .primitive_restart_enable(false);
+
+    let multisampling_info = vk::PipelineMultisampleStateCreateInfo::builder()
+        .sample_shading_enable(false)
+        .rasterization_samples(vk::SampleCountFlags::TYPE_1)
+        .min_sample_shading(1.0)
+        .alpha_to_coverage_enable(false)
+        .alpha_to_one_enable(false);
+
+    let color_blend_attachments = [vk::PipelineColorBlendAttachmentState::builder()
+        .color_write_mask(vk::ColorComponentFlags::all())
+        .blend_enable(false)
+        .src_color_blend_factor(vk::BlendFactor::ONE)
+        .dst_color_blend_factor(vk::BlendFactor::ZERO)
+        .color_blend_op(vk::BlendOp::ADD)
+        .src_alpha_blend_factor(vk::BlendFactor::ONE)
+        .dst_alpha_blend_factor(vk::BlendFactor::ZERO)
+        .alpha_blend_op(vk::BlendOp::ADD)
+        .build()];
+
+    let color_blending_info = vk::PipelineColorBlendStateCreateInfo::builder()
+        .logic_op_enable(false)
+        .logic_op(vk::LogicOp::COPY)
+        .attachments(&color_blend_attachments)
+        .blend_constants([0.0, 0.0, 0.0, 0.0]);
+
+    let mut pipeline_info = vk::GraphicsPipelineCreateInfo::builder()
+        .stages(&shader_states_infos)
+        .vertex_input_state(&vertex_input_info)
+        .input_assembly_state(&input_assembly_info)
+        .viewport_state(viewport_info)
+        .rasterization_state(rasterizer_info)
+        .multisample_state(&multisampling_info)
+        .color_blend_state(&color_blending_info)
+        .layout(layout)
+        .render_pass(renderpass)
+        .subpass(0);
+
+    if let Some(dynamic_state_info) = dynamic_state_info {
+        pipeline_info = pipeline_info.dynamic_state(dynamic_state_info);
+    }
+
+    let pipeline_infos = [pipeline_info.build()];
+
+    unsafe {
+        context
+            .device()
+            .create_graphics_pipelines(vk::PipelineCache::null(), &pipeline_infos, None)
+            .unwrap()[0]
+    }
 }

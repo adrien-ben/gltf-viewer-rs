@@ -51,17 +51,16 @@ impl Texture {
 
         let image = Image::create(
             Rc::clone(context),
-            vk::MemoryPropertyFlags::DEVICE_LOCAL,
-            extent,
-            1,
-            max_mip_levels,
-            vk::SampleCountFlags::TYPE_1,
-            vk::Format::R8G8B8A8_UNORM,
-            vk::ImageTiling::OPTIMAL,
-            vk::ImageUsageFlags::TRANSFER_SRC
-                | vk::ImageUsageFlags::TRANSFER_DST
-                | vk::ImageUsageFlags::SAMPLED,
-            vk::ImageCreateFlags::empty(),
+            ImageParameters {
+                mem_properties: vk::MemoryPropertyFlags::DEVICE_LOCAL,
+                extent,
+                format: vk::Format::R8G8B8A8_UNORM,
+                mip_levels: max_mip_levels,
+                usage: vk::ImageUsageFlags::TRANSFER_SRC
+                    | vk::ImageUsageFlags::TRANSFER_DST
+                    | vk::ImageUsageFlags::SAMPLED,
+                ..Default::default()
+            },
         );
 
         // Transition the image layout and copy the buffer into the image
@@ -95,8 +94,7 @@ impl Texture {
                 .mipmap_mode(vk::SamplerMipmapMode::LINEAR)
                 .mip_lod_bias(0.0)
                 .min_lod(0.0)
-                .max_lod(max_mip_levels as _)
-                .build();
+                .max_lod(max_mip_levels as _);
 
             unsafe { device.create_sampler(&sampler_info, None).unwrap() }
         };
@@ -128,17 +126,16 @@ impl Texture {
 
         let image = Image::create(
             Rc::clone(context),
-            vk::MemoryPropertyFlags::DEVICE_LOCAL,
-            extent,
-            1,
-            max_mip_levels,
-            vk::SampleCountFlags::TYPE_1,
-            vk::Format::R32G32B32A32_SFLOAT,
-            vk::ImageTiling::OPTIMAL,
-            vk::ImageUsageFlags::TRANSFER_SRC
-                | vk::ImageUsageFlags::TRANSFER_DST
-                | vk::ImageUsageFlags::SAMPLED,
-            vk::ImageCreateFlags::empty(),
+            ImageParameters {
+                mem_properties: vk::MemoryPropertyFlags::DEVICE_LOCAL,
+                extent,
+                format: vk::Format::R32G32B32A32_SFLOAT,
+                mip_levels: max_mip_levels,
+                usage: vk::ImageUsageFlags::TRANSFER_SRC
+                    | vk::ImageUsageFlags::TRANSFER_DST
+                    | vk::ImageUsageFlags::SAMPLED,
+                ..Default::default()
+            },
         );
 
         // Transition the image layout and copy the buffer into the image
@@ -172,8 +169,7 @@ impl Texture {
                 .mipmap_mode(vk::SamplerMipmapMode::LINEAR)
                 .mip_lod_bias(0.0)
                 .min_lod(0.0)
-                .max_lod(max_mip_levels as _)
-                .build();
+                .max_lod(max_mip_levels as _);
 
             unsafe { device.create_sampler(&sampler_info, None).unwrap() }
         };
@@ -209,17 +205,18 @@ impl Texture {
 
         let image = Image::create(
             Rc::clone(context),
-            vk::MemoryPropertyFlags::DEVICE_LOCAL,
-            extent,
-            6,
-            max_mip_levels,
-            vk::SampleCountFlags::TYPE_1,
-            vk::Format::R32G32B32A32_SFLOAT,
-            vk::ImageTiling::OPTIMAL,
-            vk::ImageUsageFlags::TRANSFER_SRC
-                | vk::ImageUsageFlags::TRANSFER_DST
-                | vk::ImageUsageFlags::SAMPLED,
-            vk::ImageCreateFlags::CUBE_COMPATIBLE,
+            ImageParameters {
+                mem_properties: vk::MemoryPropertyFlags::DEVICE_LOCAL,
+                extent,
+                format: vk::Format::R32G32B32A32_SFLOAT,
+                layers: 6,
+                mip_levels: max_mip_levels,
+                usage: vk::ImageUsageFlags::TRANSFER_SRC
+                    | vk::ImageUsageFlags::TRANSFER_DST
+                    | vk::ImageUsageFlags::SAMPLED,
+                create_flags: vk::ImageCreateFlags::CUBE_COMPATIBLE,
+                ..Default::default()
+            },
         );
 
         // Transition the image layout and copy the buffer into the image
@@ -253,8 +250,7 @@ impl Texture {
                 .mipmap_mode(vk::SamplerMipmapMode::LINEAR)
                 .mip_lod_bias(0.0)
                 .min_lod(0.0)
-                .max_lod(max_mip_levels as _)
-                .build();
+                .max_lod(max_mip_levels as _);
 
             unsafe { device.create_sampler(&sampler_info, None).unwrap() }
         };
@@ -272,18 +268,19 @@ impl Texture {
 
         let image = Image::create(
             Rc::clone(context),
-            vk::MemoryPropertyFlags::DEVICE_LOCAL,
-            extent,
-            6,
-            mip_levels,
-            vk::SampleCountFlags::TYPE_1,
-            vk::Format::R32G32B32A32_SFLOAT,
-            vk::ImageTiling::OPTIMAL,
-            vk::ImageUsageFlags::SAMPLED
-                | vk::ImageUsageFlags::COLOR_ATTACHMENT
-                | vk::ImageUsageFlags::TRANSFER_SRC
-                | vk::ImageUsageFlags::TRANSFER_DST,
-            vk::ImageCreateFlags::CUBE_COMPATIBLE,
+            ImageParameters {
+                mem_properties: vk::MemoryPropertyFlags::DEVICE_LOCAL,
+                extent,
+                format: vk::Format::R32G32B32A32_SFLOAT,
+                layers: 6,
+                mip_levels,
+                usage: vk::ImageUsageFlags::TRANSFER_SRC
+                    | vk::ImageUsageFlags::TRANSFER_DST
+                    | vk::ImageUsageFlags::SAMPLED
+                    | vk::ImageUsageFlags::COLOR_ATTACHMENT,
+                create_flags: vk::ImageCreateFlags::CUBE_COMPATIBLE,
+                ..Default::default()
+            },
         );
 
         image.transition_image_layout(
@@ -309,8 +306,7 @@ impl Texture {
                 .mipmap_mode(vk::SamplerMipmapMode::LINEAR)
                 .mip_lod_bias(0.0)
                 .min_lod(0.0)
-                .max_lod(mip_levels as _)
-                .build();
+                .max_lod(mip_levels as _);
 
             unsafe { device.create_sampler(&sampler_info, None).unwrap() }
         };
@@ -330,15 +326,13 @@ impl Texture {
 
         let image = Image::create(
             Rc::clone(context),
-            vk::MemoryPropertyFlags::DEVICE_LOCAL,
-            extent,
-            1,
-            1,
-            vk::SampleCountFlags::TYPE_1,
-            format,
-            vk::ImageTiling::OPTIMAL,
-            vk::ImageUsageFlags::SAMPLED | vk::ImageUsageFlags::COLOR_ATTACHMENT,
-            vk::ImageCreateFlags::empty(),
+            ImageParameters {
+                mem_properties: vk::MemoryPropertyFlags::DEVICE_LOCAL,
+                extent,
+                format,
+                usage: vk::ImageUsageFlags::SAMPLED | vk::ImageUsageFlags::COLOR_ATTACHMENT,
+                ..Default::default()
+            },
         );
 
         image.transition_image_layout(
@@ -364,8 +358,7 @@ impl Texture {
                 .mipmap_mode(vk::SamplerMipmapMode::LINEAR)
                 .mip_lod_bias(0.0)
                 .min_lod(0.0)
-                .max_lod(1.0)
-                .build();
+                .max_lod(1.0);
 
             unsafe { device.create_sampler(&sampler_info, None).unwrap() }
         };

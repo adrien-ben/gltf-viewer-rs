@@ -87,7 +87,7 @@ impl BaseApp {
 
         let model = Model::create_from_file(&context, path).unwrap();
 
-        let dummy_texture = Texture::from_rgba(&context, 1, 1, &vec![0, 0, 0, 0]);
+        let dummy_texture = Texture::from_rgba(&context, 1, 1, &[0, 0, 0, 0]);
 
         let model_descriptors = Self::create_model_descriptors(
             &context,
@@ -217,8 +217,7 @@ impl BaseApp {
 
         let depth_attachment_ref = vk::AttachmentReference::builder()
             .attachment(1)
-            .layout(vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL)
-            .build();
+            .layout(vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL);
 
         let resolve_attachment_ref = vk::AttachmentReference::builder()
             .attachment(2)
@@ -249,8 +248,7 @@ impl BaseApp {
         let render_pass_info = vk::RenderPassCreateInfo::builder()
             .attachments(&attachment_descs)
             .subpasses(&subpass_descs)
-            .dependencies(&subpass_deps)
-            .build();
+            .dependencies(&subpass_deps);
 
         unsafe { device.create_render_pass(&render_pass_info, None).unwrap() }
     }
@@ -323,9 +321,7 @@ impl BaseApp {
                 .build(),
         ];
 
-        let layout_info = vk::DescriptorSetLayoutCreateInfo::builder()
-            .bindings(&bindings)
-            .build();
+        let layout_info = vk::DescriptorSetLayoutCreateInfo::builder().bindings(&bindings);
 
         unsafe {
             device
@@ -348,8 +344,7 @@ impl BaseApp {
 
         let create_info = vk::DescriptorPoolCreateInfo::builder()
             .pool_sizes(&pool_sizes)
-            .max_sets(descriptor_count)
-            .build();
+            .max_sets(descriptor_count);
 
         unsafe { device.create_descriptor_pool(&create_info, None).unwrap() }
     }
@@ -367,8 +362,7 @@ impl BaseApp {
 
         let allocate_info = vk::DescriptorSetAllocateInfo::builder()
             .descriptor_pool(pool)
-            .set_layouts(&layouts)
-            .build();
+            .set_layouts(&layouts);
         let sets = unsafe {
             context
                 .device()
@@ -504,9 +498,7 @@ impl BaseApp {
                 .build(),
         ];
 
-        let layout_info = vk::DescriptorSetLayoutCreateInfo::builder()
-            .bindings(&bindings)
-            .build();
+        let layout_info = vk::DescriptorSetLayoutCreateInfo::builder().bindings(&bindings);
 
         unsafe {
             device
@@ -523,14 +515,13 @@ impl BaseApp {
             },
             vk::DescriptorPoolSize {
                 ty: vk::DescriptorType::COMBINED_IMAGE_SAMPLER,
-                descriptor_count: descriptor_count,
+                descriptor_count,
             },
         ];
 
         let create_info = vk::DescriptorPoolCreateInfo::builder()
             .pool_sizes(&pool_sizes)
-            .max_sets(descriptor_count)
-            .build();
+            .max_sets(descriptor_count);
 
         unsafe { device.create_descriptor_pool(&create_info, None).unwrap() }
     }
@@ -546,8 +537,7 @@ impl BaseApp {
 
         let allocate_info = vk::DescriptorSetAllocateInfo::builder()
             .descriptor_pool(pool)
-            .set_layouts(&layouts)
-            .build();
+            .set_layouts(&layouts);
         let sets = unsafe {
             context
                 .device()
@@ -601,15 +591,15 @@ impl BaseApp {
         let format = swapchain_properties.format.format;
         let image = Image::create(
             Rc::clone(context),
-            vk::MemoryPropertyFlags::DEVICE_LOCAL,
-            swapchain_properties.extent,
-            1,
-            1,
-            msaa_samples,
-            format,
-            vk::ImageTiling::OPTIMAL,
-            vk::ImageUsageFlags::TRANSIENT_ATTACHMENT | vk::ImageUsageFlags::COLOR_ATTACHMENT,
-            vk::ImageCreateFlags::empty(),
+            ImageParameters {
+                mem_properties: vk::MemoryPropertyFlags::DEVICE_LOCAL,
+                extent: swapchain_properties.extent,
+                sample_count: msaa_samples,
+                format,
+                usage: vk::ImageUsageFlags::TRANSIENT_ATTACHMENT
+                    | vk::ImageUsageFlags::COLOR_ATTACHMENT,
+                ..Default::default()
+            },
         );
 
         image.transition_image_layout(
@@ -634,15 +624,14 @@ impl BaseApp {
     ) -> Texture {
         let image = Image::create(
             Rc::clone(context),
-            vk::MemoryPropertyFlags::DEVICE_LOCAL,
-            extent,
-            1,
-            1,
-            msaa_samples,
-            format,
-            vk::ImageTiling::OPTIMAL,
-            vk::ImageUsageFlags::DEPTH_STENCIL_ATTACHMENT,
-            vk::ImageCreateFlags::empty(),
+            ImageParameters {
+                mem_properties: vk::MemoryPropertyFlags::DEVICE_LOCAL,
+                extent,
+                sample_count: msaa_samples,
+                format,
+                usage: vk::ImageUsageFlags::DEPTH_STENCIL_ATTACHMENT,
+                ..Default::default()
+            },
         );
 
         image.transition_image_layout(
@@ -680,13 +669,12 @@ impl BaseApp {
         descriptor_sets: &[vk::DescriptorSet],
         model: &Model,
     ) -> Vec<vk::CommandBuffer> {
+        let device = context.device();
+
         let allocate_info = vk::CommandBufferAllocateInfo::builder()
             .command_pool(context.general_command_pool())
             .level(vk::CommandBufferLevel::PRIMARY)
-            .command_buffer_count(swapchain.image_count() as _)
-            .build();
-
-        let device = context.device();
+            .command_buffer_count(swapchain.image_count() as _);
         let buffers = unsafe { device.allocate_command_buffers(&allocate_info).unwrap() };
 
         buffers.iter().enumerate().for_each(|(i, buffer)| {
@@ -696,8 +684,7 @@ impl BaseApp {
             // begin command buffer
             {
                 let command_buffer_begin_info = vk::CommandBufferBeginInfo::builder()
-                    .flags(vk::CommandBufferUsageFlags::SIMULTANEOUS_USE)
-                    .build();
+                    .flags(vk::CommandBufferUsageFlags::SIMULTANEOUS_USE);
                 unsafe {
                     device
                         .begin_command_buffer(buffer, &command_buffer_begin_info)
@@ -727,8 +714,7 @@ impl BaseApp {
                         offset: vk::Offset2D { x: 0, y: 0 },
                         extent: swapchain.properties().extent,
                     })
-                    .clear_values(&clear_values)
-                    .build();
+                    .clear_values(&clear_values);
 
                 unsafe {
                     device.cmd_begin_render_pass(
@@ -927,19 +913,18 @@ impl BaseApp {
         let mut sync_objects_vec = Vec::new();
         for _ in 0..MAX_FRAMES_IN_FLIGHT {
             let image_available_semaphore = {
-                let semaphore_info = vk::SemaphoreCreateInfo::builder().build();
+                let semaphore_info = vk::SemaphoreCreateInfo::builder();
                 unsafe { device.create_semaphore(&semaphore_info, None).unwrap() }
             };
 
             let render_finished_semaphore = {
-                let semaphore_info = vk::SemaphoreCreateInfo::builder().build();
+                let semaphore_info = vk::SemaphoreCreateInfo::builder();
                 unsafe { device.create_semaphore(&semaphore_info, None).unwrap() }
             };
 
             let in_flight_fence = {
-                let fence_info = vk::FenceCreateInfo::builder()
-                    .flags(vk::FenceCreateFlags::SIGNALED)
-                    .build();
+                let fence_info =
+                    vk::FenceCreateInfo::builder().flags(vk::FenceCreateFlags::SIGNALED);
                 unsafe { device.create_fence(&fence_info, None).unwrap() }
             };
 
@@ -1056,9 +1041,8 @@ impl BaseApp {
             let present_info = vk::PresentInfoKHR::builder()
                 .wait_semaphores(&signal_semaphores)
                 .swapchains(&swapchains)
-                .image_indices(&images_indices)
-                .build();
-            let result = self.swapchain.present(present_info);
+                .image_indices(&images_indices);
+            let result = self.swapchain.present(&present_info);
             match result {
                 Ok(is_suboptimal) if is_suboptimal => {
                     self.recreate_swapchain();

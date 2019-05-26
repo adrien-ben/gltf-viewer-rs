@@ -41,8 +41,7 @@ impl Buffer {
             let buffer_info = vk::BufferCreateInfo::builder()
                 .size(size)
                 .usage(usage)
-                .sharing_mode(vk::SharingMode::EXCLUSIVE)
-                .build();
+                .sharing_mode(vk::SharingMode::EXCLUSIVE);
             unsafe { device.create_buffer(&buffer_info, None).unwrap() }
         };
 
@@ -56,8 +55,7 @@ impl Buffer {
 
             let alloc_info = vk::MemoryAllocateInfo::builder()
                 .allocation_size(mem_requirements.size)
-                .memory_type_index(mem_type)
-                .build();
+                .memory_type_index(mem_type);
             unsafe { device.allocate_memory(&alloc_info, None).unwrap() }
         };
 

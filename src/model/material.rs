@@ -45,10 +45,11 @@ impl<'a> From<GltfMaterial<'a>> for Material {
         let metallic_roughness_texture_id = get_texture_index(pbr.metallic_roughness_texture());
         let emissive_texture_id = get_texture_index(material.emissive_texture());
         let normal_texture_id = get_normal_texture_index(material.normal_texture());
-        let color_metallicroughness_emissive_normal_texture_ids = ((color_texture_id as u32) << 24)
-            | ((metallic_roughness_texture_id as u32) << 16)
-            | ((emissive_texture_id as u32) << 8)
-            | (normal_texture_id as u32);
+        let color_metallicroughness_emissive_normal_texture_ids = (u32::from(color_texture_id)
+            << 24)
+            | (u32::from(metallic_roughness_texture_id) << 16)
+            | (u32::from(emissive_texture_id) << 8)
+            | u32::from(normal_texture_id);
 
         let (occlusion, occlusion_texture_id) = get_occlusion(material.occlusion_texture());
         let alpha_mode = get_alpha_mode_index(material.alpha_mode());
@@ -94,7 +95,7 @@ fn get_occlusion(texture_info: Option<OcclusionTexture>) -> (f32, u32) {
             .map(|tex_info| tex_info.texture())
             .map(|texture| texture.index())
             .filter(|index| *index < MAX_TEXTURE_COUNT as _)
-            .map_or(NO_TEXTURE_ID as _, |index| index as _),
+            .map_or(u32::from(NO_TEXTURE_ID), |index| index as _),
     )
 }
 

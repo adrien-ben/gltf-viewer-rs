@@ -84,8 +84,7 @@ pub fn setup_debug_messenger(
     }
     let create_info = vk::DebugReportCallbackCreateInfoEXT::builder()
         .flags(vk::DebugReportFlagsEXT::all())
-        .pfn_callback(Some(vulkan_debug_callback))
-        .build();
+        .pfn_callback(Some(vulkan_debug_callback));
     let debug_report = DebugReport::new(entry, instance);
     let debug_report_callback = unsafe {
         debug_report

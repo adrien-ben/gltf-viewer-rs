@@ -82,8 +82,7 @@ impl Context {
             .application_version(ash::vk_make_version!(0, 1, 0))
             .engine_name(engine_name.as_c_str())
             .engine_version(ash::vk_make_version!(0, 1, 0))
-            .api_version(ash::vk_make_version!(1, 0, 0))
-            .build();
+            .api_version(ash::vk_make_version!(1, 0, 0));
 
         let mut extension_names = surface::required_extension_names();
         if ENABLE_VALIDATION_LAYERS {
@@ -266,20 +265,17 @@ impl Context {
 
         let device_features = vk::PhysicalDeviceFeatures::builder()
             .sampler_anisotropy(true)
-            .shader_sampled_image_array_dynamic_indexing(true)
-            .build();
+            .shader_sampled_image_array_dynamic_indexing(true);
 
         let (_layer_names, layer_names_ptrs) = get_layer_names_and_pointers();
 
-        let mut device_create_info_builder = vk::DeviceCreateInfo::builder()
+        let mut device_create_info = vk::DeviceCreateInfo::builder()
             .queue_create_infos(&queue_create_infos)
             .enabled_extension_names(&device_extensions_ptrs)
             .enabled_features(&device_features);
         if ENABLE_VALIDATION_LAYERS {
-            device_create_info_builder =
-                device_create_info_builder.enabled_layer_names(&layer_names_ptrs)
+            device_create_info = device_create_info.enabled_layer_names(&layer_names_ptrs)
         }
-        let device_create_info = device_create_info_builder.build();
 
         // Build device and queues
         let device = unsafe {
@@ -300,8 +296,7 @@ impl Context {
     ) -> vk::CommandPool {
         let command_pool_info = vk::CommandPoolCreateInfo::builder()
             .queue_family_index(queue_families_indices.graphics_index)
-            .flags(create_flags)
-            .build();
+            .flags(create_flags);
 
         unsafe {
             device
@@ -415,8 +410,7 @@ impl Context {
             let alloc_info = vk::CommandBufferAllocateInfo::builder()
                 .level(vk::CommandBufferLevel::PRIMARY)
                 .command_pool(self.transient_command_pool)
-                .command_buffer_count(1)
-                .build();
+                .command_buffer_count(1);
 
             unsafe { self.device.allocate_command_buffers(&alloc_info).unwrap()[0] }
         };
@@ -425,8 +419,7 @@ impl Context {
         // Begin recording
         {
             let begin_info = vk::CommandBufferBeginInfo::builder()
-                .flags(vk::CommandBufferUsageFlags::ONE_TIME_SUBMIT)
-                .build();
+                .flags(vk::CommandBufferUsageFlags::ONE_TIME_SUBMIT);
             unsafe {
                 self.device
                     .begin_command_buffer(command_buffer, &begin_info)

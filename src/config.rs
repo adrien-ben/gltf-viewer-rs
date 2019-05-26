@@ -46,11 +46,11 @@ pub struct Resolution {
 }
 
 impl Resolution {
-    pub fn width(&self) -> u32 {
+    pub fn width(self) -> u32 {
         self.width
     }
 
-    pub fn height(&self) -> u32 {
+    pub fn height(self) -> u32 {
         self.height
     }
 }

@@ -103,9 +103,7 @@ fn create_skybox_pipeline_layout(
     descriptor_set_layout: vk::DescriptorSetLayout,
 ) -> vk::PipelineLayout {
     let layouts = [descriptor_set_layout];
-    let layout_info = vk::PipelineLayoutCreateInfo::builder()
-        .set_layouts(&layouts)
-        .build();
+    let layout_info = vk::PipelineLayoutCreateInfo::builder().set_layouts(&layouts);
     unsafe { device.create_pipeline_layout(&layout_info, None).unwrap() }
 }
 
@@ -125,8 +123,7 @@ fn create_skybox_pipeline(
         .max_depth_bounds(1.0)
         .stencil_test_enable(false)
         .front(Default::default())
-        .back(Default::default())
-        .build();
+        .back(Default::default());
 
     let color_blend_attachment = vk::PipelineColorBlendAttachmentState::builder()
         .color_write_mask(vk::ColorComponentFlags::all())
@@ -136,8 +133,7 @@ fn create_skybox_pipeline(
         .color_blend_op(vk::BlendOp::ADD)
         .src_alpha_blend_factor(vk::BlendFactor::ONE)
         .dst_alpha_blend_factor(vk::BlendFactor::ZERO)
-        .alpha_blend_op(vk::BlendOp::ADD)
-        .build();
+        .alpha_blend_op(vk::BlendOp::ADD);
 
     create_pipeline::<SkyboxVertex>(
         context,
@@ -146,8 +142,8 @@ fn create_skybox_pipeline(
         msaa_samples,
         render_pass,
         layout,
-        depth_stencil_info,
-        color_blend_attachment,
+        &depth_stencil_info,
+        &color_blend_attachment,
         None,
     )
 }
@@ -171,8 +167,7 @@ fn create_model_pipeline_layout(
     ];
     let layout_info = vk::PipelineLayoutCreateInfo::builder()
         .set_layouts(&layouts)
-        .push_constant_ranges(&push_constant_range)
-        .build();
+        .push_constant_ranges(&push_constant_range);
 
     unsafe { device.create_pipeline_layout(&layout_info, None).unwrap() }
 }
@@ -193,8 +188,7 @@ fn create_opaque_pipeline(
         .max_depth_bounds(1.0)
         .stencil_test_enable(false)
         .front(Default::default())
-        .back(Default::default())
-        .build();
+        .back(Default::default());
 
     let color_blend_attachment = vk::PipelineColorBlendAttachmentState::builder()
         .color_write_mask(vk::ColorComponentFlags::all())
@@ -204,8 +198,7 @@ fn create_opaque_pipeline(
         .color_blend_op(vk::BlendOp::ADD)
         .src_alpha_blend_factor(vk::BlendFactor::ONE)
         .dst_alpha_blend_factor(vk::BlendFactor::ZERO)
-        .alpha_blend_op(vk::BlendOp::ADD)
-        .build();
+        .alpha_blend_op(vk::BlendOp::ADD);
 
     create_pipeline::<ModelVertex>(
         context,
@@ -214,8 +207,8 @@ fn create_opaque_pipeline(
         msaa_samples,
         render_pass,
         layout,
-        depth_stencil_info,
-        color_blend_attachment,
+        &depth_stencil_info,
+        &color_blend_attachment,
         None,
     )
 }
@@ -237,8 +230,7 @@ fn create_transparent_pipeline(
         .max_depth_bounds(1.0)
         .stencil_test_enable(false)
         .front(Default::default())
-        .back(Default::default())
-        .build();
+        .back(Default::default());
 
     let color_blend_attachment = vk::PipelineColorBlendAttachmentState::builder()
         .color_write_mask(vk::ColorComponentFlags::all())
@@ -248,8 +240,7 @@ fn create_transparent_pipeline(
         .color_blend_op(vk::BlendOp::ADD)
         .src_alpha_blend_factor(vk::BlendFactor::ONE)
         .dst_alpha_blend_factor(vk::BlendFactor::ZERO)
-        .alpha_blend_op(vk::BlendOp::ADD)
-        .build();
+        .alpha_blend_op(vk::BlendOp::ADD);
 
     create_pipeline::<ModelVertex>(
         context,
@@ -258,8 +249,8 @@ fn create_transparent_pipeline(
         msaa_samples,
         render_pass,
         layout,
-        depth_stencil_info,
-        color_blend_attachment,
+        &depth_stencil_info,
+        &color_blend_attachment,
         Some(parent),
     )
 }
@@ -271,8 +262,8 @@ fn create_pipeline<V: Vertex>(
     msaa_samples: vk::SampleCountFlags,
     render_pass: vk::RenderPass,
     layout: vk::PipelineLayout,
-    depth_stencil_info: vk::PipelineDepthStencilStateCreateInfo,
-    color_blend_attachment: vk::PipelineColorBlendAttachmentState,
+    depth_stencil_info: &vk::PipelineDepthStencilStateCreateInfo,
+    color_blend_attachment: &vk::PipelineColorBlendAttachmentState,
     parent: Option<vk::Pipeline>,
 ) -> vk::Pipeline {
     let vertex_shader_module = ShaderModule::new(
@@ -301,13 +292,11 @@ fn create_pipeline<V: Vertex>(
     let attributes_descs = V::get_attributes_descriptions();
     let vertex_input_info = vk::PipelineVertexInputStateCreateInfo::builder()
         .vertex_binding_descriptions(&bindings_descs)
-        .vertex_attribute_descriptions(&attributes_descs)
-        .build();
+        .vertex_attribute_descriptions(&attributes_descs);
 
     let input_assembly_info = vk::PipelineInputAssemblyStateCreateInfo::builder()
         .topology(vk::PrimitiveTopology::TRIANGLE_LIST)
-        .primitive_restart_enable(false)
-        .build();
+        .primitive_restart_enable(false);
 
     let viewport = vk::Viewport {
         x: 0.0,
@@ -325,8 +314,7 @@ fn create_pipeline<V: Vertex>(
     let scissors = [scissor];
     let viewport_info = vk::PipelineViewportStateCreateInfo::builder()
         .viewports(&viewports)
-        .scissors(&scissors)
-        .build();
+        .scissors(&scissors);
 
     let rasterizer_info = vk::PipelineRasterizationStateCreateInfo::builder()
         .depth_clamp_enable(false)
@@ -338,25 +326,22 @@ fn create_pipeline<V: Vertex>(
         .depth_bias_enable(false)
         .depth_bias_constant_factor(0.0)
         .depth_bias_clamp(0.0)
-        .depth_bias_slope_factor(0.0)
-        .build();
+        .depth_bias_slope_factor(0.0);
 
     let multisampling_info = vk::PipelineMultisampleStateCreateInfo::builder()
         .sample_shading_enable(false)
         .rasterization_samples(msaa_samples)
         .min_sample_shading(1.0)
         .alpha_to_coverage_enable(false)
-        .alpha_to_one_enable(false)
-        .build();
+        .alpha_to_one_enable(false);
 
-    let color_blend_attachments = [color_blend_attachment];
+    let color_blend_attachments = [*color_blend_attachment];
 
     let color_blending_info = vk::PipelineColorBlendStateCreateInfo::builder()
         .logic_op_enable(false)
         .logic_op(vk::LogicOp::COPY)
         .attachments(&color_blend_attachments)
-        .blend_constants([0.0, 0.0, 0.0, 0.0])
-        .build();
+        .blend_constants([0.0, 0.0, 0.0, 0.0]);
 
     let mut pipeline_info = vk::GraphicsPipelineCreateInfo::builder()
         .stages(&shader_states_infos)
@@ -378,12 +363,10 @@ fn create_pipeline<V: Vertex>(
     let pipeline_info = pipeline_info.build();
     let pipeline_infos = [pipeline_info];
 
-    let pipeline = unsafe {
+    unsafe {
         context
             .device()
             .create_graphics_pipelines(vk::PipelineCache::null(), &pipeline_infos, None)
             .unwrap()[0]
-    };
-
-    pipeline
+    }
 }

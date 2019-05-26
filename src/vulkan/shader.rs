@@ -35,6 +35,6 @@ fn read_shader_from_file<P: AsRef<Path>>(path: P) -> Vec<u32> {
 }
 
 fn create_shader_module(device: &Device, code: &[u32]) -> vk::ShaderModule {
-    let create_info = vk::ShaderModuleCreateInfo::builder().code(code).build();
+    let create_info = vk::ShaderModuleCreateInfo::builder().code(code);
     unsafe { device.create_shader_module(&create_info, None).unwrap() }
 }

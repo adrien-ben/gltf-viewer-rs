@@ -78,7 +78,6 @@ impl Swapchain {
                 .composite_alpha(vk::CompositeAlphaFlagsKHR::OPAQUE)
                 .present_mode(present_mode)
                 .clipped(true)
-                .build()
         };
 
         let swapchain = SwapchainLoader::new(context.instance(), context.device());
@@ -177,8 +176,7 @@ impl Swapchain {
                     .attachments(&attachments)
                     .width(self.properties.extent.width)
                     .height(self.properties.extent.height)
-                    .layers(1)
-                    .build();
+                    .layers(1);
                 unsafe {
                     self.context
                         .device()
@@ -205,10 +203,10 @@ impl Swapchain {
         }
     }
 
-    pub fn present(&self, present_info: vk::PresentInfoKHR) -> VkResult<bool> {
+    pub fn present(&self, present_info: &vk::PresentInfoKHR) -> VkResult<bool> {
         unsafe {
             self.swapchain
-                .queue_present(self.context.present_queue(), &present_info)
+                .queue_present(self.context.present_queue(), present_info)
         }
     }
 

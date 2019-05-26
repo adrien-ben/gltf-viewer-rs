@@ -37,12 +37,9 @@ impl InputState {
         }
 
         if let Event::DeviceEvent { event, .. } = event {
-            match event {
-                DeviceEvent::MouseMotion { delta: (x, y) } => {
-                    cursor_delta[0] += *x as f32;
-                    cursor_delta[1] += *y as f32;
-                }
-                _ => {}
+            if let DeviceEvent::MouseMotion { delta: (x, y) } = event {
+                cursor_delta[0] += *x as f32;
+                cursor_delta[1] += *y as f32;
             }
         }
 
