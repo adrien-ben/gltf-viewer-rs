@@ -10,7 +10,7 @@ mod pipelines;
 mod util;
 mod vulkan;
 
-use self::{base::BaseApp, error::AppError};
+use self::base::BaseApp;
 use clap::{App, Arg};
 use std::{error::Error, path::Path, result::Result};
 
@@ -24,10 +24,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         .value_of("config")
         .map_or(Ok(Default::default()), config::load_config)?;
 
-    let file_path = Path::new(matches.value_of("file").unwrap());
-    if !file_path.exists() {
-        Err(AppError::FileNotFound(format!("{}", file_path.display())))?
-    }
+    let file_path = matches.value_of("file").map(Path::new);
 
     BaseApp::new(config, file_path).run();
 
@@ -49,10 +46,10 @@ fn create_app<'a, 'b>() -> App<'a, 'b> {
         )
         .arg(
             Arg::with_name("file")
+                .short("f")
+                .long("file")
                 .value_name("FILE")
-                .required(true)
                 .help("Set the path to gltf model to view")
-                .takes_value(true)
-                .last(true),
+                .takes_value(true),
         )
 }

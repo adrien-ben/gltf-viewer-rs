@@ -3,74 +3,14 @@ use ash::{version::DeviceV1_0, vk, Device};
 use cgmath::Matrix4;
 use std::{ffi::CString, mem::size_of, rc::Rc};
 
-pub struct Pipelines {
-    context: Rc<Context>,
-    skybox_layout: vk::PipelineLayout,
-    skybox_pipeline: vk::Pipeline,
+#[derive(Copy, Clone)]
+pub struct ModelPipelines {
     model_layout: vk::PipelineLayout,
     opaque_pipeline: vk::Pipeline,
     transparent_pipeline: vk::Pipeline,
 }
 
-impl Pipelines {
-    pub fn build(
-        context: Rc<Context>,
-        swapchain_properties: SwapchainProperties,
-        msaa_samples: vk::SampleCountFlags,
-        render_pass: vk::RenderPass,
-        skybox_descriptors: &Descriptors,
-        model_descriptors: &Descriptors,
-    ) -> Self {
-        let device = context.device();
-
-        let skybox_layout = create_skybox_pipeline_layout(device, skybox_descriptors.layout());
-
-        let skybox_pipeline = create_skybox_pipeline(
-            &context,
-            swapchain_properties,
-            msaa_samples,
-            render_pass,
-            skybox_layout,
-        );
-
-        let model_layout = create_model_pipeline_layout(device, model_descriptors.layout());
-
-        let opaque_pipeline = create_opaque_pipeline(
-            &context,
-            swapchain_properties,
-            msaa_samples,
-            render_pass,
-            model_layout,
-        );
-
-        let transparent_pipeline = create_transparent_pipeline(
-            &context,
-            swapchain_properties,
-            msaa_samples,
-            render_pass,
-            model_layout,
-            opaque_pipeline,
-        );
-
-        Self {
-            context,
-            skybox_layout,
-            skybox_pipeline,
-            model_layout,
-            opaque_pipeline,
-            transparent_pipeline,
-        }
-    }
-}
-
-impl Pipelines {
-    pub fn skybox_layout(&self) -> vk::PipelineLayout {
-        self.skybox_layout
-    }
-
-    pub fn skybox_pipeline(&self) -> vk::Pipeline {
-        self.skybox_pipeline
-    }
+impl ModelPipelines {
 
     pub fn model_layout(&self) -> vk::PipelineLayout {
         self.model_layout
@@ -85,15 +25,100 @@ impl Pipelines {
     }
 }
 
+pub struct Pipelines {
+    context: Rc<Context>,
+    skybox_layout: vk::PipelineLayout,
+    skybox_pipeline: vk::Pipeline,
+    model_pipelines: Option<ModelPipelines>,
+}
+
+impl Pipelines {
+    pub fn build(
+        context: Rc<Context>,
+        swapchain_properties: SwapchainProperties,
+        msaa_samples: vk::SampleCountFlags,
+        render_pass: vk::RenderPass,
+        skybox_descriptors: &Descriptors,
+        model_descriptors: Option<&Descriptors>,
+    ) -> Self {
+        let device = context.device();
+
+        let skybox_layout = create_skybox_pipeline_layout(device, skybox_descriptors.layout());
+
+        let skybox_pipeline = create_skybox_pipeline(
+            &context,
+            swapchain_properties,
+            msaa_samples,
+            render_pass,
+            skybox_layout,
+        );
+
+        let model_pipelines = if let Some(model_descriptors) = model_descriptors {
+            let model_layout = create_model_pipeline_layout(device, model_descriptors.layout());
+
+            let opaque_pipeline = create_opaque_pipeline(
+                &context,
+                swapchain_properties,
+                msaa_samples,
+                render_pass,
+                model_layout,
+            );
+
+            let transparent_pipeline = create_transparent_pipeline(
+                &context,
+                swapchain_properties,
+                msaa_samples,
+                render_pass,
+                model_layout,
+                opaque_pipeline,
+            );
+
+            Some(ModelPipelines {
+                model_layout,
+                opaque_pipeline,
+                transparent_pipeline,
+            })
+
+        } else {
+            None
+        };
+
+
+        Self {
+            context,
+            skybox_layout,
+            skybox_pipeline,
+            model_pipelines,
+        }
+    }
+}
+
+impl Pipelines {
+    pub fn skybox_layout(&self) -> vk::PipelineLayout {
+        self.skybox_layout
+    }
+
+    pub fn skybox_pipeline(&self) -> vk::Pipeline {
+        self.skybox_pipeline
+    }
+
+    pub fn model_pipelines(&self) -> Option<ModelPipelines> {
+        self.model_pipelines
+    }
+}
+
 impl Drop for Pipelines {
     fn drop(&mut self) {
         let device = self.context.device();
         unsafe {
             device.destroy_pipeline(self.skybox_pipeline, None);
             device.destroy_pipeline_layout(self.skybox_layout, None);
-            device.destroy_pipeline(self.opaque_pipeline, None);
-            device.destroy_pipeline(self.transparent_pipeline, None);
-            device.destroy_pipeline_layout(self.model_layout, None);
+            if let Some(model_pipelines) = self.model_pipelines {
+                device.destroy_pipeline(model_pipelines.opaque_pipeline, None);
+                device.destroy_pipeline(model_pipelines.transparent_pipeline, None);
+                device.destroy_pipeline_layout(model_pipelines.model_layout, None);
+            }
+
         }
     }
 }

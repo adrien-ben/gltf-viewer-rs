@@ -6,7 +6,7 @@ use ash::{version::DeviceV1_0, vk, Device};
 use cgmath::{Deg, Matrix4, Point3, Vector3};
 use std::{
     mem::{align_of, size_of},
-    path::Path,
+    path::{Path, PathBuf},
     rc::Rc,
 };
 use winit::{dpi::LogicalSize, Event, EventsLoop, Window, WindowBuilder, WindowEvent};
@@ -18,18 +18,19 @@ pub struct BaseApp {
     _window: Window,
     config: Config,
     resize_dimensions: Option<[u32; 2]>,
+    path_to_load: Option<PathBuf>,
 
     camera: Camera,
     input_state: InputState,
     context: Rc<Context>,
-    _environment: Environment,
+    environment: Environment,
+    swapchain_properties: SwapchainProperties,
     render_pass: vk::RenderPass,
-    model_descriptors: Descriptors,
+    model_data: Option<(Model, Descriptors)>,
     skybox_descriptors: Descriptors,
     uniform_buffers: Vec<Buffer>,
     skybox_model: SkyboxModel,
-    model: Model,
-    _dummy_texture: Texture,
+    dummy_texture: Texture,
     pipelines: Pipelines,
     msaa_samples: vk::SampleCountFlags,
     color_texture: Texture,
@@ -41,7 +42,7 @@ pub struct BaseApp {
 }
 
 impl BaseApp {
-    pub fn new<P: AsRef<Path>>(config: Config, path: P) -> Self {
+    pub fn new<P: AsRef<Path>>(config: Config, path: Option<P>) -> Self {
         log::debug!("Creating application.");
 
         let resolution = [config.resolution().width(), config.resolution().height()];
@@ -85,17 +86,30 @@ impl BaseApp {
 
         let skybox_model = SkyboxModel::new(&context);
 
-        let model = Model::create_from_file(&context, path).unwrap();
-
         let dummy_texture = Texture::from_rgba(&context, 1, 1, &[0, 0, 0, 0]);
 
-        let model_descriptors = Self::create_model_descriptors(
-            &context,
-            &uniform_buffers,
-            model.textures(),
-            &dummy_texture,
-            &environment,
-        );
+        let model_data = if let Some(path) = path {
+            let model = Model::create_from_file(&context, path);
+            match model {
+                Ok(model) => {
+                    let model_descriptors = Self::create_model_descriptors(
+                        &context,
+                        &uniform_buffers,
+                        model.textures(),
+                        &dummy_texture,
+                        &environment,
+                    );
+                    Some((model, model_descriptors))
+                }
+                Err(err) => {
+                    log::error!("Failed to load model. Cause {}", err);
+                    None
+                }
+            }
+        } else {
+            None
+        };
+
 
         let skybox_descriptors =
             Self::create_skybox_descriptors(&context, &uniform_buffers, &environment);
@@ -106,7 +120,7 @@ impl BaseApp {
             msaa_samples,
             render_pass,
             &skybox_descriptors,
-            &model_descriptors,
+            model_data.as_ref().map(|(_, desciptors)| desciptors),
         );
 
         let color_texture =
@@ -136,8 +150,9 @@ impl BaseApp {
             &pipelines,
             &skybox_descriptors.sets(),
             &skybox_model,
-            &model_descriptors.sets(),
-            &model,
+            model_data
+                .as_ref()
+                .map(|(model, descriptors)| (model, descriptors.sets())),
         );
 
         let in_flight_frames = Self::create_sync_objects(context.device());
@@ -147,17 +162,18 @@ impl BaseApp {
             _window: window,
             config,
             resize_dimensions: None,
+            path_to_load: None,
             camera: Default::default(),
             input_state: Default::default(),
             context,
-            _environment: environment,
+            environment,
+            swapchain_properties,
             render_pass,
-            model_descriptors,
+            model_data,
             skybox_descriptors,
             uniform_buffers,
             skybox_model,
-            model,
-            _dummy_texture: dummy_texture,
+            dummy_texture,
             pipelines,
             msaa_samples,
             color_texture,
@@ -666,8 +682,7 @@ impl BaseApp {
         pipelines: &Pipelines,
         skybox_descriptor_sets: &[vk::DescriptorSet],
         skybox_model: &SkyboxModel,
-        descriptor_sets: &[vk::DescriptorSet],
-        model: &Model,
+        model_data: Option<(&Model, &[vk::DescriptorSet])>,
     ) -> Vec<vk::CommandBuffer> {
         let device = context.device();
 
@@ -762,53 +777,60 @@ impl BaseApp {
             // Draw skybox
             unsafe { device.cmd_draw_indexed(buffer, 36, 1, 0, 0, 0) };
 
-            // Bind opaque pipeline
-            unsafe {
-                device.cmd_bind_pipeline(
-                    buffer,
-                    vk::PipelineBindPoint::GRAPHICS,
-                    pipelines.opaque_pipeline(),
-                )
-            };
+            if let Some((model, desciptor_sets)) = model_data {
 
-            // Bind descriptor sets
-            unsafe {
-                device.cmd_bind_descriptor_sets(
-                    buffer,
-                    vk::PipelineBindPoint::GRAPHICS,
-                    pipelines.model_layout(),
-                    0,
-                    &descriptor_sets[i..=i],
-                    &[],
-                )
-            };
+                if let Some(model_pipelines) = pipelines.model_pipelines() {
+                    // Bind opaque pipeline
+                    unsafe {
+                        device.cmd_bind_pipeline(
+                            buffer,
+                            vk::PipelineBindPoint::GRAPHICS,
+                            model_pipelines.opaque_pipeline(),
+                        )
+                    };
 
-            // Draw opaque primitives
-            Self::register_model_draw_commands(
-                device,
-                pipelines.model_layout(),
-                buffer,
-                model,
-                |p| !p.material().is_transparent(),
-            );
+                    // Bind descriptor sets
+                    unsafe {
+                        device.cmd_bind_descriptor_sets(
+                            buffer,
+                            vk::PipelineBindPoint::GRAPHICS,
+                            model_pipelines.model_layout(),
+                            0,
+                            &desciptor_sets[i..=i],
+                            &[],
+                        )
+                    };
 
-            // Bind transparent pipeline
-            unsafe {
-                device.cmd_bind_pipeline(
-                    buffer,
-                    vk::PipelineBindPoint::GRAPHICS,
-                    pipelines.transparent_pipeline(),
-                )
-            };
+                    // Draw opaque primitives
+                    Self::register_model_draw_commands(
+                        device,
+                        model_pipelines.model_layout(),
+                        buffer,
+                        model,
+                        |p| !p.material().is_transparent(),
+                    );
 
-            // Draw transparent primitives
-            Self::register_model_draw_commands(
-                device,
-                pipelines.model_layout(),
-                buffer,
-                model,
-                |p| p.material().is_transparent(),
-            );
+                    // Bind transparent pipeline
+                    unsafe {
+                        device.cmd_bind_pipeline(
+                            buffer,
+                            vk::PipelineBindPoint::GRAPHICS,
+                            model_pipelines.transparent_pipeline(),
+                        )
+                    };
+
+                    // Draw transparent primitives
+                    Self::register_model_draw_commands(
+                        device,
+                        model_pipelines.model_layout(),
+                        buffer,
+                        model,
+                        |p| p.material().is_transparent(),
+                    );
+                }
+
+            }
+
 
             // End render pass
             unsafe { device.cmd_end_render_pass(buffer) };
@@ -945,6 +967,7 @@ impl BaseApp {
             if self.process_event() {
                 break;
             }
+            self.load_new_model();
             self.camera.update(&self.input_state);
             self.draw_frame();
         }
@@ -956,6 +979,7 @@ impl BaseApp {
     fn process_event(&mut self) -> bool {
         let mut should_stop = false;
         let mut resize_dimensions = None;
+        let mut path_to_load = None;
         let mut input_state = self.input_state;
         input_state.reset();
 
@@ -967,14 +991,76 @@ impl BaseApp {
                     WindowEvent::Resized(LogicalSize { width, height }) => {
                         resize_dimensions = Some([width as u32, height as u32]);
                     }
+                    WindowEvent::DroppedFile(path) => {
+                        log::debug!("File dropped: {:?}", path);
+                        path_to_load = Some(path);
+                    }
                     _ => {}
                 }
             }
         });
 
         self.resize_dimensions = resize_dimensions;
+        self.path_to_load = path_to_load;
         self.input_state = input_state;
         should_stop
+    }
+
+    fn load_new_model(&mut self) {
+        let path = self.path_to_load.take();
+        if let Some(path) = path {
+            let model = Model::create_from_file(&self.context, path);
+            if let Err(err) = model {
+                log::error!("Failed to load model. Cause {}", err);
+                return;
+            }
+
+            let device = self.context.device();
+
+            self.context.graphics_queue_wait_idle();
+
+            unsafe {
+                device.free_command_buffers(
+                    self.context.general_command_pool(),
+                    &self.command_buffers,
+                );
+            }
+
+            let model = model.unwrap();
+
+            let model_descriptors = Self::create_model_descriptors(
+                &self.context,
+                &self.uniform_buffers,
+                model.textures(),
+                &self.dummy_texture,
+                &self.environment,
+            );
+
+            // TODO: only the pipelines used to render models need to be updated
+            let pipelines = Pipelines::build(
+                Rc::clone(&self.context),
+                self.swapchain_properties,
+                self.msaa_samples,
+                self.render_pass,
+                &self.skybox_descriptors,
+                Some(&model_descriptors),
+            );
+
+
+            let command_buffers = Self::create_and_register_command_buffers(
+                &self.context,
+                &self.swapchain,
+                self.render_pass,
+                &pipelines,
+                &self.skybox_descriptors.sets(),
+                &self.skybox_model,
+                Some((&model, &model_descriptors.sets())),
+            );
+
+            self.model_data = Some((model, model_descriptors));
+            self.pipelines = pipelines;
+            self.command_buffers = command_buffers;
+        }
     }
 
     fn draw_frame(&mut self) {
@@ -1109,7 +1195,7 @@ impl BaseApp {
             self.msaa_samples,
             render_pass,
             &self.skybox_descriptors,
-            &self.model_descriptors,
+            self.model_data.as_ref().map(|(_, descriptors)| descriptors),
         );
 
         let color_texture =
@@ -1139,11 +1225,13 @@ impl BaseApp {
             &pipelines,
             &self.skybox_descriptors.sets(),
             &self.skybox_model,
-            &self.model_descriptors.sets(),
-            &self.model,
+            self.model_data
+                .as_ref()
+                .map(|(model, descriptors)| (model, descriptors.sets())),
         );
 
         self.swapchain = swapchain;
+        self.swapchain_properties = swapchain_properties;
         self.render_pass = render_pass;
         self.pipelines = pipelines;
         self.color_texture = color_texture;

@@ -313,8 +313,6 @@ impl SwapchainSupportDetails {
             vk::PresentModeKHR::FIFO
         } else if available_present_modes.contains(&vk::PresentModeKHR::MAILBOX) {
             vk::PresentModeKHR::MAILBOX
-        } else if available_present_modes.contains(&vk::PresentModeKHR::FIFO) {
-            vk::PresentModeKHR::FIFO
         } else {
             vk::PresentModeKHR::IMMEDIATE
         }

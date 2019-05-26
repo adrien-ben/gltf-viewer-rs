@@ -453,6 +453,10 @@ impl Context {
                 .free_command_buffers(self.transient_command_pool, &command_buffers)
         };
     }
+
+    pub fn graphics_queue_wait_idle(&self) {
+        unsafe { self.device.queue_wait_idle(self.graphics_queue).unwrap() }
+    }
 }
 
 impl Drop for Context {

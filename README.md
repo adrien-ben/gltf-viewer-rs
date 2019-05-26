@@ -30,6 +30,7 @@ using [Ash][2]. It runs on Window, Linux and MacOS.
 - [ ] Camera controls
   - [x] Orbital
   - [ ] First Person
+- [x] Drag and drop
 
 ## Controls
 
@@ -55,15 +56,22 @@ Building the project with the debug profile will activate Vulkan validation laye
 
 ## Run it
 
-```sh
-RUST_LOG=gltf_viewer_rs=warn cargo run -- -- C:\\dev\\assets\\glTF-Sample-Models\\2.0\\Triangle\\glTF\\Triangle.gltf
-```
-
-You can provide a yaml configuration file with the `--config` (or `-c`). Check [this example file](./config.yml).
+Just type the following command and drag and drop and gltf/glb file in the window.
 
 ```sh
-RUST_LOG=gltf_viewer_rs=warn cargo run -- --config config.yml -- C:\\dev\\assets\\glTF-Sample-Models\\2.0\\Triangle\\glTF\\Triangle.gltf
+RUST_LOG=gltf_viewer_rs=warn cargo run
 ```
+
+You can provide a yaml configuration file with `--config` (or `-c`). Check [this example file](./config.yml). And you can specify a file to load at startup
+with `--file` (or `-f`)
+
+```sh
+RUST_LOG=gltf_viewer_rs=warn cargo run -- --config config.yml --file C:\\dev\\assets\\glTF-Sample-Models\\2.0\\Triangle\\glTF\\Triangle.gltf
+```
+
+## Known issues
+
+On linux, enabling v-sync causes the system to freeze with some hardware configuration (tested on a laptop running Pop_os 19.04, with a GTX 1050Ti). It seems to be an issue related with PRIME sync.
 
 ## Credits
 
