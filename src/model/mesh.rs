@@ -1,4 +1,4 @@
-use super::{IndexBuffer, Material, VertexBuffer};
+use super::{IndexBuffer, Material, VertexBuffer, util::read_accessor};
 use crate::{math::*, util::*, vulkan::*};
 use ash::vk;
 use cgmath::Vector3;
@@ -247,24 +247,6 @@ fn read_tangents(primitive: &GltfPrimitive, buffers: &[Data]) -> Option<Vec<u8>>
     primitive
         .get(&Semantic::Tangents)
         .map(|tangents| read_accessor(&tangents, buffers))
-}
-
-fn read_accessor(accessor: &Accessor, buffers: &[Data]) -> Vec<u8> {
-    let view = accessor.view();
-    let buffer = view.buffer();
-    let data = &buffers[buffer.index()];
-
-    let offset = view.offset() + accessor.offset();
-    let stride = view.stride().unwrap_or_else(|| accessor.size());
-
-    let mut vertices = Vec::<u8>::new();
-    for component_index in 0..accessor.count() {
-        let offset = offset + component_index * stride;
-        for byte_index in 0..accessor.size() {
-            vertices.push(data[offset + byte_index]);
-        }
-    }
-    vertices
 }
 
 fn push_vec3(src: &Option<&[u8]>, index: usize, dest: &mut Vec<u8>) {

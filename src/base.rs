@@ -8,6 +8,7 @@ use std::{
     mem::{align_of, size_of},
     path::{Path, PathBuf},
     rc::Rc,
+    time::Instant,
 };
 use winit::{dpi::LogicalSize, Event, EventsLoop, Window, WindowBuilder, WindowEvent};
 
@@ -851,8 +852,13 @@ impl BaseApp {
     ) where
         F: FnMut(&&Primitive) -> bool + Copy,
     {
-        for node in model.nodes() {
-            let mesh = model.mesh(node.mesh_index());
+        for node in model
+            .nodes()
+            .nodes()
+            .iter()
+            .filter(|n| n.mesh_index().is_some())
+        {
+            let mesh = model.mesh(node.mesh_index().unwrap());
 
             // Push transform constants
             unsafe {
@@ -963,11 +969,18 @@ impl BaseApp {
 
     pub fn run(&mut self) {
         log::debug!("Running application.");
+        let mut time = Instant::now();
         loop {
+            let new_time = Instant::now();
+            let delta_s = ((new_time - time).as_nanos() as f64) / 1_000_000_000.0;
+            time = new_time;
+
             if self.process_event() {
                 break;
             }
+
             self.load_new_model();
+            self.update_model(delta_s as _);
             self.camera.update(&self.input_state);
             self.draw_frame();
         }
@@ -1060,6 +1073,36 @@ impl BaseApp {
             self.model_data = Some((model, model_descriptors));
             self.pipelines = pipelines;
             self.command_buffers = command_buffers;
+        }
+    }
+
+    fn update_model(&mut self, delta_s: f32) {
+        if let Some((model, _)) = &mut self.model_data {
+            if model.update(delta_s) {
+                let device = self.context.device();
+                self.context.graphics_queue_wait_idle();
+                unsafe {
+                    device.free_command_buffers(
+                        self.context.general_command_pool(),
+                        &self.command_buffers,
+                    );
+                }
+
+                // TODO: register a secondary command buffer with just model related commands rather recreating the primary
+
+                let command_buffers = Self::create_and_register_command_buffers(
+                    &self.context,
+                    &self.swapchain,
+                    self.render_pass,
+                    &self.pipelines,
+                    &self.skybox_descriptors.sets(),
+                    &self.skybox_model,
+                    self.model_data
+                        .as_ref()
+                        .map(|(model, descriptors)| (model, descriptors.sets())),
+                );
+                self.command_buffers = command_buffers;
+            }
         }
     }
 

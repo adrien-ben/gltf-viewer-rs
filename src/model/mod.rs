@@ -1,18 +1,24 @@
+mod animation;
 mod error;
 mod material;
 mod mesh;
 mod node;
 mod texture;
+mod util;
 mod vertex;
 
-pub use self::{error::*, material::*, mesh::*, node::*, texture::*, vertex::*};
+pub use self::{
+    animation::*, error::*, material::*, mesh::*, node::*, texture::*, util::*, vertex::*,
+};
 use crate::{math::*, vulkan::*};
 use cgmath::Matrix4;
 use std::{error::Error, path::Path, rc::Rc, result::Result};
 
 pub struct Model {
     meshes: Vec<Mesh>,
-    nodes: Vec<Node>,
+    nodes: Nodes,
+    global_transform: Matrix4<f32>,
+    animations: Vec<Animation>,
     textures: Vec<Texture>,
 }
 
@@ -39,19 +45,43 @@ impl Model {
         let scene = document
             .default_scene()
             .unwrap_or_else(|| document.scenes().nth(0).unwrap());
-        let nodes = traverse_scene_nodes(&scene);
+
+        let animations = load_animations(document.animations(), &buffers);
+
+        let mut nodes = Nodes::from_gltf_nodes(document.nodes(), &scene);
+
+        let global_transform = {
+            let aabb = compute_aabb(&nodes, &meshes);
+            let transform = compute_unit_cube_at_origin_transform(aabb);
+            nodes.transform(Some(transform));
+            transform
+        };
+
         let textures = texture::create_textures_from_gltf(context, &images);
-
-        let aabb = compute_aabb(&nodes, &meshes);
-        let transform = compute_unit_cube_at_origin_transform(aabb);
-
-        let nodes = nodes.iter().map(|n| *n * transform).collect::<Vec<_>>();
 
         Ok(Model {
             meshes,
             nodes,
+            global_transform,
+            animations,
             textures,
         })
+    }
+}
+
+impl Model {
+    pub fn update(&mut self, delta_time: f32) -> bool {
+        let updated = if let Some(animation) = &mut self.animations.iter_mut().nth(0) {
+            animation.animate(&mut self.nodes, delta_time)
+        } else {
+            false
+        };
+
+        if updated {
+            &mut self.nodes.transform(Some(self.global_transform));
+        }
+
+        updated
     }
 }
 
@@ -60,7 +90,7 @@ impl Model {
         &self.meshes[index]
     }
 
-    pub fn nodes(&self) -> &[Node] {
+    pub fn nodes(&self) -> &Nodes {
         &self.nodes
     }
 
@@ -69,11 +99,13 @@ impl Model {
     }
 }
 
-fn compute_aabb(nodes: &[Node], meshes: &[Mesh]) -> AABB<f32> {
+fn compute_aabb(nodes: &Nodes, meshes: &[Mesh]) -> AABB<f32> {
     let aabbs = nodes
+        .nodes()
         .iter()
+        .filter(|n| n.mesh_index().is_some())
         .map(|n| {
-            let mesh = &meshes[n.mesh_index()];
+            let mesh = &meshes[n.mesh_index().unwrap()];
             mesh.aabb() * n.transform()
         })
         .collect::<Vec<_>>();

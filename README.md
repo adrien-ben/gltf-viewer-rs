@@ -21,8 +21,12 @@ using [Ash][2]. It runs on Window, Linux and MacOS.
   - [ ] Double sided surfaces
 - [x] IBL
 - [ ] Animations
-  - [ ] Node animation
+  - [x] Node animation
   - [ ] Skinning
+  - [ ] Interpolation
+    - [x] Step
+    - [x] Linear
+    - [ ] Cubicspline
 - [ ] Support some extensions
   - [ ] KHR_lights_punctual
   - [ ] KHR_draco_mesh_compression
