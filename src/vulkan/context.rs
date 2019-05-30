@@ -7,7 +7,10 @@ use ash::{
     version::{DeviceV1_0, EntryV1_0, InstanceV1_0},
     vk, Device, Entry, Instance,
 };
-use std::ffi::{CStr, CString};
+use std::{
+    ffi::{CStr, CString},
+    mem::size_of,
+};
 use winit::Window;
 
 const POSSIBLE_SAMPLE_COUNTS: [u32; 7] = [1, 2, 4, 8, 16, 32, 64];
@@ -401,6 +404,25 @@ impl Context {
             vk::SampleCountFlags::TYPE_2
         } else {
             vk::SampleCountFlags::TYPE_1
+        }
+    }
+
+    fn get_min_uniform_buffer_offset_alignment(&self) -> u32 {
+        let props = unsafe {
+            self.instance
+                .get_physical_device_properties(self.physical_device)
+        };
+        props.limits.min_uniform_buffer_offset_alignment as _
+    }
+
+    pub fn get_ubo_alignment<T>(&self) -> u32 {
+        let min_alignment = self.get_min_uniform_buffer_offset_alignment();
+        let t_size = size_of::<T>() as u32;
+
+        if t_size <= min_alignment {
+            min_alignment
+        } else {
+            min_alignment * (t_size as f32 / min_alignment as f32).ceil() as u32
         }
     }
 

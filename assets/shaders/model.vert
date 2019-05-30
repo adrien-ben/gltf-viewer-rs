@@ -12,7 +12,7 @@ layout(binding = 0) uniform CameraUBO {
      vec3 eye;
 } cameraUBO;
 
-layout(push_constant) uniform Transform {
+layout(binding = 1) uniform TransformUBO {
     mat4 matrix;
 } transform;
 

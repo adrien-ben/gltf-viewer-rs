@@ -1,6 +1,5 @@
 use crate::{environment::*, model::*, vulkan::*};
 use ash::{version::DeviceV1_0, vk, Device};
-use cgmath::Matrix4;
 use std::{ffi::CString, mem::size_of, rc::Rc};
 
 #[derive(Copy, Clone)]
@@ -178,18 +177,11 @@ fn create_model_pipeline_layout(
     descriptor_set_layout: vk::DescriptorSetLayout,
 ) -> vk::PipelineLayout {
     let layouts = [descriptor_set_layout];
-    let push_constant_range = [
-        vk::PushConstantRange {
-            stage_flags: vk::ShaderStageFlags::VERTEX,
-            offset: 0,
-            size: size_of::<Matrix4<f32>>() as _,
-        },
-        vk::PushConstantRange {
-            stage_flags: vk::ShaderStageFlags::FRAGMENT,
-            offset: size_of::<Matrix4<f32>>() as _,
-            size: size_of::<Material>() as _,
-        },
-    ];
+    let push_constant_range = [vk::PushConstantRange {
+        stage_flags: vk::ShaderStageFlags::FRAGMENT,
+        offset: 0,
+        size: size_of::<Material>() as _,
+    }];
     let layout_info = vk::PipelineLayoutCreateInfo::builder()
         .set_layouts(&layouts)
         .push_constant_ranges(&push_constant_range);

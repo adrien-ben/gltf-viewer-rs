@@ -29,21 +29,21 @@ layout(binding = 0) uniform CameraUBO {
 } cameraUBO;
 
 layout(push_constant) uniform Material {
-    layout(offset = 64) vec4 color;
-    layout(offset = 80) vec4 emissiveAndRoughness;
-    layout(offset = 96) float metallic;
-    layout(offset = 100) float occlusion;
+    vec4 color;
+    vec4 emissiveAndRoughness;
+    float metallic;
+    float occlusion;
     // Contains the texture ids for color, metallic/roughness, emissive and normal (each taking 8 bytes)
-    layout(offset = 104) uint colorMetallicRoughnessEmissiveNormalTextureIds;
+    uint colorMetallicRoughnessEmissiveNormalTextureIds;
     // Contains the occlusion texture id and the alpha mode (each taking 8 bytes) + 16 bytes of right padding
-    layout(offset = 108) uint occlusionTextureIdAndAlphaMode;
-    layout(offset = 112) float alphaCutoff;
+    uint occlusionTextureIdAndAlphaMode;
+    float alphaCutoff;
 } material;
 
-layout(binding = 1) uniform sampler2D texSamplers[61]; // TODO: Use specialization
-layout(binding = 2) uniform samplerCube irradianceMapSampler;
-layout(binding = 3) uniform samplerCube preFilteredSampler;
-layout(binding = 4) uniform sampler2D brdfLookupSampler;
+layout(binding = 2) uniform sampler2D texSamplers[61]; // TODO: Use specialization
+layout(binding = 3) uniform samplerCube irradianceMapSampler;
+layout(binding = 4) uniform samplerCube preFilteredSampler;
+layout(binding = 5) uniform sampler2D brdfLookupSampler;
 
 layout(location = 0) out vec4 outColor;
 
