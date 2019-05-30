@@ -1,6 +1,6 @@
-use super::context::*;
+use super::{context::*, util::*};
 use ash::{version::DeviceV1_0, vk};
-use std::{mem::align_of, mem::size_of, rc::Rc};
+use std::{mem::size_of, rc::Rc};
 
 pub struct Buffer {
     context: Rc<Context>,
@@ -122,8 +122,7 @@ pub fn create_device_local_buffer_with_data<A, T: Copy>(
         let data_ptr = device
             .map_memory(staging_buffer.memory, 0, size, vk::MemoryMapFlags::empty())
             .unwrap();
-        let mut align = ash::util::Align::new(data_ptr, align_of::<A>() as _, staging_buffer.size);
-        align.copy_from_slice(data);
+        mem_copy(data_ptr, data);
         device.unmap_memory(staging_buffer.memory);
     };
 

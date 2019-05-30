@@ -5,7 +5,7 @@ use crate::{
 use ash::{version::DeviceV1_0, vk, Device};
 use cgmath::{Deg, Matrix4, Point3, Vector3};
 use std::{
-    mem::{align_of, size_of},
+    mem::size_of,
     path::{Path, PathBuf},
     rc::Rc,
     time::Instant,
@@ -1321,12 +1321,12 @@ impl BaseApp {
         let buffer_mem = self.uniform_buffers[current_image as usize].memory;
         let size = size_of::<CameraUBO>() as vk::DeviceSize;
         unsafe {
+            // TODO: mapping/unmapping memory at each frame is super expensive. Don't.
             let device = self.context.device();
             let data_ptr = device
                 .map_memory(buffer_mem, 0, size, vk::MemoryMapFlags::empty())
                 .unwrap();
-            let mut align = ash::util::Align::new(data_ptr, align_of::<f32>() as _, size);
-            align.copy_from_slice(&ubos);
+            mem_copy(data_ptr, &ubos);
             device.unmap_memory(buffer_mem);
         }
     }
