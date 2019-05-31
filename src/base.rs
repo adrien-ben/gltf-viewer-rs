@@ -277,12 +277,14 @@ impl BaseApp {
     fn create_camera_uniform_buffers(context: &Rc<Context>, count: u32) -> Vec<Buffer> {
         (0..count)
             .map(|_| {
-                Buffer::create(
+                let mut buffer = Buffer::create(
                     Rc::clone(context),
                     size_of::<CameraUBO>() as _,
                     vk::BufferUsageFlags::UNIFORM_BUFFER,
                     vk::MemoryPropertyFlags::HOST_VISIBLE | vk::MemoryPropertyFlags::HOST_COHERENT,
-                )
+                );
+                buffer.map_memory();
+                buffer
             })
             .collect::<Vec<_>>()
     }
@@ -298,12 +300,14 @@ impl BaseApp {
 
         (0..count)
             .map(|_| {
-                Buffer::create(
+                let mut buffer = Buffer::create(
                     Rc::clone(context),
                     (elem_size * mesh_node_count) as _,
                     vk::BufferUsageFlags::UNIFORM_BUFFER,
                     vk::MemoryPropertyFlags::HOST_VISIBLE | vk::MemoryPropertyFlags::HOST_COHERENT,
-                )
+                );
+                buffer.map_memory();
+                buffer
             })
             .collect::<Vec<_>>()
     }
@@ -1353,22 +1357,16 @@ impl BaseApp {
             let proj = math::perspective(Deg(45.0), aspect, 0.01, 10.0);
 
             let ubos = [CameraUBO::new(view, proj, self.camera.position())];
-            let buffer_mem = self.camera_uniform_buffers[current_image as usize].memory;
-            let size = size_of::<CameraUBO>() as vk::DeviceSize;
+            let buffer = &mut self.camera_uniform_buffers[current_image as usize];
             unsafe {
-                // TODO: mapping/unmapping memory at each frame is super expensive. Don't.
-                let device = self.context.device();
-                let data_ptr = device
-                    .map_memory(buffer_mem, 0, size, vk::MemoryMapFlags::empty())
-                    .unwrap();
+                let data_ptr = buffer.map_memory();
                 mem_copy(data_ptr, &ubos);
-                device.unmap_memory(buffer_mem);
             }
         }
 
         // model ubo
         {
-            if let Some((model, _, ubos)) = &self.model_data {
+            if let Some((model, _, ubos)) = &mut self.model_data {
                 let mesh_nodes = model
                     .nodes()
                     .nodes()
@@ -1378,16 +1376,10 @@ impl BaseApp {
                 let transforms = mesh_nodes.map(|n| n.transform()).collect::<Vec<_>>();
 
                 let elem_size = &self.context.get_ubo_alignment::<Matrix4<f32>>();
-                let buffer = &ubos[current_image as usize];
-                let buffer_mem = buffer.memory;
+                let buffer = &mut ubos[current_image as usize];
                 unsafe {
-                    // TODO: mapping/unmapping memory at each frame is super expensive. Don't.
-                    let device = self.context.device();
-                    let data_ptr = device
-                        .map_memory(buffer_mem, 0, buffer.size, vk::MemoryMapFlags::empty())
-                        .unwrap();
+                    let data_ptr = buffer.map_memory();
                     mem_copy_aligned(data_ptr, *elem_size as _, &transforms);
-                    device.unmap_memory(buffer_mem);
                 }
             }
         }
