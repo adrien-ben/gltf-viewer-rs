@@ -1,12 +1,13 @@
-use super::context::*;
+use super::{context::*, util::*};
 use ash::{version::DeviceV1_0, vk};
-use std::{mem::align_of, mem::size_of, rc::Rc};
+use std::{ffi::c_void, mem::size_of, rc::Rc};
 
 pub struct Buffer {
     context: Rc<Context>,
     pub buffer: vk::Buffer,
     pub memory: vk::DeviceMemory,
     pub size: vk::DeviceSize,
+    mapped_pointer: Option<*mut c_void>,
 }
 
 impl Buffer {
@@ -21,6 +22,7 @@ impl Buffer {
             buffer,
             memory,
             size,
+            mapped_pointer: None,
         }
     }
 
@@ -87,11 +89,42 @@ impl Buffer {
             };
         });
     }
+
+    /// Map the buffer memory and return the mapped pointer.
+    ///
+    /// If the memory is already mapped it just returns the pointer.
+    pub fn map_memory(&mut self) -> *mut c_void {
+        if let Some(ptr) = self.mapped_pointer {
+            ptr
+        } else {
+            unsafe {
+                let ptr = self
+                    .context
+                    .device()
+                    .map_memory(self.memory, 0, self.size, vk::MemoryMapFlags::empty())
+                    .unwrap();
+                self.mapped_pointer = Some(ptr);
+                ptr
+            }
+        }
+    }
+
+    /// Unmap the buffer memory.
+    ///
+    /// Does nothing if memory is not mapped.
+    pub fn unmap_memory(&mut self) {
+        if let Some(_) = self.mapped_pointer.take() {
+            unsafe {
+                self.context.device().unmap_memory(self.memory);
+            }
+        }
+    }
 }
 
 impl Drop for Buffer {
     fn drop(&mut self) {
         unsafe {
+            self.unmap_memory();
             self.context.device().destroy_buffer(self.buffer, None);
             self.context.device().free_memory(self.memory, None);
         }
@@ -109,9 +142,8 @@ pub fn create_device_local_buffer_with_data<A, T: Copy>(
     usage: vk::BufferUsageFlags,
     data: &[T],
 ) -> Buffer {
-    let device = context.device();
     let size = (data.len() * size_of::<T>()) as vk::DeviceSize;
-    let staging_buffer = Buffer::create(
+    let mut staging_buffer = Buffer::create(
         Rc::clone(context),
         size,
         vk::BufferUsageFlags::TRANSFER_SRC,
@@ -119,12 +151,8 @@ pub fn create_device_local_buffer_with_data<A, T: Copy>(
     );
 
     unsafe {
-        let data_ptr = device
-            .map_memory(staging_buffer.memory, 0, size, vk::MemoryMapFlags::empty())
-            .unwrap();
-        let mut align = ash::util::Align::new(data_ptr, align_of::<A>() as _, staging_buffer.size);
-        align.copy_from_slice(data);
-        device.unmap_memory(staging_buffer.memory);
+        let data_ptr = staging_buffer.map_memory();
+        mem_copy(data_ptr, data);
     };
 
     let buffer = Buffer::create(

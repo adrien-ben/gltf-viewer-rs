@@ -1,9 +1,6 @@
-use super::{buffer::*, context::*, image::*};
+use super::{buffer::*, context::*, image::*, util::*};
 use ash::{version::DeviceV1_0, vk};
-use std::{
-    mem::{align_of, size_of},
-    rc::Rc,
-};
+use std::{mem::size_of, rc::Rc};
 
 pub struct Texture {
     context: Rc<Context>,
@@ -33,7 +30,7 @@ impl Texture {
         let image_size = (data.len() * size_of::<u8>()) as vk::DeviceSize;
         let device = context.device();
 
-        let buffer = Buffer::create(
+        let mut buffer = Buffer::create(
             Rc::clone(context),
             image_size,
             vk::BufferUsageFlags::TRANSFER_SRC,
@@ -41,12 +38,8 @@ impl Texture {
         );
 
         unsafe {
-            let ptr = device
-                .map_memory(buffer.memory, 0, image_size, vk::MemoryMapFlags::empty())
-                .unwrap();
-            let mut align = ash::util::Align::new(ptr, align_of::<u8>() as _, buffer.size);
-            align.copy_from_slice(&data);
-            device.unmap_memory(buffer.memory);
+            let ptr = buffer.map_memory();
+            mem_copy(ptr, &data);
         }
 
         let image = Image::create(
@@ -108,7 +101,7 @@ impl Texture {
         let image_size = (data.len() * size_of::<f32>()) as vk::DeviceSize;
         let device = context.device();
 
-        let buffer = Buffer::create(
+        let mut buffer = Buffer::create(
             Rc::clone(context),
             image_size,
             vk::BufferUsageFlags::TRANSFER_SRC,
@@ -116,12 +109,8 @@ impl Texture {
         );
 
         unsafe {
-            let ptr = device
-                .map_memory(buffer.memory, 0, image_size, vk::MemoryMapFlags::empty())
-                .unwrap();
-            let mut align = ash::util::Align::new(ptr, align_of::<u8>() as _, buffer.size);
-            align.copy_from_slice(&data);
-            device.unmap_memory(buffer.memory);
+            let ptr = buffer.map_memory();
+            mem_copy(ptr, &data);
         }
 
         let image = Image::create(
@@ -187,7 +176,7 @@ impl Texture {
         let image_size = (data.len() * size_of::<f32>()) as vk::DeviceSize;
         let device = context.device();
 
-        let buffer = Buffer::create(
+        let mut buffer = Buffer::create(
             Rc::clone(context),
             image_size,
             vk::BufferUsageFlags::TRANSFER_SRC,
@@ -195,12 +184,8 @@ impl Texture {
         );
 
         unsafe {
-            let ptr = device
-                .map_memory(buffer.memory, 0, image_size, vk::MemoryMapFlags::empty())
-                .unwrap();
-            let mut align = ash::util::Align::new(ptr, align_of::<f32>() as _, buffer.size);
-            align.copy_from_slice(&data);
-            device.unmap_memory(buffer.memory);
+            let ptr = buffer.map_memory();
+            mem_copy(ptr, &data);
         }
 
         let image = Image::create(

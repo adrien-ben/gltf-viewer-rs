@@ -9,6 +9,8 @@ pub struct ModelVertex {
     normals: [f32; 3],
     tex_coords: [f32; 2],
     tangents: [f32; 4],
+    weights: [f32; 4],
+    joints: [u32; 4],
 }
 
 impl Vertex for ModelVertex {
@@ -45,6 +47,18 @@ impl Vertex for ModelVertex {
                 binding: 0,
                 format: vk::Format::R32G32B32A32_SFLOAT,
                 offset: 32,
+            },
+            vk::VertexInputAttributeDescription {
+                location: 4,
+                binding: 0,
+                format: vk::Format::R32G32B32A32_SFLOAT,
+                offset: 48,
+            },
+            vk::VertexInputAttributeDescription {
+                location: 5,
+                binding: 0,
+                format: vk::Format::R32G32B32A32_UINT,
+                offset: 64,
             },
         ]
     }
