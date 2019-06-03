@@ -22,7 +22,7 @@ using [Ash][2]. It runs on Window, Linux and MacOS.
 - [x] IBL
 - [ ] Animations
   - [x] Node animation
-  - [ ] Skinning
+  - [x] Skinning
   - [ ] Interpolation
     - [x] Step
     - [x] Linear

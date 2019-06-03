@@ -1,10 +1,17 @@
-use super::{IndexBuffer, Material, VertexBuffer, util::read_accessor};
+use super::{util::read_accessor, IndexBuffer, Material, VertexBuffer};
 use crate::{math::*, util::*, vulkan::*};
 use ash::vk;
+use byteorder::{ByteOrder, LittleEndian};
 use cgmath::Vector3;
 use gltf::{
-    accessor::DataType, buffer::Data, mesh::Primitive as GltfPrimitive, mesh::Semantic, Accessor,
-    Document,
+    accessor::DataType,
+    buffer::Data,
+    mesh::Primitive as GltfPrimitive,
+    mesh::{
+        util::{ReadJoints, ReadWeights},
+        Semantic,
+    },
+    Accessor, Document,
 };
 use serde_json::Value;
 use std::rc::Rc;
@@ -97,19 +104,23 @@ pub fn create_meshes_from_gltf(
                 let normals = read_normals(&primitive, buffers);
                 let texcoords = read_texcoords(&primitive, buffers);
                 let tangents = read_tangents(&primitive, buffers);
+                let weights = read_weights(&primitive, buffers);
+                let joints = read_joints(&primitive, buffers);
 
                 let mut vertices = Vec::<u8>::new();
 
                 for elt_index in 0..accessor.count() {
-                    push_vec3(&Some(&positions), elt_index, &mut vertices);
-                    push_vec3(&normals.as_ref().map(|v| &v[..]), elt_index, &mut vertices);
-                    push_vec2(
+                    push_vec3f32(&Some(&positions), elt_index, &mut vertices);
+                    push_vec3f32(&normals.as_ref().map(|v| &v[..]), elt_index, &mut vertices);
+                    push_vec2f32(
                         &texcoords.as_ref().map(|c| &c[..]),
                         elt_index,
                         &mut vertices,
                     );
                     // TODO : if tangents are not provided they should be computed using default MikkTSpace algorithms.
-                    push_vec4(&tangents.as_ref().map(|t| &t[..]), elt_index, &mut vertices);
+                    push_vec4f32(&tangents.as_ref().map(|t| &t[..]), elt_index, &mut vertices);
+                    push_vec4f32(&weights.as_ref().map(|w| &w[..]), elt_index, &mut vertices);
+                    push_vec4u32(&joints.as_ref().map(|j| &j[..]), elt_index, &mut vertices);
                 }
 
                 let offset = all_vertices.len();
@@ -249,7 +260,58 @@ fn read_tangents(primitive: &GltfPrimitive, buffers: &[Data]) -> Option<Vec<u8>>
         .map(|tangents| read_accessor(&tangents, buffers))
 }
 
-fn push_vec3(src: &Option<&[u8]>, index: usize, dest: &mut Vec<u8>) {
+fn read_weights(primitive: &GltfPrimitive, buffers: &[Data]) -> Option<Vec<u8>> {
+    let reader = primitive.reader(|buffer| Some(&buffers[buffer.index()]));
+    if let Some(weights) = reader.read_weights(0) {
+        let weights = weights.into_f32().unwrap();
+        if let ReadWeights::F32(weights) = weights {
+            let mut buffer = Vec::new();
+            for weight in weights {
+                for v in &weight {
+                    let mut v_as_u8 = [0; 4];
+                    LittleEndian::write_f32(&mut v_as_u8, *v);
+                    buffer.push(v_as_u8[0]);
+                    buffer.push(v_as_u8[1]);
+                    buffer.push(v_as_u8[2]);
+                    buffer.push(v_as_u8[3]);
+                }
+            }
+            Some(buffer)
+        } else {
+            None
+        }
+    } else {
+        None
+    }
+}
+
+fn read_joints(primitive: &GltfPrimitive, buffers: &[Data]) -> Option<Vec<u8>> {
+    let reader = primitive.reader(|buffer| Some(&buffers[buffer.index()]));
+    if let Some(joints) = reader.read_joints(0) {
+        let joints = joints.into_u16().unwrap();
+        if let ReadJoints::U16(joints) = joints {
+            let mut buffer = Vec::new();
+            for joint in joints {
+                for j in &joint {
+                    let j = u32::from(*j);
+                    let mut v_as_u8 = [0; 4];
+                    LittleEndian::write_u32(&mut v_as_u8, j);
+                    buffer.push(v_as_u8[0]);
+                    buffer.push(v_as_u8[1]);
+                    buffer.push(v_as_u8[2]);
+                    buffer.push(v_as_u8[3]);
+                }
+            }
+            Some(buffer)
+        } else {
+            None
+        }
+    } else {
+        None
+    }
+}
+
+fn push_vec3f32(src: &Option<&[u8]>, index: usize, dest: &mut Vec<u8>) {
     let left = index * 12;
     let right = left + 12;
 
@@ -263,7 +325,7 @@ fn push_vec3(src: &Option<&[u8]>, index: usize, dest: &mut Vec<u8>) {
     };
 }
 
-fn push_vec2(src: &Option<&[u8]>, index: usize, dest: &mut Vec<u8>) {
+fn push_vec2f32(src: &Option<&[u8]>, index: usize, dest: &mut Vec<u8>) {
     let left = index * 8;
     let right = left + 8;
 
@@ -277,7 +339,7 @@ fn push_vec2(src: &Option<&[u8]>, index: usize, dest: &mut Vec<u8>) {
     };
 }
 
-fn push_vec4(src: &Option<&[u8]>, index: usize, dest: &mut Vec<u8>) {
+fn push_vec4f32(src: &Option<&[u8]>, index: usize, dest: &mut Vec<u8>) {
     let left = index * 16;
     let right = left + 16;
 
@@ -285,7 +347,21 @@ fn push_vec4(src: &Option<&[u8]>, index: usize, dest: &mut Vec<u8>) {
         dest.extend_from_slice(&src[left..right]);
     } else {
         unsafe {
-            let one: [f32; 4] = [1.0, 1.0, 1.0, 1.0];
+            let one: [f32; 4] = [0.0, 0.0, 0.0, 0.0];
+            dest.extend_from_slice(any_as_u8_slice(&one));
+        }
+    };
+}
+
+fn push_vec4u32(src: &Option<&[u8]>, index: usize, dest: &mut Vec<u8>) {
+    let left = index * 16;
+    let right = left + 16;
+
+    if let Some(src) = src {
+        dest.extend_from_slice(&src[left..right]);
+    } else {
+        unsafe {
+            let one: [u32; 4] = [0, 0, 0, 0];
             dest.extend_from_slice(any_as_u8_slice(&one));
         }
     };

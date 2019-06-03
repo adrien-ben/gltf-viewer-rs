@@ -3,12 +3,13 @@ mod error;
 mod material;
 mod mesh;
 mod node;
+mod skin;
 mod texture;
 mod util;
 mod vertex;
 
 pub use self::{
-    animation::*, error::*, material::*, mesh::*, node::*, texture::*, util::*, vertex::*,
+    animation::*, error::*, material::*, mesh::*, node::*, skin::*, texture::*, util::*, vertex::*,
 };
 use crate::{math::*, vulkan::*};
 use cgmath::Matrix4;
@@ -19,6 +20,7 @@ pub struct Model {
     nodes: Nodes,
     global_transform: Matrix4<f32>,
     animations: Vec<Animation>,
+    skins: Vec<Skin>,
     textures: Vec<Texture>,
 }
 
@@ -48,12 +50,21 @@ impl Model {
 
         let animations = load_animations(document.animations(), &buffers);
 
+        let mut skins = create_skins_from_gltf(document.skins(), &buffers);
+
         let mut nodes = Nodes::from_gltf_nodes(document.nodes(), &scene);
 
         let global_transform = {
             let aabb = compute_aabb(&nodes, &meshes);
             let transform = compute_unit_cube_at_origin_transform(aabb);
             nodes.transform(Some(transform));
+            nodes
+                .get_skins_transform()
+                .iter()
+                .for_each(|(index, transform)| {
+                    let skin = &mut skins[*index];
+                    skin.compute_joints_matrices(*transform, &nodes.nodes());
+                });
             transform
         };
 
@@ -64,6 +75,7 @@ impl Model {
             nodes,
             global_transform,
             animations,
+            skins,
             textures,
         })
     }
@@ -79,6 +91,13 @@ impl Model {
 
         if updated {
             &mut self.nodes.transform(Some(self.global_transform));
+            self.nodes
+                .get_skins_transform()
+                .iter()
+                .for_each(|(index, transform)| {
+                    let skin = &mut self.skins[*index];
+                    skin.compute_joints_matrices(*transform, &self.nodes.nodes());
+                });
         }
 
         updated
@@ -88,6 +107,10 @@ impl Model {
 impl Model {
     pub fn mesh(&self, index: usize) -> &Mesh {
         &self.meshes[index]
+    }
+
+    pub fn skin(&self, index: usize) -> &Skin {
+        &self.skins[index]
     }
 
     pub fn nodes(&self) -> &Nodes {

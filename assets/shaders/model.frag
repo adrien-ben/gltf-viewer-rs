@@ -40,10 +40,10 @@ layout(push_constant) uniform Material {
     float alphaCutoff;
 } material;
 
-layout(binding = 2) uniform sampler2D texSamplers[61]; // TODO: Use specialization
-layout(binding = 3) uniform samplerCube irradianceMapSampler;
-layout(binding = 4) uniform samplerCube preFilteredSampler;
-layout(binding = 5) uniform sampler2D brdfLookupSampler;
+layout(binding = 3) uniform sampler2D texSamplers[61]; // TODO: Use specialization
+layout(binding = 4) uniform samplerCube irradianceMapSampler;
+layout(binding = 5) uniform samplerCube preFilteredSampler;
+layout(binding = 6) uniform sampler2D brdfLookupSampler;
 
 layout(location = 0) out vec4 outColor;
 

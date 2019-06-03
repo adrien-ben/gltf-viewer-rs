@@ -18,11 +18,13 @@ impl Nodes {
             let local_transform = node.transform();
             let global_transform_matrix = compute_transform_matrix(&local_transform);
             let mesh_index = node.mesh().map(|m| m.index());
+            let skin_index = node.skin().map(|s| s.index());
             let children_indices = node.children().map(|c| c.index()).collect::<Vec<_>>();
             let node = Node {
                 local_transform,
                 global_transform_matrix,
                 mesh_index,
+                skin_index,
                 children_indices,
             };
             nodes.insert(node_index, node);
@@ -59,6 +61,14 @@ impl Nodes {
                 node.apply_transform(matrix);
             }
         }
+    }
+
+    pub fn get_skins_transform(&self) -> Vec<(usize, Matrix4<f32>)> {
+        self.nodes
+            .iter()
+            .filter(|n| n.skin_index.is_some())
+            .map(|n| (n.skin_index.unwrap(), n.transform()))
+            .collect::<Vec<_>>()
     }
 }
 
@@ -97,6 +107,7 @@ pub struct Node {
     local_transform: Transform,
     global_transform_matrix: Matrix4<f32>,
     mesh_index: Option<usize>,
+    skin_index: Option<usize>,
     children_indices: Vec<usize>,
 }
 
@@ -114,6 +125,10 @@ impl Node {
 
     pub fn mesh_index(&self) -> Option<usize> {
         self.mesh_index
+    }
+
+    pub fn skin_index(&self) -> Option<usize> {
+        self.skin_index
     }
 
     pub fn set_translation(&mut self, translation: Vector3<f32>) {
