@@ -118,8 +118,8 @@ pub fn create_meshes_from_gltf(
                         &mut vertices,
                     );
                     // TODO : if tangents are not provided they should be computed using default MikkTSpace algorithms.
-                    push_vec4f32(&tangents.as_ref().map(|t| &t[..]), elt_index, &mut vertices);
-                    push_vec4f32(&weights.as_ref().map(|w| &w[..]), elt_index, &mut vertices);
+                    push_vec4f32(&tangents.as_ref().map(|t| &t[..]), elt_index, &mut vertices, [1.0, 1.0, 1.0, 1.0]);
+                    push_vec4f32(&weights.as_ref().map(|w| &w[..]), elt_index, &mut vertices, [0.0, 0.0, 0.0, 0.0]);
                     push_vec4u32(&joints.as_ref().map(|j| &j[..]), elt_index, &mut vertices);
                 }
 
@@ -339,7 +339,7 @@ fn push_vec2f32(src: &Option<&[u8]>, index: usize, dest: &mut Vec<u8>) {
     };
 }
 
-fn push_vec4f32(src: &Option<&[u8]>, index: usize, dest: &mut Vec<u8>) {
+fn push_vec4f32(src: &Option<&[u8]>, index: usize, dest: &mut Vec<u8>, default: [f32; 4]) {
     let left = index * 16;
     let right = left + 16;
 
@@ -347,8 +347,7 @@ fn push_vec4f32(src: &Option<&[u8]>, index: usize, dest: &mut Vec<u8>) {
         dest.extend_from_slice(&src[left..right]);
     } else {
         unsafe {
-            let one: [f32; 4] = [0.0, 0.0, 0.0, 0.0];
-            dest.extend_from_slice(any_as_u8_slice(&one));
+            dest.extend_from_slice(any_as_u8_slice(&default));
         }
     };
 }

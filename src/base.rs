@@ -336,7 +336,8 @@ impl BaseApp {
             .nodes()
             .iter()
             .filter(|n| n.skin_index().is_some())
-            .count() as u32;
+            .count()
+            .max(1) as u32;
         let elem_size = context.get_ubo_alignment::<[Matrix4<f32>; MAX_JOINTS_PER_MESH]>();
 
         (0..count)
@@ -980,6 +981,7 @@ impl BaseApp {
             .enumerate()
         {
             let mesh = model.mesh(node.mesh_index().unwrap());
+            let skin_index = node.skin_index().unwrap_or(0);
 
             // Bind descriptor sets
             unsafe {
@@ -991,7 +993,7 @@ impl BaseApp {
                     &descriptor_set,
                     &[
                         model_transform_ubo_offset * index as u32,
-                        model_skin_ubo_offset * index as u32,
+                        model_skin_ubo_offset * skin_index as u32,
                     ],
                 )
             };

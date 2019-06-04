@@ -244,7 +244,7 @@ void main() {
     outColor = vec4(color, alpha);
 
 #ifdef DEBUG_COLOR
-    outColor = vec4(baseColor, 1.0);
+    outColor = vec4(baseColor.rgb, 1.0);
 #endif
 
 #ifdef DEBUG_EMISSIVE
