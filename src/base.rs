@@ -89,48 +89,6 @@ impl BaseApp {
 
         let dummy_texture = Texture::from_rgba(&context, 1, 1, &[0, 0, 0, 0]);
 
-        let model_data = if let Some(path) = path {
-            let model = Model::create_from_file(&context, path);
-            match model {
-                Ok(model) => {
-                    let transform_ubos = Self::create_model_transform_ubos(
-                        &context,
-                        &model,
-                        swapchain_properties.image_count,
-                    );
-
-                    let skin_ubos = Self::create_model_skin_ubos(
-                        &context,
-                        &model,
-                        swapchain_properties.image_count,
-                    );
-
-                    let descriptors = Self::create_model_descriptors(
-                        &context,
-                        &camera_uniform_buffers,
-                        &transform_ubos,
-                        &skin_ubos,
-                        model.textures(),
-                        &dummy_texture,
-                        &environment,
-                    );
-
-                    Some(ModelData {
-                        model,
-                        descriptors,
-                        transform_ubos,
-                        skin_ubos,
-                    })
-                }
-                Err(err) => {
-                    log::error!("Failed to load model. Cause {}", err);
-                    None
-                }
-            }
-        } else {
-            None
-        };
-
 
         let skybox_descriptors =
             Self::create_skybox_descriptors(&context, &camera_uniform_buffers, &environment);
@@ -141,7 +99,7 @@ impl BaseApp {
             msaa_samples,
             render_pass,
             &skybox_descriptors,
-            model_data.as_ref().map(|m| &m.descriptors),
+            None,
         );
 
         let color_texture =
@@ -171,7 +129,7 @@ impl BaseApp {
             &pipelines,
             &skybox_descriptors.sets(),
             &skybox_model,
-            model_data.as_ref(),
+            None,
         );
 
         let in_flight_frames = Self::create_sync_objects(context.device());
@@ -181,14 +139,14 @@ impl BaseApp {
             _window: window,
             config,
             resize_dimensions: None,
-            path_to_load: None,
+            path_to_load: path.map(|p| p.as_ref().to_path_buf()),
             camera: Default::default(),
             input_state: Default::default(),
             context,
             environment,
             swapchain_properties,
             render_pass,
-            model_data,
+            model_data: None,
             skybox_descriptors,
             camera_uniform_buffers,
             skybox_model,
@@ -1139,7 +1097,9 @@ impl BaseApp {
         });
 
         self.resize_dimensions = resize_dimensions;
-        self.path_to_load = path_to_load;
+        if path_to_load.is_some() {
+            self.path_to_load = path_to_load;
+        }
         self.input_state = input_state;
         should_stop
     }
