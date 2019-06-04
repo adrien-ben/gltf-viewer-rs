@@ -2,15 +2,14 @@ use crate::vulkan::*;
 use ash::vk;
 use std::{mem::size_of, rc::Rc};
 
-#[derive(Clone, Copy)]
-#[allow(dead_code)]
+#[derive(Clone, Copy, Debug)]
 pub struct ModelVertex {
-    position: [f32; 3],
-    normals: [f32; 3],
-    tex_coords: [f32; 2],
-    tangents: [f32; 4],
-    weights: [f32; 4],
-    joints: [u32; 4],
+    pub position: [f32; 3],
+    pub normal: [f32; 3],
+    pub tex_coords: [f32; 2],
+    pub tangent: [f32; 4],
+    pub weights: [f32; 4],
+    pub joints: [u32; 4],
 }
 
 impl Vertex for ModelVertex {

@@ -1,20 +1,18 @@
-use super::{util::read_accessor, IndexBuffer, Material, VertexBuffer};
-use crate::{math::*, util::*, vulkan::*};
+use super::{util::read_accessor, IndexBuffer, Material, ModelVertex, VertexBuffer};
+use crate::{math::*, vulkan::*};
 use ash::vk;
 use byteorder::{ByteOrder, LittleEndian};
 use cgmath::Vector3;
 use gltf::{
     accessor::DataType,
-    buffer::Data,
-    mesh::Primitive as GltfPrimitive,
+    buffer::{Buffer as GltfBuffer, Data},
     mesh::{
-        util::{ReadJoints, ReadWeights},
-        Semantic,
+        util::{ReadJoints, ReadTexCoords, ReadWeights},
+        Bounds, Reader, Semantic,
     },
     Accessor, Document,
 };
-use serde_json::Value;
-use std::rc::Rc;
+use std::{mem::size_of, rc::Rc};
 
 pub struct Mesh {
     primitives: Vec<Primitive>,
@@ -84,7 +82,7 @@ pub fn create_meshes_from_gltf(
 ) -> Vec<Mesh> {
     // (usize, usize) -> byte offset, element count
     let mut meshes_data = Vec::<Vec<PrimitiveData>>::new();
-    let mut all_vertices = Vec::<u8>::new();
+    let mut all_vertices = Vec::<ModelVertex>::new();
     let mut all_indices = Vec::<u8>::new();
 
     // Gather vertices and indices from all the meshes in the document
@@ -100,30 +98,39 @@ pub fn create_meshes_from_gltf(
             });
 
             if let Some(accessor) = primitive.get(&Semantic::Positions) {
-                let (positions, aabb) = read_positions(&accessor, buffers);
-                let normals = read_normals(&primitive, buffers);
-                let texcoords = read_texcoords(&primitive, buffers);
-                let tangents = read_tangents(&primitive, buffers);
-                let weights = read_weights(&primitive, buffers);
-                let joints = read_joints(&primitive, buffers);
 
-                let mut vertices = Vec::<u8>::new();
+                let aabb = get_aabb(&primitive.bounding_box());
+                let reader = primitive.reader(|buffer| Some(&buffers[buffer.index()]));
+                let positions = read_positions(&reader);
+                let normals = read_normals(&reader);
+                let tex_coords = read_tex_coords(&reader);
+                let tangents = read_tangents(&reader);
+                let weights = read_weights(&reader);
+                let joints = read_joints(&reader);
 
-                for elt_index in 0..accessor.count() {
-                    push_vec3f32(&Some(&positions), elt_index, &mut vertices);
-                    push_vec3f32(&normals.as_ref().map(|v| &v[..]), elt_index, &mut vertices);
-                    push_vec2f32(
-                        &texcoords.as_ref().map(|c| &c[..]),
-                        elt_index,
-                        &mut vertices,
-                    );
-                    // TODO : if tangents are not provided they should be computed using default MikkTSpace algorithms.
-                    push_vec4f32(&tangents.as_ref().map(|t| &t[..]), elt_index, &mut vertices, [1.0, 1.0, 1.0, 1.0]);
-                    push_vec4f32(&weights.as_ref().map(|w| &w[..]), elt_index, &mut vertices, [0.0, 0.0, 0.0, 0.0]);
-                    push_vec4u32(&joints.as_ref().map(|j| &j[..]), elt_index, &mut vertices);
-                }
+                let vertices = positions
+                    .iter()
+                    .enumerate()
+                    .map(|(index, position)| {
+                        let position = *position;
+                        let normal = *normals.get(index).unwrap_or(&[1.0, 1.0, 1.0]);
+                        let tex_coords = *tex_coords.get(index).unwrap_or(&[0.0, 0.0]);
+                        let tangent = *tangents.get(index).unwrap_or(&[1.0, 1.0, 1.0, 1.0]);
+                        let weights = *weights.get(index).unwrap_or(&[0.0, 0.0, 0.0, 0.0]);
+                        let joints = *joints.get(index).unwrap_or(&[0, 0, 0, 0]);
 
-                let offset = all_vertices.len();
+                        ModelVertex {
+                            position,
+                            normal,
+                            tex_coords,
+                            tangent,
+                            weights,
+                            joints,
+                        }
+                    })
+                    .collect::<Vec<_>>();
+
+                let offset = all_vertices.len() * size_of::<ModelVertex>();
                 all_vertices.extend_from_slice(&vertices);
 
                 let material = Material::from(primitive.material());
@@ -189,7 +196,7 @@ pub fn create_meshes_from_gltf(
                     .collect::<Vec<_>>();
                 Mesh::new(primitives)
             })
-            .collect::<Vec<_>>();
+            .collect();
     }
 
     Vec::new()
@@ -212,12 +219,11 @@ fn extract_indices_from_accessor(
             .map(|val| u16::from(*val))
             .collect::<Vec<_>>();
 
-        // TODO: Find something better
         let mut u8_indices = Vec::<u8>::new();
+        let mut as_u8 = [0 as u8; 2];
         for i in u16_indices {
-            unsafe {
-                u8_indices.extend_from_slice(any_as_u8_slice(&i));
-            }
+            LittleEndian::write_u16(&mut as_u8, i);
+            u8_indices.extend_from_slice(&as_u8);
         }
 
         return (u8_indices, index_type);
@@ -226,142 +232,87 @@ fn extract_indices_from_accessor(
     (indices, index_type)
 }
 
-fn read_positions(accessor: &Accessor, buffers: &[Data]) -> (Vec<u8>, AABB<f32>) {
-    let min = parse_vec3_json_value(&accessor.min().unwrap());
-    let max = parse_vec3_json_value(&accessor.max().unwrap());
-    let data = read_accessor(accessor, buffers);
-    (data, AABB::new(min, max))
+fn get_aabb(bounds: &Bounds<[f32; 3]>) -> AABB<f32> {
+    let min = bounds.min;
+    let min = Vector3::new(min[0], min[1], min[2]);
+
+    let max = bounds.max;
+    let max = Vector3::new(max[0], max[1], max[2]);
+
+    AABB::new(min, max)
 }
 
-fn parse_vec3_json_value(value: &Value) -> Vector3<f32> {
-    let as_array = value.as_array().unwrap();
-    let x = as_array[0].as_f64().unwrap() as _;
-    let y = as_array[1].as_f64().unwrap() as _;
-    let z = as_array[2].as_f64().unwrap() as _;
-    Vector3::new(x, y, z)
+fn read_positions<'a, 's, F>(reader: &Reader<'a, 's, F>) -> Vec<[f32; 3]>
+where
+    F: Clone + Fn(GltfBuffer<'a>) -> Option<&'s [u8]>,
+{
+    reader
+        .read_positions()
+        .expect("Position primitives should be present")
+        .collect()
 }
 
-fn read_normals(primitive: &GltfPrimitive, buffers: &[Data]) -> Option<Vec<u8>> {
-    primitive
-        .get(&Semantic::Normals)
-        .map(|normals| read_accessor(&normals, buffers))
+fn read_normals<'a, 's, F>(reader: &Reader<'a, 's, F>) -> Vec<[f32; 3]>
+where
+    F: Clone + Fn(GltfBuffer<'a>) -> Option<&'s [u8]>,
+{
+    reader
+        .read_normals()
+        .map_or(vec![], |normals| normals.collect())
 }
 
-fn read_texcoords(primitive: &GltfPrimitive, buffers: &[Data]) -> Option<Vec<u8>> {
-    primitive
-        .get(&Semantic::TexCoords(0))
-        .filter(|texcoords| texcoords.data_type() == DataType::F32)
-        .map(|texcoords| read_accessor(&texcoords, buffers))
+fn read_tex_coords<'a, 's, F>(reader: &Reader<'a, 's, F>) -> Vec<[f32; 2]>
+where
+    F: Clone + Fn(GltfBuffer<'a>) -> Option<&'s [u8]>,
+{
+    reader.read_tex_coords(0).map_or(vec![], |coords| {
+        let coords = coords.into_f32().unwrap();
+        if let ReadTexCoords::F32(coords) = coords {
+            coords.collect()
+        } else {
+            log::warn!("Failed to cast tex coords into f32");
+            vec![]
+        }
+    })
 }
 
-fn read_tangents(primitive: &GltfPrimitive, buffers: &[Data]) -> Option<Vec<u8>> {
-    primitive
-        .get(&Semantic::Tangents)
-        .map(|tangents| read_accessor(&tangents, buffers))
+fn read_tangents<'a, 's, F>(reader: &Reader<'a, 's, F>) -> Vec<[f32; 4]>
+where
+    F: Clone + Fn(GltfBuffer<'a>) -> Option<&'s [u8]>,
+{
+    reader
+        .read_tangents()
+        .map_or(vec![], |tangents| tangents.collect())
 }
 
-fn read_weights(primitive: &GltfPrimitive, buffers: &[Data]) -> Option<Vec<u8>> {
-    let reader = primitive.reader(|buffer| Some(&buffers[buffer.index()]));
-    if let Some(weights) = reader.read_weights(0) {
+fn read_weights<'a, 's, F>(reader: &Reader<'a, 's, F>) -> Vec<[f32; 4]>
+where
+    F: Clone + Fn(GltfBuffer<'a>) -> Option<&'s [u8]>,
+{
+    reader.read_weights(0).map_or(vec![], |weights| {
         let weights = weights.into_f32().unwrap();
         if let ReadWeights::F32(weights) = weights {
-            let mut buffer = Vec::new();
-            for weight in weights {
-                for v in &weight {
-                    let mut v_as_u8 = [0; 4];
-                    LittleEndian::write_f32(&mut v_as_u8, *v);
-                    buffer.push(v_as_u8[0]);
-                    buffer.push(v_as_u8[1]);
-                    buffer.push(v_as_u8[2]);
-                    buffer.push(v_as_u8[3]);
-                }
-            }
-            Some(buffer)
+            weights.collect()
         } else {
-            None
+            log::warn!("Failed to cast weights into f32");
+            vec![]
         }
-    } else {
-        None
-    }
+    })
 }
 
-fn read_joints(primitive: &GltfPrimitive, buffers: &[Data]) -> Option<Vec<u8>> {
-    let reader = primitive.reader(|buffer| Some(&buffers[buffer.index()]));
-    if let Some(joints) = reader.read_joints(0) {
+fn read_joints<'a, 's, F>(reader: &Reader<'a, 's, F>) -> Vec<[u32; 4]>
+where
+    F: Clone + Fn(GltfBuffer<'a>) -> Option<&'s [u8]>,
+{
+    reader.read_joints(0).map_or(vec![], |joints| {
         let joints = joints.into_u16().unwrap();
         if let ReadJoints::U16(joints) = joints {
-            let mut buffer = Vec::new();
-            for joint in joints {
-                for j in &joint {
-                    let j = u32::from(*j);
-                    let mut v_as_u8 = [0; 4];
-                    LittleEndian::write_u32(&mut v_as_u8, j);
-                    buffer.push(v_as_u8[0]);
-                    buffer.push(v_as_u8[1]);
-                    buffer.push(v_as_u8[2]);
-                    buffer.push(v_as_u8[3]);
-                }
-            }
-            Some(buffer)
+            joints
+                .map(|[x, y, z, w]| [u32::from(x), u32::from(y), u32::from(z), u32::from(w)])
+                .collect()
         } else {
-            None
+            log::warn!("Failed to cast joints into u32");
+            vec![]
         }
-    } else {
-        None
-    }
-}
-
-fn push_vec3f32(src: &Option<&[u8]>, index: usize, dest: &mut Vec<u8>) {
-    let left = index * 12;
-    let right = left + 12;
-
-    if let Some(src) = src {
-        dest.extend_from_slice(&src[left..right]);
-    } else {
-        unsafe {
-            let one: [f32; 3] = [1.0, 1.0, 1.0];
-            dest.extend_from_slice(any_as_u8_slice(&one));
-        }
-    };
-}
-
-fn push_vec2f32(src: &Option<&[u8]>, index: usize, dest: &mut Vec<u8>) {
-    let left = index * 8;
-    let right = left + 8;
-
-    if let Some(src) = src {
-        dest.extend_from_slice(&src[left..right]);
-    } else {
-        unsafe {
-            let one: [f32; 2] = [0.0, 0.0];
-            dest.extend_from_slice(any_as_u8_slice(&one));
-        }
-    };
-}
-
-fn push_vec4f32(src: &Option<&[u8]>, index: usize, dest: &mut Vec<u8>, default: [f32; 4]) {
-    let left = index * 16;
-    let right = left + 16;
-
-    if let Some(src) = src {
-        dest.extend_from_slice(&src[left..right]);
-    } else {
-        unsafe {
-            dest.extend_from_slice(any_as_u8_slice(&default));
-        }
-    };
-}
-
-fn push_vec4u32(src: &Option<&[u8]>, index: usize, dest: &mut Vec<u8>) {
-    let left = index * 16;
-    let right = left + 16;
-
-    if let Some(src) = src {
-        dest.extend_from_slice(&src[left..right]);
-    } else {
-        unsafe {
-            let one: [u32; 4] = [0, 0, 0, 0];
-            dest.extend_from_slice(any_as_u8_slice(&one));
-        }
-    };
+    })
 }

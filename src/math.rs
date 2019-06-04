@@ -3,7 +3,7 @@ use cgmath::{BaseFloat, Matrix4, Quaternion, Rad, Vector3, Vector4};
 use std::{cmp::Ordering, ops::Mul};
 
 /// Axis aligned bounding box.
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Debug)]
 pub struct AABB<S> {
     min: Vector3<S>,
     max: Vector3<S>,
