@@ -29,7 +29,7 @@ impl Swapchain {
         swapchain_support_details: SwapchainSupportDetails,
         dimensions: [u32; 2],
         preferred_vsync: bool,
-        color_texture: &Texture,
+        color_texture: Option<&Texture>,
         depth_texture: &Texture,
         render_pass: vk::RenderPass,
     ) -> Self {
@@ -162,14 +162,17 @@ impl Swapchain {
 impl Swapchain {
     fn create_framebuffers(
         &mut self,
-        color_texture: &Texture,
+        color_texture: Option<&Texture>,
         depth_texture: &Texture,
         render_pass: vk::RenderPass,
     ) {
         self.framebuffers = self
             .image_views
             .iter()
-            .map(|view| [color_texture.view, depth_texture.view, *view])
+            .map(|view| match color_texture {
+                Some(texture) => vec![texture.view, depth_texture.view, *view],
+                _ => vec![*view, depth_texture.view],
+            })
             .map(|attachments| {
                 let framebuffer_info = vk::FramebufferCreateInfo::builder()
                     .render_pass(render_pass)

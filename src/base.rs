@@ -34,7 +34,7 @@ pub struct BaseApp {
     dummy_texture: Texture,
     pipelines: Pipelines,
     msaa_samples: vk::SampleCountFlags,
-    color_texture: Texture,
+    color_texture: Option<Texture>,
     depth_format: vk::Format,
     depth_texture: Texture,
     swapchain: Swapchain,
@@ -102,8 +102,14 @@ impl BaseApp {
             None,
         );
 
-        let color_texture =
-            Self::create_color_texture(&context, swapchain_properties, msaa_samples);
+        let color_texture = match msaa_samples {
+            vk::SampleCountFlags::TYPE_1 => None,
+            _ => Some(Self::create_color_texture(
+                &context,
+                swapchain_properties,
+                msaa_samples,
+            )),
+        };
 
         let depth_texture = Self::create_depth_texture(
             &context,
@@ -117,7 +123,7 @@ impl BaseApp {
             swapchain_support_details,
             resolution,
             config.vsync(),
-            &color_texture,
+            color_texture.as_ref(),
             &depth_texture,
             render_pass,
         );
@@ -168,63 +174,69 @@ impl BaseApp {
         msaa_samples: vk::SampleCountFlags,
         depth_format: vk::Format,
     ) -> vk::RenderPass {
-        let color_attachment_desc = vk::AttachmentDescription::builder()
-            .format(swapchain_properties.format.format)
-            .samples(msaa_samples)
-            .load_op(vk::AttachmentLoadOp::CLEAR)
-            .store_op(vk::AttachmentStoreOp::STORE)
-            .initial_layout(vk::ImageLayout::UNDEFINED)
-            .final_layout(vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL)
-            .build();
-        let depth_attachement_desc = vk::AttachmentDescription::builder()
-            .format(depth_format)
-            .samples(msaa_samples)
-            .load_op(vk::AttachmentLoadOp::CLEAR)
-            .store_op(vk::AttachmentStoreOp::DONT_CARE)
-            .stencil_load_op(vk::AttachmentLoadOp::DONT_CARE)
-            .stencil_store_op(vk::AttachmentStoreOp::DONT_CARE)
-            .initial_layout(vk::ImageLayout::UNDEFINED)
-            .final_layout(vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL)
-            .build();
-        let resolve_attachment_desc = vk::AttachmentDescription::builder()
-            .format(swapchain_properties.format.format)
-            .samples(vk::SampleCountFlags::TYPE_1)
-            .load_op(vk::AttachmentLoadOp::DONT_CARE)
-            .store_op(vk::AttachmentStoreOp::STORE)
-            .stencil_load_op(vk::AttachmentLoadOp::DONT_CARE)
-            .stencil_store_op(vk::AttachmentStoreOp::DONT_CARE)
-            .initial_layout(vk::ImageLayout::UNDEFINED)
-            .final_layout(vk::ImageLayout::PRESENT_SRC_KHR)
-            .build();
-        let attachment_descs = [
-            color_attachment_desc,
-            depth_attachement_desc,
-            resolve_attachment_desc,
+        let final_image_layout = match msaa_samples {
+            vk::SampleCountFlags::TYPE_1 => vk::ImageLayout::PRESENT_SRC_KHR,
+            _ => vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
+        };
+        let mut attachment_descs = vec![
+            vk::AttachmentDescription::builder()
+                .format(swapchain_properties.format.format)
+                .samples(msaa_samples)
+                .load_op(vk::AttachmentLoadOp::CLEAR)
+                .store_op(vk::AttachmentStoreOp::STORE)
+                .initial_layout(vk::ImageLayout::UNDEFINED)
+                .final_layout(final_image_layout)
+                .build(),
+            vk::AttachmentDescription::builder()
+                .format(depth_format)
+                .samples(msaa_samples)
+                .load_op(vk::AttachmentLoadOp::CLEAR)
+                .store_op(vk::AttachmentStoreOp::DONT_CARE)
+                .stencil_load_op(vk::AttachmentLoadOp::DONT_CARE)
+                .stencil_store_op(vk::AttachmentStoreOp::DONT_CARE)
+                .initial_layout(vk::ImageLayout::UNDEFINED)
+                .final_layout(vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL)
+                .build(),
         ];
+        if msaa_samples != vk::SampleCountFlags::TYPE_1 {
+            attachment_descs.push(
+                vk::AttachmentDescription::builder()
+                    .format(swapchain_properties.format.format)
+                    .samples(vk::SampleCountFlags::TYPE_1)
+                    .load_op(vk::AttachmentLoadOp::DONT_CARE)
+                    .store_op(vk::AttachmentStoreOp::STORE)
+                    .stencil_load_op(vk::AttachmentLoadOp::DONT_CARE)
+                    .stencil_store_op(vk::AttachmentStoreOp::DONT_CARE)
+                    .initial_layout(vk::ImageLayout::UNDEFINED)
+                    .final_layout(vk::ImageLayout::PRESENT_SRC_KHR)
+                    .build(),
+            );
+        }
 
-        let color_attachment_ref = vk::AttachmentReference::builder()
+        let color_attachment_refs = [vk::AttachmentReference::builder()
             .attachment(0)
             .layout(vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL)
-            .build();
-        let color_attachment_refs = [color_attachment_ref];
+            .build()];
 
         let depth_attachment_ref = vk::AttachmentReference::builder()
             .attachment(1)
             .layout(vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL);
 
-        let resolve_attachment_ref = vk::AttachmentReference::builder()
+        let resolve_attachment_refs = [vk::AttachmentReference::builder()
             .attachment(2)
             .layout(vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL)
-            .build();
-        let resolve_attachment_refs = [resolve_attachment_ref];
+            .build()];
 
-        let subpass_desc = vk::SubpassDescription::builder()
-            .pipeline_bind_point(vk::PipelineBindPoint::GRAPHICS)
-            .color_attachments(&color_attachment_refs)
-            .resolve_attachments(&resolve_attachment_refs)
-            .depth_stencil_attachment(&depth_attachment_ref)
-            .build();
-        let subpass_descs = [subpass_desc];
+        let subpass_descs = {
+            let mut subpass_desc = vk::SubpassDescription::builder()
+                .pipeline_bind_point(vk::PipelineBindPoint::GRAPHICS)
+                .color_attachments(&color_attachment_refs)
+                .depth_stencil_attachment(&depth_attachment_ref);
+            if msaa_samples != vk::SampleCountFlags::TYPE_1 {
+                subpass_desc = subpass_desc.resolve_attachments(&resolve_attachment_refs);
+            }
+            [subpass_desc.build()]
+        };
 
         let subpass_dep = vk::SubpassDependency::builder()
             .src_subpass(vk::SUBPASS_EXTERNAL)
@@ -1322,8 +1334,14 @@ impl BaseApp {
             self.model_data.as_ref().map(|m| &m.descriptors),
         );
 
-        let color_texture =
-            Self::create_color_texture(&self.context, swapchain_properties, self.msaa_samples);
+        let color_texture = match self.msaa_samples {
+            vk::SampleCountFlags::TYPE_1 => None,
+            _ => Some(Self::create_color_texture(
+                &self.context,
+                swapchain_properties,
+                self.msaa_samples,
+            )),
+        };
 
         let depth_texture = Self::create_depth_texture(
             &self.context,
@@ -1337,7 +1355,7 @@ impl BaseApp {
             swapchain_support_details,
             dimensions,
             self.config.vsync(),
-            &color_texture,
+            color_texture.as_ref(),
             &depth_texture,
             render_pass,
         );
