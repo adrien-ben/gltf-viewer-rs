@@ -1,9 +1,8 @@
 use crate::{
-    camera::*, config::*, controls::*, environment::*, math, model::*, pipelines::*, util::*,
-    vulkan::*,
+    camera::*, config::*, controls::*, environment::*, math, model::*, renderer::*, vulkan::*,
 };
 use ash::{version::DeviceV1_0, vk, Device};
-use cgmath::{Deg, Matrix4, Point3, SquareMatrix, Vector3};
+use cgmath::{Deg, Matrix4, Point3, Vector3};
 use std::{
     mem::size_of,
     path::{Path, PathBuf},
@@ -30,15 +29,12 @@ pub struct BaseApp {
     msaa_samples: vk::SampleCountFlags,
     render_pass: RenderPass,
     swapchain: Swapchain,
-    dummy_texture: Texture,
 
     camera_uniform_buffers: Vec<Buffer>,
     environment: Environment,
-    skybox_model: SkyboxModel,
-    skybox_descriptors: Descriptors,
-    model_data: Option<ModelData>,
+    skybox_renderer: SkyboxRenderer,
+    model_renderer: Option<ModelRenderer>,
 
-    pipelines: Pipelines,
     command_buffers: Vec<vk::CommandBuffer>,
     in_flight_frames: InFlightFrames,
 }
@@ -88,31 +84,24 @@ impl BaseApp {
             &render_pass,
         );
 
-        let dummy_texture = Texture::from_rgba(&context, 1, 1, &[0, 0, 0, 0]);
-
         let camera_uniform_buffers =
             Self::create_camera_uniform_buffers(&context, swapchain_properties.image_count);
         let environment = Environment::new(&context, config.env());
-        let skybox_model = SkyboxModel::new(&context);
-        let skybox_descriptors =
-            Self::create_skybox_descriptors(&context, &camera_uniform_buffers, &environment);
 
-        let pipelines = Pipelines::build(
+        let skybox_renderer = SkyboxRenderer::create(
             Rc::clone(&context),
+            &camera_uniform_buffers,
             swapchain_properties,
+            &environment,
             msaa_samples,
             &render_pass,
-            &skybox_descriptors,
-            None,
         );
 
         let command_buffers = Self::create_and_register_command_buffers(
             &context,
             &swapchain,
             render_pass.get_render_pass(),
-            &pipelines,
-            &skybox_descriptors.sets(),
-            &skybox_model,
+            &skybox_renderer,
             None,
         );
 
@@ -132,13 +121,10 @@ impl BaseApp {
             swapchain,
             depth_format,
             msaa_samples,
-            dummy_texture,
             camera_uniform_buffers,
             environment,
-            skybox_model,
-            skybox_descriptors,
-            model_data: None,
-            pipelines,
+            skybox_renderer,
+            model_renderer: None,
             command_buffers,
             in_flight_frames,
         }
@@ -157,427 +143,6 @@ impl BaseApp {
                 buffer
             })
             .collect::<Vec<_>>()
-    }
-
-    fn create_model_transform_ubos(
-        context: &Rc<Context>,
-        model: &Model,
-        count: u32,
-    ) -> Vec<Buffer> {
-        let mesh_node_count = model
-            .nodes()
-            .nodes()
-            .iter()
-            .filter(|n| n.mesh_index().is_some())
-            .count() as u32;
-        let elem_size = context.get_ubo_alignment::<Matrix4<f32>>();
-
-        (0..count)
-            .map(|_| {
-                let mut buffer = Buffer::create(
-                    Rc::clone(context),
-                    (elem_size * mesh_node_count) as _,
-                    vk::BufferUsageFlags::UNIFORM_BUFFER,
-                    vk::MemoryPropertyFlags::HOST_VISIBLE | vk::MemoryPropertyFlags::HOST_COHERENT,
-                );
-                buffer.map_memory();
-                buffer
-            })
-            .collect::<Vec<_>>()
-    }
-
-    fn create_model_skin_ubos(context: &Rc<Context>, model: &Model, count: u32) -> Vec<Buffer> {
-        let skin_node_count = model
-            .nodes()
-            .nodes()
-            .iter()
-            .filter(|n| n.skin_index().is_some())
-            .count()
-            .max(1) as u32;
-        let elem_size = context.get_ubo_alignment::<[Matrix4<f32>; MAX_JOINTS_PER_MESH]>();
-
-        (0..count)
-            .map(|_| {
-                let mut buffer = Buffer::create(
-                    Rc::clone(context),
-                    (elem_size * skin_node_count) as _,
-                    vk::BufferUsageFlags::UNIFORM_BUFFER,
-                    vk::MemoryPropertyFlags::HOST_VISIBLE | vk::MemoryPropertyFlags::HOST_COHERENT,
-                );
-                buffer.map_memory();
-                buffer
-            })
-            .collect::<Vec<_>>()
-    }
-
-    fn create_model_descriptors(
-        context: &Rc<Context>,
-        camera_buffers: &[Buffer],
-        model_transform_buffers: &[Buffer],
-        model_skin_buffers: &[Buffer],
-        textures: &[Texture],
-        dummy_texture: &Texture,
-        environment: &Environment,
-    ) -> Descriptors {
-        let layout = Self::create_model_descriptor_set_layout(context.device());
-        let pool = Self::create_model_descriptor_pool(context.device(), camera_buffers.len() as _);
-        let sets = Self::create_model_descriptor_sets(
-            context,
-            pool,
-            layout,
-            camera_buffers,
-            model_transform_buffers,
-            model_skin_buffers,
-            textures,
-            dummy_texture,
-            environment,
-        );
-        Descriptors::new(Rc::clone(context), layout, pool, sets)
-    }
-
-    fn create_model_descriptor_set_layout(device: &Device) -> vk::DescriptorSetLayout {
-        let bindings = [
-            vk::DescriptorSetLayoutBinding::builder()
-                .binding(0)
-                .descriptor_type(vk::DescriptorType::UNIFORM_BUFFER)
-                .descriptor_count(1)
-                .stage_flags(vk::ShaderStageFlags::VERTEX | vk::ShaderStageFlags::FRAGMENT)
-                .build(),
-            vk::DescriptorSetLayoutBinding::builder()
-                .binding(1)
-                .descriptor_type(vk::DescriptorType::UNIFORM_BUFFER_DYNAMIC)
-                .descriptor_count(1)
-                .stage_flags(vk::ShaderStageFlags::VERTEX)
-                .build(),
-            vk::DescriptorSetLayoutBinding::builder()
-                .binding(2)
-                .descriptor_type(vk::DescriptorType::UNIFORM_BUFFER_DYNAMIC)
-                .descriptor_count(1)
-                .stage_flags(vk::ShaderStageFlags::VERTEX)
-                .build(),
-            vk::DescriptorSetLayoutBinding::builder()
-                .binding(3)
-                .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
-                .descriptor_count(MAX_TEXTURE_COUNT)
-                .stage_flags(vk::ShaderStageFlags::FRAGMENT)
-                .build(),
-            vk::DescriptorSetLayoutBinding::builder()
-                .binding(4)
-                .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
-                .descriptor_count(1)
-                .stage_flags(vk::ShaderStageFlags::FRAGMENT)
-                .build(),
-            vk::DescriptorSetLayoutBinding::builder()
-                .binding(5)
-                .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
-                .descriptor_count(1)
-                .stage_flags(vk::ShaderStageFlags::FRAGMENT)
-                .build(),
-            vk::DescriptorSetLayoutBinding::builder()
-                .binding(6)
-                .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
-                .descriptor_count(1)
-                .stage_flags(vk::ShaderStageFlags::FRAGMENT)
-                .build(),
-        ];
-
-        let layout_info = vk::DescriptorSetLayoutCreateInfo::builder().bindings(&bindings);
-
-        unsafe {
-            device
-                .create_descriptor_set_layout(&layout_info, None)
-                .unwrap()
-        }
-    }
-
-    fn create_model_descriptor_pool(device: &Device, descriptor_count: u32) -> vk::DescriptorPool {
-        let pool_sizes = [
-            vk::DescriptorPoolSize {
-                ty: vk::DescriptorType::UNIFORM_BUFFER,
-                descriptor_count,
-            },
-            vk::DescriptorPoolSize {
-                ty: vk::DescriptorType::UNIFORM_BUFFER_DYNAMIC,
-                descriptor_count: descriptor_count * 2,
-            },
-            vk::DescriptorPoolSize {
-                ty: vk::DescriptorType::COMBINED_IMAGE_SAMPLER,
-                descriptor_count: descriptor_count * (MAX_TEXTURE_COUNT + 3),
-            },
-        ];
-
-        let create_info = vk::DescriptorPoolCreateInfo::builder()
-            .pool_sizes(&pool_sizes)
-            .max_sets(descriptor_count);
-
-        unsafe { device.create_descriptor_pool(&create_info, None).unwrap() }
-    }
-
-    fn create_model_descriptor_sets(
-        context: &Rc<Context>,
-        pool: vk::DescriptorPool,
-        layout: vk::DescriptorSetLayout,
-        camera_buffers: &[Buffer],
-        model_transform_buffers: &[Buffer],
-        model_skin_buffers: &[Buffer],
-        textures: &[Texture],
-        dummy_texture: &Texture,
-        environment: &Environment,
-    ) -> Vec<vk::DescriptorSet> {
-        let layouts = (0..camera_buffers.len())
-            .map(|_| layout)
-            .collect::<Vec<_>>();
-
-        let allocate_info = vk::DescriptorSetAllocateInfo::builder()
-            .descriptor_pool(pool)
-            .set_layouts(&layouts);
-        let sets = unsafe {
-            context
-                .device()
-                .allocate_descriptor_sets(&allocate_info)
-                .unwrap()
-        };
-
-        sets.iter().enumerate().for_each(|(i, set)| {
-            let camera_ubo = &camera_buffers[i];
-            let model_transform_ubo = &model_transform_buffers[i];
-            let model_skin_ubo = &model_skin_buffers[i];
-
-            let camera_buffer_info = [vk::DescriptorBufferInfo::builder()
-                .buffer(camera_ubo.buffer)
-                .offset(0)
-                .range(vk::WHOLE_SIZE)
-                .build()];
-
-            let model_transform_buffer_info = [vk::DescriptorBufferInfo::builder()
-                .buffer(model_transform_ubo.buffer)
-                .offset(0)
-                .range(vk::WHOLE_SIZE)
-                .build()];
-
-            let model_skin_buffer_info = [vk::DescriptorBufferInfo::builder()
-                .buffer(model_skin_ubo.buffer)
-                .offset(0)
-                .range(vk::WHOLE_SIZE)
-                .build()];
-
-            let image_info = {
-                let mut infos = textures
-                    .iter()
-                    .take(MAX_TEXTURE_COUNT as _)
-                    .map(|texture| {
-                        vk::DescriptorImageInfo::builder()
-                            .image_layout(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL)
-                            .image_view(texture.view)
-                            .sampler(texture.sampler.unwrap())
-                            .build()
-                    })
-                    .collect::<Vec<_>>();
-
-                while infos.len() < MAX_TEXTURE_COUNT as _ {
-                    infos.push(
-                        vk::DescriptorImageInfo::builder()
-                            .image_layout(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL)
-                            .image_view(dummy_texture.view)
-                            .sampler(dummy_texture.sampler.unwrap())
-                            .build(),
-                    )
-                }
-
-                infos
-            };
-
-            let irradiance_info = [vk::DescriptorImageInfo::builder()
-                .image_layout(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL)
-                .image_view(environment.irradiance().view)
-                .sampler(environment.irradiance().sampler.unwrap())
-                .build()];
-
-            let pre_filtered_info = [vk::DescriptorImageInfo::builder()
-                .image_layout(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL)
-                .image_view(environment.pre_filtered().view)
-                .sampler(environment.pre_filtered().sampler.unwrap())
-                .build()];
-
-            let brdf_lookup_info = [vk::DescriptorImageInfo::builder()
-                .image_layout(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL)
-                .image_view(environment.brdf_lookup().view)
-                .sampler(environment.brdf_lookup().sampler.unwrap())
-                .build()];
-
-            let descriptor_writes = [
-                vk::WriteDescriptorSet::builder()
-                    .dst_set(*set)
-                    .dst_binding(0)
-                    .descriptor_type(vk::DescriptorType::UNIFORM_BUFFER)
-                    .buffer_info(&camera_buffer_info)
-                    .build(),
-                vk::WriteDescriptorSet::builder()
-                    .dst_set(*set)
-                    .dst_binding(1)
-                    .descriptor_type(vk::DescriptorType::UNIFORM_BUFFER_DYNAMIC)
-                    .buffer_info(&model_transform_buffer_info)
-                    .build(),
-                vk::WriteDescriptorSet::builder()
-                    .dst_set(*set)
-                    .dst_binding(2)
-                    .descriptor_type(vk::DescriptorType::UNIFORM_BUFFER_DYNAMIC)
-                    .buffer_info(&model_skin_buffer_info)
-                    .build(),
-                vk::WriteDescriptorSet::builder()
-                    .dst_set(*set)
-                    .dst_binding(3)
-                    .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
-                    .image_info(&image_info)
-                    .build(),
-                vk::WriteDescriptorSet::builder()
-                    .dst_set(*set)
-                    .dst_binding(4)
-                    .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
-                    .image_info(&irradiance_info)
-                    .build(),
-                vk::WriteDescriptorSet::builder()
-                    .dst_set(*set)
-                    .dst_binding(5)
-                    .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
-                    .image_info(&pre_filtered_info)
-                    .build(),
-                vk::WriteDescriptorSet::builder()
-                    .dst_set(*set)
-                    .dst_binding(6)
-                    .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
-                    .image_info(&brdf_lookup_info)
-                    .build(),
-            ];
-
-            unsafe {
-                context
-                    .device()
-                    .update_descriptor_sets(&descriptor_writes, &[])
-            }
-
-        });
-
-        sets
-    }
-
-    fn create_skybox_descriptors(
-        context: &Rc<Context>,
-        uniform_buffers: &[Buffer],
-        environment: &Environment,
-    ) -> Descriptors {
-        let layout = Self::create_skybox_descriptor_set_layout(context.device());
-        let pool =
-            Self::create_skybox_descriptor_pool(context.device(), uniform_buffers.len() as _);
-        let sets = Self::create_skybox_descriptor_sets(
-            context,
-            pool,
-            layout,
-            uniform_buffers,
-            environment.skybox(),
-        );
-        Descriptors::new(Rc::clone(context), layout, pool, sets)
-    }
-
-    fn create_skybox_descriptor_set_layout(device: &Device) -> vk::DescriptorSetLayout {
-        let bindings = [
-            vk::DescriptorSetLayoutBinding::builder()
-                .binding(0)
-                .descriptor_type(vk::DescriptorType::UNIFORM_BUFFER)
-                .descriptor_count(1)
-                .stage_flags(vk::ShaderStageFlags::VERTEX | vk::ShaderStageFlags::FRAGMENT)
-                .build(),
-            vk::DescriptorSetLayoutBinding::builder()
-                .binding(1)
-                .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
-                .descriptor_count(1)
-                .stage_flags(vk::ShaderStageFlags::FRAGMENT)
-                .build(),
-        ];
-
-        let layout_info = vk::DescriptorSetLayoutCreateInfo::builder().bindings(&bindings);
-
-        unsafe {
-            device
-                .create_descriptor_set_layout(&layout_info, None)
-                .unwrap()
-        }
-    }
-
-    fn create_skybox_descriptor_pool(device: &Device, descriptor_count: u32) -> vk::DescriptorPool {
-        let pool_sizes = [
-            vk::DescriptorPoolSize {
-                ty: vk::DescriptorType::UNIFORM_BUFFER,
-                descriptor_count,
-            },
-            vk::DescriptorPoolSize {
-                ty: vk::DescriptorType::COMBINED_IMAGE_SAMPLER,
-                descriptor_count,
-            },
-        ];
-
-        let create_info = vk::DescriptorPoolCreateInfo::builder()
-            .pool_sizes(&pool_sizes)
-            .max_sets(descriptor_count);
-
-        unsafe { device.create_descriptor_pool(&create_info, None).unwrap() }
-    }
-
-    fn create_skybox_descriptor_sets(
-        context: &Rc<Context>,
-        pool: vk::DescriptorPool,
-        layout: vk::DescriptorSetLayout,
-        buffers: &[Buffer],
-        cubemap: &Texture,
-    ) -> Vec<vk::DescriptorSet> {
-        let layouts = (0..buffers.len()).map(|_| layout).collect::<Vec<_>>();
-
-        let allocate_info = vk::DescriptorSetAllocateInfo::builder()
-            .descriptor_pool(pool)
-            .set_layouts(&layouts);
-        let sets = unsafe {
-            context
-                .device()
-                .allocate_descriptor_sets(&allocate_info)
-                .unwrap()
-        };
-
-        sets.iter().zip(buffers.iter()).for_each(|(set, buffer)| {
-            let buffer_info = [vk::DescriptorBufferInfo::builder()
-                .buffer(buffer.buffer)
-                .offset(0)
-                .range(size_of::<CameraUBO>() as _)
-                .build()];
-
-            let cubemap_info = [vk::DescriptorImageInfo::builder()
-                .image_layout(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL)
-                .image_view(cubemap.view)
-                .sampler(cubemap.sampler.unwrap())
-                .build()];
-
-            let descriptor_writes = [
-                vk::WriteDescriptorSet::builder()
-                    .dst_set(*set)
-                    .dst_binding(0)
-                    .descriptor_type(vk::DescriptorType::UNIFORM_BUFFER)
-                    .buffer_info(&buffer_info)
-                    .build(),
-                vk::WriteDescriptorSet::builder()
-                    .dst_set(*set)
-                    .dst_binding(1)
-                    .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
-                    .image_info(&cubemap_info)
-                    .build(),
-            ];
-
-            unsafe {
-                context
-                    .device()
-                    .update_descriptor_sets(&descriptor_writes, &[])
-            }
-        });
-
-        sets
     }
 
     fn find_depth_format(context: &Context) -> vk::Format {
@@ -599,10 +164,8 @@ impl BaseApp {
         context: &Context,
         swapchain: &Swapchain,
         render_pass: vk::RenderPass,
-        pipelines: &Pipelines,
-        skybox_descriptor_sets: &[vk::DescriptorSet],
-        skybox_model: &SkyboxModel,
-        model_data: Option<&ModelData>,
+        skybox_renderer: &SkyboxRenderer,
+        model_renderer: Option<&ModelRenderer>,
     ) -> Vec<vk::CommandBuffer> {
         let device = context.device();
 
@@ -660,87 +223,10 @@ impl BaseApp {
                 };
             }
 
-            // Bind skybox pipeline
-            unsafe {
-                device.cmd_bind_pipeline(
-                    buffer,
-                    vk::PipelineBindPoint::GRAPHICS,
-                    pipelines.skybox_pipeline(),
-                )
-            };
+            skybox_renderer.draw(buffer, i);
 
-            // Bind skybox descriptor sets
-            unsafe {
-                device.cmd_bind_descriptor_sets(
-                    buffer,
-                    vk::PipelineBindPoint::GRAPHICS,
-                    pipelines.skybox_layout(),
-                    0,
-                    &skybox_descriptor_sets[i..=i],
-                    &[],
-                )
-            };
-
-            unsafe {
-                device.cmd_bind_vertex_buffers(buffer, 0, &[skybox_model.vertices().buffer], &[0]);
-            }
-
-            unsafe {
-                device.cmd_bind_index_buffer(
-                    buffer,
-                    skybox_model.indices().buffer,
-                    0,
-                    vk::IndexType::UINT32,
-                );
-            }
-
-            // Draw skybox
-            unsafe { device.cmd_draw_indexed(buffer, 36, 1, 0, 0, 0) };
-
-            if let Some(ModelData {
-                model, descriptors, ..
-            }) = model_data
-            {
-                if let Some(model_pipelines) = pipelines.model_pipelines() {
-                    // Bind opaque pipeline
-                    unsafe {
-                        device.cmd_bind_pipeline(
-                            buffer,
-                            vk::PipelineBindPoint::GRAPHICS,
-                            model_pipelines.opaque_pipeline(),
-                        )
-                    };
-
-                    // Draw opaque primitives
-                    Self::register_model_draw_commands(
-                        context,
-                        model_pipelines.model_layout(),
-                        buffer,
-                        model,
-                        &descriptors.sets()[i..=i],
-                        |p| !p.material().is_transparent(),
-                    );
-
-                    // Bind transparent pipeline
-                    unsafe {
-                        device.cmd_bind_pipeline(
-                            buffer,
-                            vk::PipelineBindPoint::GRAPHICS,
-                            model_pipelines.transparent_pipeline(),
-                        )
-                    };
-
-                    // Draw transparent primitives
-                    Self::register_model_draw_commands(
-                        context,
-                        model_pipelines.model_layout(),
-                        buffer,
-                        model,
-                        &descriptors.sets()[i..=i],
-                        |p| p.material().is_transparent(),
-                    );
-                }
-
+            if let Some(model_renderer) = model_renderer {
+                model_renderer.draw(buffer, i);
             }
 
             // End render pass
@@ -751,110 +237,6 @@ impl BaseApp {
         });
 
         buffers
-    }
-
-    fn register_model_draw_commands<F>(
-        context: &Context,
-        pipeline_layout: vk::PipelineLayout,
-        command_buffer: vk::CommandBuffer,
-        model: &Model,
-        descriptor_set: &[vk::DescriptorSet],
-        primitive_filter: F,
-    ) where
-        F: FnMut(&&Primitive) -> bool + Copy,
-    {
-        let device = context.device();
-        let model_transform_ubo_offset = context.get_ubo_alignment::<Matrix4<f32>>();
-        let model_skin_ubo_offset =
-            context.get_ubo_alignment::<[Matrix4<f32>; MAX_JOINTS_PER_MESH]>();
-
-        for (index, node) in model
-            .nodes()
-            .nodes()
-            .iter()
-            .filter(|n| n.mesh_index().is_some())
-            .enumerate()
-        {
-            let mesh = model.mesh(node.mesh_index().unwrap());
-            let skin_index = node.skin_index().unwrap_or(0);
-
-            // Bind descriptor sets
-            unsafe {
-                device.cmd_bind_descriptor_sets(
-                    command_buffer,
-                    vk::PipelineBindPoint::GRAPHICS,
-                    pipeline_layout,
-                    0,
-                    &descriptor_set,
-                    &[
-                        model_transform_ubo_offset * index as u32,
-                        model_skin_ubo_offset * skin_index as u32,
-                    ],
-                )
-            };
-
-            for primitive in mesh.primitives().iter().filter(primitive_filter) {
-                unsafe {
-                    device.cmd_bind_vertex_buffers(
-                        command_buffer,
-                        0,
-                        &[primitive.vertices().buffer().buffer],
-                        &[primitive.vertices().offset()],
-                    );
-                }
-
-                if let Some(index_buffer) = primitive.indices() {
-                    unsafe {
-                        device.cmd_bind_index_buffer(
-                            command_buffer,
-                            index_buffer.buffer().buffer,
-                            index_buffer.offset(),
-                            index_buffer.index_type(),
-                        );
-                    }
-                }
-
-                // Push material constants
-                unsafe {
-                    let material = primitive.material();
-                    let material_contants = any_as_u8_slice(&material);
-                    device.cmd_push_constants(
-                        command_buffer,
-                        pipeline_layout,
-                        vk::ShaderStageFlags::FRAGMENT,
-                        0,
-                        &material_contants,
-                    );
-                };
-
-                // Draw geometry
-                match primitive.indices() {
-                    Some(index_buffer) => {
-                        unsafe {
-                            device.cmd_draw_indexed(
-                                command_buffer,
-                                index_buffer.element_count(),
-                                1,
-                                0,
-                                0,
-                                0,
-                            )
-                        };
-                    }
-                    None => {
-                        unsafe {
-                            device.cmd_draw(
-                                command_buffer,
-                                primitive.vertices().element_count(),
-                                1,
-                                0,
-                                0,
-                            )
-                        };
-                    }
-                }
-            }
-        }
     }
 
     fn create_sync_objects(device: &Device) -> InFlightFrames {
@@ -963,64 +345,32 @@ impl BaseApp {
 
             let model = model.unwrap();
 
-            let transform_ubos = Self::create_model_transform_ubos(
-                &self.context,
-                &model,
-                self.swapchain_properties.image_count,
-            );
-
-            let skin_ubos = Self::create_model_skin_ubos(
-                &self.context,
-                &model,
-                self.swapchain_properties.image_count,
-            );
-
-            let descriptors = Self::create_model_descriptors(
-                &self.context,
-                &self.camera_uniform_buffers,
-                &transform_ubos,
-                &skin_ubos,
-                model.textures(),
-                &self.dummy_texture,
-                &self.environment,
-            );
-
-            // TODO: only the pipelines used to render models need to be updated
-            let pipelines = Pipelines::build(
+            let model_renderer = ModelRenderer::create(
                 Rc::clone(&self.context),
+                model,
+                &self.camera_uniform_buffers,
                 self.swapchain_properties,
+                &self.environment,
                 self.msaa_samples,
                 &self.render_pass,
-                &self.skybox_descriptors,
-                Some(&descriptors),
             );
-
-            let model_data = Some(ModelData {
-                model,
-                descriptors,
-                transform_ubos,
-                skin_ubos,
-            });
 
             let command_buffers = Self::create_and_register_command_buffers(
                 &self.context,
                 &self.swapchain,
                 self.render_pass.get_render_pass(),
-                &pipelines,
-                &self.skybox_descriptors.sets(),
-                &self.skybox_model,
-                model_data.as_ref(),
+                &self.skybox_renderer,
+                Some(&model_renderer),
             );
 
-            self.model_data = model_data;
-            self.pipelines = pipelines;
+            self.model_renderer = Some(model_renderer);
             self.command_buffers = command_buffers;
         }
     }
 
     fn update_model(&mut self, delta_s: f32) {
-        if let Some(ModelData { model, .. }) = &mut self.model_data {
-            model.update(delta_s);
+        if let Some(model_renderer) = self.model_renderer.as_mut() {
+            model_renderer.update_model(delta_s);
         }
     }
 
@@ -1054,6 +404,10 @@ impl BaseApp {
         unsafe { self.context.device().reset_fences(&wait_fences).unwrap() };
 
         self.update_uniform_buffers(image_index);
+
+        if let Some(model_renderer) = self.model_renderer.as_mut() {
+            model_renderer.update_buffers(image_index as _);
+        }
 
         let device = self.context.device();
         let wait_semaphores = [image_available_semaphore];
@@ -1149,14 +503,14 @@ impl BaseApp {
             self.msaa_samples,
         );
 
-        let pipelines = Pipelines::build(
-            Rc::clone(&self.context),
+        self.skybox_renderer.rebuild_pipeline(
             swapchain_properties,
             self.msaa_samples,
             &render_pass,
-            &self.skybox_descriptors,
-            self.model_data.as_ref().map(|m| &m.descriptors),
         );
+        if let Some(model_renderer) = self.model_renderer.as_mut() {
+            model_renderer.rebuild_pipelines(swapchain_properties, self.msaa_samples, &render_pass);
+        }
 
         let swapchain = Swapchain::create(
             Rc::clone(&self.context),
@@ -1170,16 +524,13 @@ impl BaseApp {
             &self.context,
             &swapchain,
             render_pass.get_render_pass(),
-            &pipelines,
-            &self.skybox_descriptors.sets(),
-            &self.skybox_model,
-            self.model_data.as_ref(),
+            &self.skybox_renderer,
+            self.model_renderer.as_ref(),
         );
 
         self.swapchain = swapchain;
         self.swapchain_properties = swapchain_properties;
         self.render_pass = render_pass;
-        self.pipelines = pipelines;
         self.command_buffers = command_buffers;
     }
 
@@ -1224,63 +575,6 @@ impl BaseApp {
             unsafe {
                 let data_ptr = buffer.map_memory();
                 mem_copy(data_ptr, &ubos);
-            }
-        }
-
-        // model ubo
-        {
-            if let Some(ModelData {
-                model,
-                transform_ubos,
-                skin_ubos,
-                ..
-            }) = &mut self.model_data
-            {
-                let mesh_nodes = model
-                    .nodes()
-                    .nodes()
-                    .iter()
-                    .filter(|n| n.mesh_index().is_some());
-
-                let transforms = mesh_nodes.map(|n| n.transform()).collect::<Vec<_>>();
-
-                let elem_size = &self.context.get_ubo_alignment::<Matrix4<f32>>();
-                let buffer = &mut transform_ubos[current_image as usize];
-                unsafe {
-                    let data_ptr = buffer.map_memory();
-                    mem_copy_aligned(data_ptr, *elem_size as _, &transforms);
-                }
-
-                // TODO: update skin buffers
-                let skin_nodes = model
-                    .nodes()
-                    .nodes()
-                    .iter()
-                    .filter(|n| n.skin_index().is_some());
-
-                let mut skin_matrices = Vec::new();
-                for node in skin_nodes {
-                    let skin = model.skin(node.skin_index().unwrap());
-                    let mut matrices = [Matrix4::<f32>::identity(); MAX_JOINTS_PER_MESH];
-
-                    for i in 0..MAX_JOINTS_PER_MESH {
-                        let matrix = skin
-                            .joint(i)
-                            .map(|j| j.matrix())
-                            .unwrap_or(Matrix4::identity());
-                        matrices[i] = matrix;
-                    }
-                    skin_matrices.push(matrices);
-                }
-
-                let elem_size = &self
-                    .context
-                    .get_ubo_alignment::<[Matrix4<f32>; MAX_JOINTS_PER_MESH]>();
-                let buffer = &mut skin_ubos[current_image as usize];
-                unsafe {
-                    let data_ptr = buffer.map_memory();
-                    mem_copy_aligned(data_ptr, *elem_size as _, &skin_matrices);
-                }
             }
         }
     }
@@ -1340,11 +634,4 @@ impl Iterator for InFlightFrames {
 
         Some(next)
     }
-}
-
-pub struct ModelData {
-    model: Model,
-    descriptors: Descriptors,
-    transform_ubos: Vec<Buffer>,
-    skin_ubos: Vec<Buffer>,
 }

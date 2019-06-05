@@ -6,7 +6,7 @@ mod environment;
 mod error;
 mod math;
 mod model;
-mod pipelines;
+mod renderer;
 mod util;
 mod vulkan;
 
