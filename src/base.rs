@@ -15,9 +15,9 @@ use winit::{dpi::LogicalSize, Event, EventsLoop, Window, WindowBuilder, WindowEv
 const MAX_FRAMES_IN_FLIGHT: u32 = 2;
 
 pub struct BaseApp {
+    config: Config,
     events_loop: EventsLoop,
     _window: Window,
-    config: Config,
     resize_dimensions: Option<[u32; 2]>,
     path_to_load: Option<PathBuf>,
 
@@ -25,18 +25,20 @@ pub struct BaseApp {
     input_state: InputState,
 
     context: Rc<Context>,
-    environment: Environment,
     swapchain_properties: SwapchainProperties,
-    render_pass: RenderPass,
-    model_data: Option<ModelData>,
-    skybox_descriptors: Descriptors,
-    camera_uniform_buffers: Vec<Buffer>,
-    skybox_model: SkyboxModel,
-    dummy_texture: Texture,
-    pipelines: Pipelines,
-    msaa_samples: vk::SampleCountFlags,
     depth_format: vk::Format,
+    msaa_samples: vk::SampleCountFlags,
+    render_pass: RenderPass,
     swapchain: Swapchain,
+    dummy_texture: Texture,
+
+    camera_uniform_buffers: Vec<Buffer>,
+    environment: Environment,
+    skybox_model: SkyboxModel,
+    skybox_descriptors: Descriptors,
+    model_data: Option<ModelData>,
+
+    pipelines: Pipelines,
     command_buffers: Vec<vk::CommandBuffer>,
     in_flight_frames: InFlightFrames,
 }
@@ -59,8 +61,6 @@ impl BaseApp {
 
         let context = Rc::new(Context::new(&window));
 
-        let environment = Environment::new(&context, config.env());
-
         let swapchain_support_details = SwapchainSupportDetails::new(
             context.physical_device(),
             context.surface(),
@@ -68,11 +68,9 @@ impl BaseApp {
         );
         let swapchain_properties =
             swapchain_support_details.get_ideal_swapchain_properties(resolution, config.vsync());
-
+        let depth_format = Self::find_depth_format(&context);
         let msaa_samples = context.get_max_usable_sample_count(config.msaa());
         log::debug!("msaa: {:?} - preferred was {}", msaa_samples, config.msaa());
-
-        let depth_format = Self::find_depth_format(&context);
 
         let render_pass = RenderPass::create(
             Rc::clone(&context),
@@ -82,14 +80,20 @@ impl BaseApp {
             msaa_samples,
         );
 
-        let camera_uniform_buffers =
-            Self::create_camera_uniform_buffers(&context, swapchain_properties.image_count);
-
-        let skybox_model = SkyboxModel::new(&context);
+        let swapchain = Swapchain::create(
+            Rc::clone(&context),
+            swapchain_support_details,
+            resolution,
+            config.vsync(),
+            &render_pass,
+        );
 
         let dummy_texture = Texture::from_rgba(&context, 1, 1, &[0, 0, 0, 0]);
 
-
+        let camera_uniform_buffers =
+            Self::create_camera_uniform_buffers(&context, swapchain_properties.image_count);
+        let environment = Environment::new(&context, config.env());
+        let skybox_model = SkyboxModel::new(&context);
         let skybox_descriptors =
             Self::create_skybox_descriptors(&context, &camera_uniform_buffers, &environment);
 
@@ -100,14 +104,6 @@ impl BaseApp {
             &render_pass,
             &skybox_descriptors,
             None,
-        );
-
-        let swapchain = Swapchain::create(
-            Rc::clone(&context),
-            swapchain_support_details,
-            resolution,
-            config.vsync(),
-            &render_pass,
         );
 
         let command_buffers = Self::create_and_register_command_buffers(
@@ -131,18 +127,18 @@ impl BaseApp {
             camera: Default::default(),
             input_state: Default::default(),
             context,
-            environment,
             swapchain_properties,
             render_pass,
-            model_data: None,
-            skybox_descriptors,
-            camera_uniform_buffers,
-            skybox_model,
-            dummy_texture,
-            pipelines,
-            msaa_samples,
-            depth_format,
             swapchain,
+            depth_format,
+            msaa_samples,
+            dummy_texture,
+            camera_uniform_buffers,
+            environment,
+            skybox_model,
+            skybox_descriptors,
+            model_data: None,
+            pipelines,
             command_buffers,
             in_flight_frames,
         }
