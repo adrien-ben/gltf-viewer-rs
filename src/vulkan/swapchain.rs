@@ -1,4 +1,4 @@
-use super::{context::Context, image::create_image_view, texture::Texture};
+use super::{context::Context, image::create_image_view, renderpass::RenderPass};
 use ash::{
     extensions::khr::{Surface, Swapchain as SwapchainLoader},
     prelude::VkResult,
@@ -29,9 +29,7 @@ impl Swapchain {
         swapchain_support_details: SwapchainSupportDetails,
         dimensions: [u32; 2],
         preferred_vsync: bool,
-        color_texture: Option<&Texture>,
-        depth_texture: &Texture,
-        render_pass: vk::RenderPass,
+        render_pass: &RenderPass,
     ) -> Self {
         let properties =
             swapchain_support_details.get_ideal_swapchain_properties(dimensions, preferred_vsync);
@@ -94,7 +92,7 @@ impl Swapchain {
             views,
             vec![],
         );
-        swapchain.create_framebuffers(color_texture, depth_texture, render_pass);
+        swapchain.create_framebuffers(render_pass);
         swapchain
     }
 
@@ -160,22 +158,17 @@ impl Swapchain {
 }
 
 impl Swapchain {
-    fn create_framebuffers(
-        &mut self,
-        color_texture: Option<&Texture>,
-        depth_texture: &Texture,
-        render_pass: vk::RenderPass,
-    ) {
+    fn create_framebuffers(&mut self, render_pass: &RenderPass) {
         self.framebuffers = self
             .image_views
             .iter()
-            .map(|view| match color_texture {
-                Some(texture) => vec![texture.view, depth_texture.view, *view],
-                _ => vec![*view, depth_texture.view],
+            .map(|view| match render_pass.get_color_attachment() {
+                Some(texture) => vec![texture.view, render_pass.get_depth_attachment().view, *view],
+                _ => vec![*view, render_pass.get_depth_attachment().view],
             })
             .map(|attachments| {
                 let framebuffer_info = vk::FramebufferCreateInfo::builder()
-                    .render_pass(render_pass)
+                    .render_pass(render_pass.get_render_pass())
                     .attachments(&attachments)
                     .width(self.properties.extent.width)
                     .height(self.properties.extent.height)

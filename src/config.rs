@@ -33,7 +33,7 @@ impl Default for Config {
         Config {
             resolution: Default::default(),
             vsync: Some(false),
-            msaa: Some(1),
+            msaa: Some(64),
             env: None,
         }
     }

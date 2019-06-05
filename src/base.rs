@@ -23,10 +23,11 @@ pub struct BaseApp {
 
     camera: Camera,
     input_state: InputState,
+
     context: Rc<Context>,
     environment: Environment,
     swapchain_properties: SwapchainProperties,
-    render_pass: vk::RenderPass,
+    render_pass: RenderPass,
     model_data: Option<ModelData>,
     skybox_descriptors: Descriptors,
     camera_uniform_buffers: Vec<Buffer>,
@@ -34,9 +35,7 @@ pub struct BaseApp {
     dummy_texture: Texture,
     pipelines: Pipelines,
     msaa_samples: vk::SampleCountFlags,
-    color_texture: Option<Texture>,
     depth_format: vk::Format,
-    depth_texture: Texture,
     swapchain: Swapchain,
     command_buffers: Vec<vk::CommandBuffer>,
     in_flight_frames: InFlightFrames,
@@ -75,11 +74,12 @@ impl BaseApp {
 
         let depth_format = Self::find_depth_format(&context);
 
-        let render_pass = Self::create_render_pass(
-            context.device(),
-            swapchain_properties,
-            msaa_samples,
+        let render_pass = RenderPass::create(
+            Rc::clone(&context),
+            swapchain_properties.extent,
+            swapchain_properties.format.format,
             depth_format,
+            msaa_samples,
         );
 
         let camera_uniform_buffers =
@@ -97,25 +97,9 @@ impl BaseApp {
             Rc::clone(&context),
             swapchain_properties,
             msaa_samples,
-            render_pass,
+            &render_pass,
             &skybox_descriptors,
             None,
-        );
-
-        let color_texture = match msaa_samples {
-            vk::SampleCountFlags::TYPE_1 => None,
-            _ => Some(Self::create_color_texture(
-                &context,
-                swapchain_properties,
-                msaa_samples,
-            )),
-        };
-
-        let depth_texture = Self::create_depth_texture(
-            &context,
-            depth_format,
-            swapchain_properties.extent,
-            msaa_samples,
         );
 
         let swapchain = Swapchain::create(
@@ -123,15 +107,13 @@ impl BaseApp {
             swapchain_support_details,
             resolution,
             config.vsync(),
-            color_texture.as_ref(),
-            &depth_texture,
-            render_pass,
+            &render_pass,
         );
 
         let command_buffers = Self::create_and_register_command_buffers(
             &context,
             &swapchain,
-            render_pass,
+            render_pass.get_render_pass(),
             &pipelines,
             &skybox_descriptors.sets(),
             &skybox_model,
@@ -159,103 +141,11 @@ impl BaseApp {
             dummy_texture,
             pipelines,
             msaa_samples,
-            color_texture,
             depth_format,
-            depth_texture,
             swapchain,
             command_buffers,
             in_flight_frames,
         }
-    }
-
-    fn create_render_pass(
-        device: &Device,
-        swapchain_properties: SwapchainProperties,
-        msaa_samples: vk::SampleCountFlags,
-        depth_format: vk::Format,
-    ) -> vk::RenderPass {
-        let final_image_layout = match msaa_samples {
-            vk::SampleCountFlags::TYPE_1 => vk::ImageLayout::PRESENT_SRC_KHR,
-            _ => vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
-        };
-        let mut attachment_descs = vec![
-            vk::AttachmentDescription::builder()
-                .format(swapchain_properties.format.format)
-                .samples(msaa_samples)
-                .load_op(vk::AttachmentLoadOp::CLEAR)
-                .store_op(vk::AttachmentStoreOp::STORE)
-                .initial_layout(vk::ImageLayout::UNDEFINED)
-                .final_layout(final_image_layout)
-                .build(),
-            vk::AttachmentDescription::builder()
-                .format(depth_format)
-                .samples(msaa_samples)
-                .load_op(vk::AttachmentLoadOp::CLEAR)
-                .store_op(vk::AttachmentStoreOp::DONT_CARE)
-                .stencil_load_op(vk::AttachmentLoadOp::DONT_CARE)
-                .stencil_store_op(vk::AttachmentStoreOp::DONT_CARE)
-                .initial_layout(vk::ImageLayout::UNDEFINED)
-                .final_layout(vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL)
-                .build(),
-        ];
-        if msaa_samples != vk::SampleCountFlags::TYPE_1 {
-            attachment_descs.push(
-                vk::AttachmentDescription::builder()
-                    .format(swapchain_properties.format.format)
-                    .samples(vk::SampleCountFlags::TYPE_1)
-                    .load_op(vk::AttachmentLoadOp::DONT_CARE)
-                    .store_op(vk::AttachmentStoreOp::STORE)
-                    .stencil_load_op(vk::AttachmentLoadOp::DONT_CARE)
-                    .stencil_store_op(vk::AttachmentStoreOp::DONT_CARE)
-                    .initial_layout(vk::ImageLayout::UNDEFINED)
-                    .final_layout(vk::ImageLayout::PRESENT_SRC_KHR)
-                    .build(),
-            );
-        }
-
-        let color_attachment_refs = [vk::AttachmentReference::builder()
-            .attachment(0)
-            .layout(vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL)
-            .build()];
-
-        let depth_attachment_ref = vk::AttachmentReference::builder()
-            .attachment(1)
-            .layout(vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL);
-
-        let resolve_attachment_refs = [vk::AttachmentReference::builder()
-            .attachment(2)
-            .layout(vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL)
-            .build()];
-
-        let subpass_descs = {
-            let mut subpass_desc = vk::SubpassDescription::builder()
-                .pipeline_bind_point(vk::PipelineBindPoint::GRAPHICS)
-                .color_attachments(&color_attachment_refs)
-                .depth_stencil_attachment(&depth_attachment_ref);
-            if msaa_samples != vk::SampleCountFlags::TYPE_1 {
-                subpass_desc = subpass_desc.resolve_attachments(&resolve_attachment_refs);
-            }
-            [subpass_desc.build()]
-        };
-
-        let subpass_dep = vk::SubpassDependency::builder()
-            .src_subpass(vk::SUBPASS_EXTERNAL)
-            .dst_subpass(0)
-            .src_stage_mask(vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT)
-            .src_access_mask(vk::AccessFlags::empty())
-            .dst_stage_mask(vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT)
-            .dst_access_mask(
-                vk::AccessFlags::COLOR_ATTACHMENT_READ | vk::AccessFlags::COLOR_ATTACHMENT_WRITE,
-            )
-            .build();
-        let subpass_deps = [subpass_dep];
-
-        let render_pass_info = vk::RenderPassCreateInfo::builder()
-            .attachments(&attachment_descs)
-            .subpasses(&subpass_descs)
-            .dependencies(&subpass_deps);
-
-        unsafe { device.create_render_pass(&render_pass_info, None).unwrap() }
     }
 
     fn create_camera_uniform_buffers(context: &Rc<Context>, count: u32) -> Vec<Buffer> {
@@ -694,67 +584,6 @@ impl BaseApp {
         sets
     }
 
-    fn create_color_texture(
-        context: &Rc<Context>,
-        swapchain_properties: SwapchainProperties,
-        msaa_samples: vk::SampleCountFlags,
-    ) -> Texture {
-        let format = swapchain_properties.format.format;
-        let image = Image::create(
-            Rc::clone(context),
-            ImageParameters {
-                mem_properties: vk::MemoryPropertyFlags::DEVICE_LOCAL,
-                extent: swapchain_properties.extent,
-                sample_count: msaa_samples,
-                format,
-                usage: vk::ImageUsageFlags::TRANSIENT_ATTACHMENT
-                    | vk::ImageUsageFlags::COLOR_ATTACHMENT,
-                ..Default::default()
-            },
-        );
-
-        image.transition_image_layout(
-            vk::ImageLayout::UNDEFINED,
-            vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
-        );
-
-        let view = image.create_view(vk::ImageViewType::TYPE_2D, vk::ImageAspectFlags::COLOR);
-
-        Texture::new(Rc::clone(context), image, view, None)
-    }
-
-    /// Create the depth buffer texture (image, memory and view).
-    ///
-    /// This function also transitions the image to be ready to be used
-    /// as a depth/stencil attachement.
-    fn create_depth_texture(
-        context: &Rc<Context>,
-        format: vk::Format,
-        extent: vk::Extent2D,
-        msaa_samples: vk::SampleCountFlags,
-    ) -> Texture {
-        let image = Image::create(
-            Rc::clone(context),
-            ImageParameters {
-                mem_properties: vk::MemoryPropertyFlags::DEVICE_LOCAL,
-                extent,
-                sample_count: msaa_samples,
-                format,
-                usage: vk::ImageUsageFlags::DEPTH_STENCIL_ATTACHMENT,
-                ..Default::default()
-            },
-        );
-
-        image.transition_image_layout(
-            vk::ImageLayout::UNDEFINED,
-            vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
-        );
-
-        let view = image.create_view(vk::ImageViewType::TYPE_2D, vk::ImageAspectFlags::DEPTH);
-
-        Texture::new(Rc::clone(context), image, view, None)
-    }
-
     fn find_depth_format(context: &Context) -> vk::Format {
         let candidates = vec![
             vk::Format::D32_SFLOAT,
@@ -1165,7 +994,7 @@ impl BaseApp {
                 Rc::clone(&self.context),
                 self.swapchain_properties,
                 self.msaa_samples,
-                self.render_pass,
+                &self.render_pass,
                 &self.skybox_descriptors,
                 Some(&descriptors),
             );
@@ -1180,7 +1009,7 @@ impl BaseApp {
             let command_buffers = Self::create_and_register_command_buffers(
                 &self.context,
                 &self.swapchain,
-                self.render_pass,
+                self.render_pass.get_render_pass(),
                 &pipelines,
                 &self.skybox_descriptors.sets(),
                 &self.skybox_model,
@@ -1303,8 +1132,6 @@ impl BaseApp {
 
         self.cleanup_swapchain();
 
-        let device = self.context.device();
-
         let dimensions = self.resize_dimensions.unwrap_or([
             self.swapchain.properties().extent.width,
             self.swapchain.properties().extent.height,
@@ -1318,36 +1145,21 @@ impl BaseApp {
         let swapchain_properties = swapchain_support_details
             .get_ideal_swapchain_properties(dimensions, self.config.vsync());
 
-        let render_pass = Self::create_render_pass(
-            device,
-            swapchain_properties,
-            self.msaa_samples,
+        let render_pass = RenderPass::create(
+            Rc::clone(&self.context),
+            swapchain_properties.extent,
+            swapchain_properties.format.format,
             self.depth_format,
+            self.msaa_samples,
         );
 
         let pipelines = Pipelines::build(
             Rc::clone(&self.context),
             swapchain_properties,
             self.msaa_samples,
-            render_pass,
+            &render_pass,
             &self.skybox_descriptors,
             self.model_data.as_ref().map(|m| &m.descriptors),
-        );
-
-        let color_texture = match self.msaa_samples {
-            vk::SampleCountFlags::TYPE_1 => None,
-            _ => Some(Self::create_color_texture(
-                &self.context,
-                swapchain_properties,
-                self.msaa_samples,
-            )),
-        };
-
-        let depth_texture = Self::create_depth_texture(
-            &self.context,
-            self.depth_format,
-            swapchain_properties.extent,
-            self.msaa_samples,
         );
 
         let swapchain = Swapchain::create(
@@ -1355,15 +1167,13 @@ impl BaseApp {
             swapchain_support_details,
             dimensions,
             self.config.vsync(),
-            color_texture.as_ref(),
-            &depth_texture,
-            render_pass,
+            &render_pass,
         );
 
         let command_buffers = Self::create_and_register_command_buffers(
             &self.context,
             &swapchain,
-            render_pass,
+            render_pass.get_render_pass(),
             &pipelines,
             &self.skybox_descriptors.sets(),
             &self.skybox_model,
@@ -1374,8 +1184,6 @@ impl BaseApp {
         self.swapchain_properties = swapchain_properties;
         self.render_pass = render_pass;
         self.pipelines = pipelines;
-        self.color_texture = color_texture;
-        self.depth_texture = depth_texture;
         self.command_buffers = command_buffers;
     }
 
@@ -1398,7 +1206,6 @@ impl BaseApp {
         let device = self.context.device();
         unsafe {
             device.free_command_buffers(self.context.general_command_pool(), &self.command_buffers);
-            device.destroy_render_pass(self.render_pass, None);
         }
         self.swapchain.destroy();
     }

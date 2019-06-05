@@ -36,7 +36,7 @@ impl Pipelines {
         context: Rc<Context>,
         swapchain_properties: SwapchainProperties,
         msaa_samples: vk::SampleCountFlags,
-        render_pass: vk::RenderPass,
+        render_pass: &RenderPass,
         skybox_descriptors: &Descriptors,
         model_descriptors: Option<&Descriptors>,
     ) -> Self {
@@ -48,7 +48,7 @@ impl Pipelines {
             &context,
             swapchain_properties,
             msaa_samples,
-            render_pass,
+            render_pass.get_render_pass(),
             skybox_layout,
         );
 
@@ -59,7 +59,7 @@ impl Pipelines {
                 &context,
                 swapchain_properties,
                 msaa_samples,
-                render_pass,
+                render_pass.get_render_pass(),
                 model_layout,
             );
 
@@ -67,7 +67,7 @@ impl Pipelines {
                 &context,
                 swapchain_properties,
                 msaa_samples,
-                render_pass,
+                render_pass.get_render_pass(),
                 model_layout,
                 opaque_pipeline,
             );
