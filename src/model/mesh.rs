@@ -1,16 +1,15 @@
-use super::{util::read_accessor, IndexBuffer, Material, ModelVertex, VertexBuffer};
+use super::{IndexBuffer, Material, ModelVertex, VertexBuffer};
 use crate::{math::*, vulkan::*};
 use ash::vk;
 use byteorder::{ByteOrder, LittleEndian};
 use cgmath::Vector3;
 use gltf::{
-    accessor::DataType,
     buffer::{Buffer as GltfBuffer, Data},
     mesh::{
-        util::{ReadJoints, ReadTexCoords, ReadWeights},
+        util::{ReadIndices, ReadJoints, ReadTexCoords, ReadWeights},
         Bounds, Reader, Semantic,
     },
-    Accessor, Document,
+    Document,
 };
 use std::{mem::size_of, rc::Rc};
 
@@ -90,17 +89,17 @@ pub fn create_meshes_from_gltf(
         let mut primitives_buffers = Vec::<PrimitiveData>::new();
 
         for primitive in mesh.primitives() {
-            let indices = primitive.indices().map(|accessor| {
-                let (indices, index_type) = extract_indices_from_accessor(&accessor, buffers);
+            let reader = primitive.reader(|buffer| Some(&buffers[buffer.index()]));
+
+            let indices = read_indices(&reader).map(|(indices, count, index_type)| {
                 let offset = all_indices.len();
                 all_indices.extend_from_slice(&indices);
-                (offset, accessor.count(), index_type)
+                (offset, count, index_type)
             });
 
             if let Some(accessor) = primitive.get(&Semantic::Positions) {
 
                 let aabb = get_aabb(&primitive.bounding_box());
-                let reader = primitive.reader(|buffer| Some(&buffers[buffer.index()]));
                 let positions = read_positions(&reader);
                 let normals = read_normals(&reader);
                 let tex_coords = read_tex_coords(&reader);
@@ -202,34 +201,40 @@ pub fn create_meshes_from_gltf(
     Vec::new()
 }
 
-fn extract_indices_from_accessor(
-    accessor: &Accessor,
-    buffers: &[Data],
-) -> (Vec<u8>, vk::IndexType) {
-    let index_type = match accessor.data_type() {
-        DataType::U32 => vk::IndexType::UINT32,
-        _ => vk::IndexType::UINT16,
-    };
-
-    let indices = read_accessor(&accessor, &buffers);
-
-    if accessor.data_type() == DataType::U8 {
-        let u16_indices = indices
-            .iter()
-            .map(|val| u16::from(*val))
-            .collect::<Vec<_>>();
-
-        let mut u8_indices = Vec::<u8>::new();
-        let mut as_u8 = [0 as u8; 2];
-        for i in u16_indices {
-            LittleEndian::write_u16(&mut as_u8, i);
-            u8_indices.extend_from_slice(&as_u8);
-        }
-
-        return (u8_indices, index_type);
-    }
-
-    (indices, index_type)
+fn read_indices<'a, 's, F>(reader: &Reader<'a, 's, F>) -> Option<(Vec<u8>, usize, vk::IndexType)>
+where
+    F: Clone + Fn(GltfBuffer<'a>) -> Option<&'s [u8]>,
+{
+    reader.read_indices().map_or(None, |indices| {
+        let mut index_buffer = Vec::new();
+        let (count, index_type) = match indices {
+            ReadIndices::U32(indices) => {
+                let mut buffer = [0_u8; 4];
+                indices.for_each(|i| {
+                    LittleEndian::write_u32(&mut buffer, i);
+                    index_buffer.extend_from_slice(&buffer);
+                });
+                (indices.len(), vk::IndexType::UINT32)
+            }
+            ReadIndices::U16(indices) => {
+                let mut buffer = [0_u8; 2];
+                indices.for_each(|i| {
+                    LittleEndian::write_u16(&mut buffer, i);
+                    index_buffer.extend_from_slice(&buffer);
+                });
+                (indices.len(), vk::IndexType::UINT16)
+            }
+            ReadIndices::U8(indices) => {
+                let mut buffer = [0_u8; 2];
+                indices.map(u16::from).for_each(|i| {
+                    LittleEndian::write_u16(&mut buffer, i);
+                    index_buffer.extend_from_slice(&buffer);
+                });
+                (indices.len(), vk::IndexType::UINT16)
+            }
+        };
+        Some((index_buffer, count, index_type))
+    })
 }
 
 fn get_aabb(bounds: &Bounds<[f32; 3]>) -> AABB<f32> {

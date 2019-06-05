@@ -5,11 +5,10 @@ mod mesh;
 mod node;
 mod skin;
 mod texture;
-mod util;
 mod vertex;
 
 pub use self::{
-    animation::*, error::*, material::*, mesh::*, node::*, skin::*, texture::*, util::*, vertex::*,
+    animation::*, error::*, material::*, mesh::*, node::*, skin::*, texture::*, vertex::*,
 };
 use crate::{math::*, vulkan::*};
 use cgmath::Matrix4;

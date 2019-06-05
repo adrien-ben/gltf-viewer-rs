@@ -1,14 +1,15 @@
-use super::{node::Nodes, util::*};
+use super::node::Nodes;
 use crate::math::slerp;
-use byteorder::{ByteOrder, LittleEndian};
 use cgmath::{Quaternion, Vector3, VectorSpace};
 use gltf::{
     animation::{
-        iter::Channels, Channel as GltfChannel, Interpolation as GltfInterpolation, Property,
+        iter::Channels,
+        util::{ReadOutputs, Reader, Rotations},
+        Channel as GltfChannel, Interpolation as GltfInterpolation, Property,
     },
-    buffer::Data,
+    buffer::{Buffer, Data},
     iter::Animations,
-    Accessor, Animation as GltfAnimation,
+    Animation as GltfAnimation,
 };
 use std::cmp::Ordering;
 
@@ -212,8 +213,9 @@ fn map_translation_channel(
     let gltf_sampler = gltf_channel.sampler();
     if let Property::Translation = gltf_channel.target().property() {
         map_interpolation(gltf_sampler.interpolation()).map(|i| {
-            let times = read_times(&gltf_sampler.input(), data);
-            let output = read_translations(&gltf_sampler.output(), data);
+            let reader = gltf_channel.reader(|buffer| Some(&data[buffer.index()]));
+            let times = read_times(&reader);
+            let output = read_translations(&reader);
             Channel {
                 sampler: Sampler {
                     interpolation: i,
@@ -242,8 +244,9 @@ fn map_rotation_channel(
     let gltf_sampler = gltf_channel.sampler();
     if let Property::Rotation = gltf_channel.target().property() {
         map_interpolation(gltf_sampler.interpolation()).map(|i| {
-            let times = read_times(&gltf_sampler.input(), data);
-            let output = read_rotations(&gltf_sampler.output(), data);
+            let reader = gltf_channel.reader(|buffer| Some(&data[buffer.index()]));
+            let times = read_times(&reader);
+            let output = read_rotations(&reader);
             Channel {
                 sampler: Sampler {
                     interpolation: i,
@@ -269,8 +272,9 @@ fn map_scale_channel(gltf_channel: &GltfChannel, data: &[Data]) -> Option<Channe
     let gltf_sampler = gltf_channel.sampler();
     if let Property::Scale = gltf_channel.target().property() {
         map_interpolation(gltf_sampler.interpolation()).map(|i| {
-            let times = read_times(&gltf_sampler.input(), data);
-            let output = read_scales(&gltf_sampler.output(), data);
+            let reader = gltf_channel.reader(|buffer| Some(&data[buffer.index()]));
+            let times = read_times(&reader);
+            let output = read_scales(&reader);
             Channel {
                 sampler: Sampler {
                     interpolation: i,
@@ -293,105 +297,56 @@ fn map_interpolation(gltf_interpolation: GltfInterpolation) -> Option<Interpolat
     }
 }
 
-fn read_times(accessor: &Accessor, data: &[Data]) -> Vec<f32> {
-    let times = read_accessor(accessor, data);
-    assert!(
-        times.len() == 4 * accessor.count(),
-        "Time accessor should contains a multiple of 4 bytes"
-    );
+fn read_times<'a, 's, F>(reader: &Reader<'a, 's, F>) -> Vec<f32>
+where
+    F: Clone + Fn(Buffer<'a>) -> Option<&'s [u8]>,
+{
+    reader.read_inputs().map_or(vec![], |times| times.collect())
+}
 
-    (0..accessor.count())
-        .map(|i| {
-            pack_f32([
-                times[i * 4],
-                times[i * 4 + 1],
-                times[i * 4 + 2],
-                times[i * 4 + 3],
-            ])
+fn read_translations<'a, 's, F>(reader: &Reader<'a, 's, F>) -> Vec<Vector3<f32>>
+where
+    F: Clone + Fn(Buffer<'a>) -> Option<&'s [u8]>,
+{
+    reader
+        .read_outputs()
+        .map_or(vec![], |outputs| match outputs {
+            ReadOutputs::Translations(translations) => translations.map(Vector3::from).collect(),
+            _ => vec![],
         })
-        .collect::<Vec<_>>()
 }
 
-fn read_translations(accessor: &Accessor, data: &[Data]) -> Vec<Vector3<f32>> {
-    read_vec3s(accessor, data)
-}
-
-fn read_scales(accessor: &Accessor, data: &[Data]) -> Vec<Vector3<f32>> {
-    read_vec3s(accessor, data)
-}
-
-fn read_vec3s(accessor: &Accessor, data: &[Data]) -> Vec<Vector3<f32>> {
-    let sampler = read_accessor(accessor, data);
-    assert!(
-        sampler.len() == 12 * accessor.count(),
-        "Vector3 accessor should contains a multiple of 12 bytes"
-    );
-
-    (0..accessor.count())
-        .map(|i| {
-            let x = pack_f32([
-                sampler[i * 12],
-                sampler[i * 12 + 1],
-                sampler[i * 12 + 2],
-                sampler[i * 12 + 3],
-            ]);
-            let y = pack_f32([
-                sampler[i * 12 + 4],
-                sampler[i * 12 + 5],
-                sampler[i * 12 + 6],
-                sampler[i * 12 + 7],
-            ]);
-            let z = pack_f32([
-                sampler[i * 12 + 8],
-                sampler[i * 12 + 9],
-                sampler[i * 12 + 10],
-                sampler[i * 12 + 11],
-            ]);
-
-            Vector3::new(x, y, z)
+fn read_scales<'a, 's, F>(reader: &Reader<'a, 's, F>) -> Vec<Vector3<f32>>
+where
+    F: Clone + Fn(Buffer<'a>) -> Option<&'s [u8]>,
+{
+    reader
+        .read_outputs()
+        .map_or(vec![], |outputs| match outputs {
+            ReadOutputs::Scales(scales) => scales.map(Vector3::from).collect(),
+            _ => vec![],
         })
-        .collect::<Vec<_>>()
 }
 
-fn read_rotations(accessor: &Accessor, data: &[Data]) -> Vec<Quaternion<f32>> {
-    let sampler = read_accessor(accessor, data);
-    assert!(
-        sampler.len() == 16 * accessor.count(),
-        "Rotations accessor should contains a multiple of 16 bytes"
-    );
-
-    (0..accessor.count())
-        .map(|i| {
-            let x = pack_f32([
-                sampler[i * 16],
-                sampler[i * 16 + 1],
-                sampler[i * 16 + 2],
-                sampler[i * 16 + 3],
-            ]);
-            let y = pack_f32([
-                sampler[i * 16 + 4],
-                sampler[i * 16 + 5],
-                sampler[i * 16 + 6],
-                sampler[i * 16 + 7],
-            ]);
-            let z = pack_f32([
-                sampler[i * 16 + 8],
-                sampler[i * 16 + 9],
-                sampler[i * 16 + 10],
-                sampler[i * 16 + 11],
-            ]);
-            let w = pack_f32([
-                sampler[i * 16 + 12],
-                sampler[i * 16 + 13],
-                sampler[i * 16 + 14],
-                sampler[i * 16 + 15],
-            ]);
-
-            Quaternion::new(w, x, y, z)
+fn read_rotations<'a, 's, F>(reader: &Reader<'a, 's, F>) -> Vec<Quaternion<f32>>
+where
+    F: Clone + Fn(Buffer<'a>) -> Option<&'s [u8]>,
+{
+    reader
+        .read_outputs()
+        .map_or(vec![], |outputs| match outputs {
+            ReadOutputs::Rotations(scales) => {
+                let scales = scales.into_f32().unwrap();
+                match scales {
+                    Rotations::F32(rotations) => rotations
+                        .map(|r| Quaternion::new(r[3], r[0], r[1], r[2]))
+                        .collect(),
+                    _ => {
+                        log::warn!("Failed to cast rotations to F32");
+                        vec![]
+                    }
+                }
+            }
+            _ => vec![],
         })
-        .collect::<Vec<_>>()
-}
-
-fn pack_f32(bytes: [u8; 4]) -> f32 {
-    LittleEndian::read_f32(&bytes)
 }
