@@ -4,6 +4,8 @@ use ash::{version::DeviceV1_0, vk, Device};
 use cgmath::{Matrix4, SquareMatrix};
 use std::{mem::size_of, rc::Rc};
 
+type JointsBuffer = [Matrix4<f32>; MAX_JOINTS_PER_MESH];
+
 pub struct ModelRenderer {
     context: Rc<Context>,
     model: Model,
@@ -106,54 +108,49 @@ impl ModelRenderer {
     }
 
     pub fn update_buffers(&mut self, frame_index: usize) {
-        // model ubo
-        {
-            let mesh_nodes = self
-                .model
-                .nodes()
-                .nodes()
-                .iter()
-                .filter(|n| n.mesh_index().is_some());
+        let mesh_nodes = self
+            .model
+            .nodes()
+            .nodes()
+            .iter()
+            .filter(|n| n.mesh_index().is_some());
 
-            let transforms = mesh_nodes.map(|n| n.transform()).collect::<Vec<_>>();
+        let transforms = mesh_nodes.map(|n| n.transform()).collect::<Vec<_>>();
 
-            let elem_size = &self.context.get_ubo_alignment::<Matrix4<f32>>();
-            let buffer = &mut self.transform_ubos[frame_index];
-            unsafe {
-                let data_ptr = buffer.map_memory();
-                mem_copy_aligned(data_ptr, u64::from(*elem_size), &transforms);
+        let elem_size = &self.context.get_ubo_alignment::<Matrix4<f32>>();
+        let buffer = &mut self.transform_ubos[frame_index];
+        unsafe {
+            let data_ptr = buffer.map_memory();
+            mem_copy_aligned(data_ptr, u64::from(*elem_size), &transforms);
+        }
+
+        let skin_nodes = self
+            .model
+            .nodes()
+            .nodes()
+            .iter()
+            .filter(|n| n.skin_index().is_some());
+
+        let mut skin_matrices = Vec::new();
+        for node in skin_nodes {
+            let skin = self.model.skin(node.skin_index().unwrap());
+            let mut matrices = [Matrix4::<f32>::identity(); MAX_JOINTS_PER_MESH];
+
+            for (i, matrix) in matrices.iter_mut().enumerate().take(MAX_JOINTS_PER_MESH) {
+                let joint_matrix = skin
+                    .joint(i)
+                    .map(|j| j.matrix())
+                    .unwrap_or_else(Matrix4::identity);
+                *matrix = joint_matrix;
             }
 
-            let skin_nodes = self
-                .model
-                .nodes()
-                .nodes()
-                .iter()
-                .filter(|n| n.skin_index().is_some());
-
-            let mut skin_matrices = Vec::new();
-            for node in skin_nodes {
-                let skin = self.model.skin(node.skin_index().unwrap());
-                let mut matrices = [Matrix4::<f32>::identity(); MAX_JOINTS_PER_MESH];
-
-                for (i, matrix) in matrices.iter_mut().enumerate().take(MAX_JOINTS_PER_MESH) {
-                    let joint_matrix = skin
-                        .joint(i)
-                        .map(|j| j.matrix())
-                        .unwrap_or_else(Matrix4::identity);
-                    *matrix = joint_matrix;
-                }
-
-                skin_matrices.push(matrices);
-            }
-            let elem_size = &self
-                .context
-                .get_ubo_alignment::<[Matrix4<f32>; MAX_JOINTS_PER_MESH]>();
-            let buffer = &mut self.skin_ubos[frame_index];
-            unsafe {
-                let data_ptr = buffer.map_memory();
-                mem_copy_aligned(data_ptr, u64::from(*elem_size), &skin_matrices);
-            }
+            skin_matrices.push(matrices);
+        }
+        let elem_size = &self.context.get_ubo_alignment::<JointsBuffer>();
+        let buffer = &mut self.skin_ubos[frame_index];
+        unsafe {
+            let data_ptr = buffer.map_memory();
+            mem_copy_aligned(data_ptr, u64::from(*elem_size), &skin_matrices);
         }
     }
 
@@ -241,6 +238,7 @@ fn create_transform_ubos(context: &Rc<Context>, model: &Model, count: u32) -> Ve
         })
         .collect::<Vec<_>>()
 }
+
 fn create_skin_ubos(context: &Rc<Context>, model: &Model, count: u32) -> Vec<Buffer> {
     let skin_node_count = model
         .nodes()
@@ -249,7 +247,7 @@ fn create_skin_ubos(context: &Rc<Context>, model: &Model, count: u32) -> Vec<Buf
         .filter(|n| n.skin_index().is_some())
         .count()
         .max(1) as u32;
-    let elem_size = context.get_ubo_alignment::<[Matrix4<f32>; MAX_JOINTS_PER_MESH]>();
+    let elem_size = context.get_ubo_alignment::<JointsBuffer>();
 
     (0..count)
         .map(|_| {
@@ -326,6 +324,7 @@ fn create_descriptor_set_layout(device: &Device) -> vk::DescriptorSetLayout {
             .unwrap()
     }
 }
+
 fn create_descriptor_pool(device: &Device, descriptor_count: u32) -> vk::DescriptorPool {
     let pool_sizes = [
         vk::DescriptorPoolSize {
@@ -389,7 +388,7 @@ fn create_descriptor_sets(
         let model_skin_buffer_info = [vk::DescriptorBufferInfo::builder()
             .buffer(model_skin_ubo.buffer)
             .offset(0)
-            .range(vk::WHOLE_SIZE)
+            .range(size_of::<JointsBuffer>() as _)
             .build()];
 
         let image_info = {
@@ -608,7 +607,7 @@ fn register_model_draw_commands<F>(
 {
     let device = context.device();
     let model_transform_ubo_offset = context.get_ubo_alignment::<Matrix4<f32>>();
-    let model_skin_ubo_offset = context.get_ubo_alignment::<[Matrix4<f32>; MAX_JOINTS_PER_MESH]>();
+    let model_skin_ubo_offset = context.get_ubo_alignment::<JointsBuffer>();
 
     for (index, node) in model
         .nodes()
