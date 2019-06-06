@@ -98,7 +98,6 @@ pub fn create_meshes_from_gltf(
             });
 
             if let Some(accessor) = primitive.get(&Semantic::Positions) {
-
                 let aabb = get_aabb(&primitive.bounding_box());
                 let positions = read_positions(&reader);
                 let normals = read_normals(&reader);
@@ -205,7 +204,7 @@ fn read_indices<'a, 's, F>(reader: &Reader<'a, 's, F>) -> Option<(Vec<u8>, usize
 where
     F: Clone + Fn(GltfBuffer<'a>) -> Option<&'s [u8]>,
 {
-    reader.read_indices().map_or(None, |indices| {
+    reader.read_indices().and_then(|indices| {
         let mut index_buffer = Vec::new();
         let (count, index_type) = match indices {
             ReadIndices::U32(indices) => {

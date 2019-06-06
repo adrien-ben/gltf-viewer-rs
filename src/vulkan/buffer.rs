@@ -113,7 +113,7 @@ impl Buffer {
     ///
     /// Does nothing if memory is not mapped.
     pub fn unmap_memory(&mut self) {
-        if let Some(_) = self.mapped_pointer.take() {
+        if self.mapped_pointer.take().is_some() {
             unsafe {
                 self.context.device().unmap_memory(self.memory);
             }

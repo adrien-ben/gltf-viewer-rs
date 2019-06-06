@@ -2,7 +2,7 @@ use super::node::Node;
 use cgmath::{Matrix4, SquareMatrix};
 use gltf::{buffer::Data, iter::Skins as GltfSkins, Skin as GltfSkin};
 
-pub const MAX_JOINTS_PER_MESH : usize = 128;
+pub const MAX_JOINTS_PER_MESH: usize = 128;
 
 #[derive(Clone, Debug)]
 pub struct Skin {
@@ -20,7 +20,7 @@ impl Skin {
 
 impl Skin {
     pub fn joint(&self, index: usize) -> Option<Joint> {
-        self.joints.iter().nth(index).copied()
+        self.joints.get(index).copied()
     }
 }
 
@@ -78,7 +78,7 @@ fn map_inverse_bind_matrices(gltf_skin: &GltfSkin, data: &[Data]) -> Vec<Matrix4
         .reader(|buffer| Some(&data[buffer.index()]))
         .read_inverse_bind_matrices()
         .expect("IBM reader not found for skin");
-    iter.map(|m| Matrix4::from(m)).collect::<Vec<_>>()
+    iter.map(Matrix4::from).collect::<Vec<_>>()
 }
 
 fn map_node_ids(gltf_skin: &GltfSkin) -> Vec<usize> {

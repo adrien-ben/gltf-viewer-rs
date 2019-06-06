@@ -72,7 +72,6 @@ impl<T: LinearInterpolation> Sampler<T> {
             let previous_value = self.values[i];
             let next_value = self.values[i + 1];
 
-
             match self.interpolation {
                 Interpolation::Step => previous_value,
                 Interpolation::Linear => {
@@ -102,6 +101,12 @@ impl<T: LinearInterpolation> Channel<T> {
     }
 }
 
+struct NodesKeyFrame(
+    Vec<(usize, Vector3<f32>)>,
+    Vec<(usize, Quaternion<f32>)>,
+    Vec<(usize, Vector3<f32>)>,
+);
+
 #[derive(Debug)]
 pub struct Animation {
     time: f32,
@@ -119,7 +124,7 @@ impl Animation {
         let time = (self.time + delta_time) % self.total_time;
         self.time = time;
 
-        let (translations, rotations, scale) = self.sample(time);
+        let NodesKeyFrame(translations, rotations, scale) = self.sample(time);
         translations.iter().for_each(|(node_index, translation)| {
             nodes.nodes_mut()[*node_index].set_translation(*translation);
         });
@@ -130,18 +135,11 @@ impl Animation {
             nodes.nodes_mut()[*node_index].set_scale(*scale);
         });
 
-        translations.len() > 0 || rotations.len() > 0 || scale.len() > 0
+        !translations.is_empty() || !rotations.is_empty() || !scale.is_empty()
     }
 
-    fn sample(
-        &self,
-        t: f32,
-    ) -> (
-        Vec<(usize, Vector3<f32>)>,
-        Vec<(usize, Quaternion<f32>)>,
-        Vec<(usize, Vector3<f32>)>,
-    ) {
-        (
+    fn sample(&self, t: f32) -> NodesKeyFrame {
+        NodesKeyFrame(
             self.translation_channels
                 .iter()
                 .filter_map(|tc| tc.sample(t))

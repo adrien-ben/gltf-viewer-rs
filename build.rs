@@ -41,14 +41,16 @@ fn compile_shaders() {
                 .arg(&path)
                 .arg("-o")
                 .arg(output_name)
-            .output();
+                .output();
 
             handle_program_result(result);
         })
 }
 
 fn get_shader_source_dir_path() -> PathBuf {
-    var("SHADERS_DIR").map(PathBuf::from).unwrap_or_else(|_| get_default_shader_source_dir_path())
+    var("SHADERS_DIR")
+        .map(PathBuf::from)
+        .unwrap_or_else(|_| get_default_shader_source_dir_path())
 }
 
 fn get_default_shader_source_dir_path() -> PathBuf {

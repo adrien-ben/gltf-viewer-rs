@@ -3,6 +3,7 @@ mod context;
 mod debug;
 mod descriptor;
 mod image;
+mod pipeline;
 mod renderpass;
 mod shader;
 pub mod surface;
@@ -12,6 +13,6 @@ mod util;
 mod vertex;
 
 pub use self::{
-    buffer::*, context::*, debug::*, descriptor::*, image::*, renderpass::*, shader::*,
-    swapchain::*, texture::*, util::*, vertex::*,
+    buffer::*, context::*, debug::*, descriptor::*, image::*, pipeline::*, renderpass::*,
+    shader::*, swapchain::*, texture::*, util::*, vertex::*,
 };

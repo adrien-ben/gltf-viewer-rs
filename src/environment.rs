@@ -2,13 +2,13 @@ use crate::{
     math::*,
     util::*,
     vulkan::{
-        create_device_local_buffer_with_data, Buffer, Context, Descriptors, ShaderModule, Texture,
-        Vertex,
+        create_device_local_buffer_with_data, create_pipeline, Buffer, Context, Descriptors,
+        PipelineParameters, Texture, Vertex,
     },
 };
 use ash::{version::DeviceV1_0, vk};
 use cgmath::{Deg, Matrix4, Point3, Vector3};
-use std::{ffi::CString, mem::size_of, path::Path, rc::Rc, time::Instant};
+use std::{mem::size_of, path::Path, rc::Rc, time::Instant};
 
 pub struct Environment {
     skybox: Texture,
@@ -254,7 +254,7 @@ fn create_cubemap_from_equirectangular_texture<P: AsRef<Path>>(
 
     let skybox_model = SkyboxModel::new(context);
 
-    let renderpass = create_renderpass(context, vk::Format::R32G32B32A32_SFLOAT);
+    let render_pass = create_render_pass(context, vk::Format::R32G32B32A32_SFLOAT);
 
     let descriptors = create_descriptors(context, &texture);
 
@@ -308,15 +308,17 @@ fn create_cubemap_from_equirectangular_texture<P: AsRef<Path>>(
                 .depth_bias_clamp(0.0)
                 .depth_bias_slope_factor(0.0);
 
-            create_pipeline::<SkyboxVertex>(
+            create_env_pipeline::<SkyboxVertex>(
                 context,
-                "cubemap",
-                "spherical",
-                &viewport_info,
-                &rasterizer_info,
-                None,
-                layout,
-                renderpass,
+                EnvPipelineParameters {
+                    vertex_shader_name: "cubemap",
+                    fragment_shader_name: "spherical",
+                    viewport_info: &viewport_info,
+                    rasterizer_info: &rasterizer_info,
+                    dynamic_state_info: None,
+                    layout,
+                    render_pass,
+                },
             )
         };
 
@@ -346,7 +348,7 @@ fn create_cubemap_from_equirectangular_texture<P: AsRef<Path>>(
         .map(|view| {
             let attachments = [*view];
             let create_info = vk::FramebufferCreateInfo::builder()
-                .render_pass(renderpass)
+                .render_pass(render_pass)
                 .attachments(&attachments)
                 .width(size)
                 .height(size)
@@ -378,7 +380,7 @@ fn create_cubemap_from_equirectangular_texture<P: AsRef<Path>>(
 
             for face in 0..6 {
                 let render_pass_begin_info = vk::RenderPassBeginInfo::builder()
-                    .render_pass(renderpass)
+                    .render_pass(render_pass)
                     .framebuffer(framebuffers[face])
                     .render_area(vk::Rect2D {
                         offset: vk::Offset2D { x: 0, y: 0 },
@@ -472,7 +474,7 @@ fn create_cubemap_from_equirectangular_texture<P: AsRef<Path>>(
             .for_each(|fb| device.destroy_framebuffer(*fb, None));
         device.destroy_pipeline(pipeline, None);
         device.destroy_pipeline_layout(pipeline_layout, None);
-        device.destroy_render_pass(renderpass, None);
+        device.destroy_render_pass(render_pass, None);
     }
 
     let time = start.elapsed().as_millis();
@@ -492,7 +494,7 @@ fn create_irradiance_map(context: &Rc<Context>, cubemap: &Texture, size: u32) ->
 
     let skybox_model = SkyboxModel::new(context);
 
-    let renderpass = create_renderpass(context, vk::Format::R32G32B32A32_SFLOAT);
+    let render_pass = create_render_pass(context, vk::Format::R32G32B32A32_SFLOAT);
 
     let descriptors = create_descriptors(context, &cubemap);
 
@@ -546,15 +548,17 @@ fn create_irradiance_map(context: &Rc<Context>, cubemap: &Texture, size: u32) ->
                 .depth_bias_clamp(0.0)
                 .depth_bias_slope_factor(0.0);
 
-            create_pipeline::<SkyboxVertex>(
+            create_env_pipeline::<SkyboxVertex>(
                 context,
-                "cubemap",
-                "irradiance",
-                &viewport_info,
-                &rasterizer_info,
-                None,
-                layout,
-                renderpass,
+                EnvPipelineParameters {
+                    vertex_shader_name: "cubemap",
+                    fragment_shader_name: "irradiance",
+                    viewport_info: &viewport_info,
+                    rasterizer_info: &rasterizer_info,
+                    dynamic_state_info: None,
+                    layout,
+                    render_pass,
+                },
             )
         };
 
@@ -587,7 +591,7 @@ fn create_irradiance_map(context: &Rc<Context>, cubemap: &Texture, size: u32) ->
         .map(|view| {
             let attachments = [*view];
             let create_info = vk::FramebufferCreateInfo::builder()
-                .render_pass(renderpass)
+                .render_pass(render_pass)
                 .attachments(&attachments)
                 .width(size)
                 .height(size)
@@ -619,7 +623,7 @@ fn create_irradiance_map(context: &Rc<Context>, cubemap: &Texture, size: u32) ->
 
             for face in 0..6 {
                 let render_pass_begin_info = vk::RenderPassBeginInfo::builder()
-                    .render_pass(renderpass)
+                    .render_pass(render_pass)
                     .framebuffer(framebuffers[face])
                     .render_area(vk::Rect2D {
                         offset: vk::Offset2D { x: 0, y: 0 },
@@ -708,7 +712,7 @@ fn create_irradiance_map(context: &Rc<Context>, cubemap: &Texture, size: u32) ->
             .for_each(|fb| device.destroy_framebuffer(*fb, None));
         device.destroy_pipeline(pipeline, None);
         device.destroy_pipeline_layout(pipeline_layout, None);
-        device.destroy_render_pass(renderpass, None);
+        device.destroy_render_pass(render_pass, None);
     }
 
     let time = start.elapsed().as_millis();
@@ -727,7 +731,7 @@ fn create_pre_filtered_map(context: &Rc<Context>, cubemap: &Texture, size: u32) 
 
     let max_mip_levels = (size as f32).log2().floor() as u32 + 1;
 
-    let renderpass = create_renderpass(context, vk::Format::R32G32B32A32_SFLOAT);
+    let render_pass = create_render_pass(context, vk::Format::R32G32B32A32_SFLOAT);
 
     let descriptors = create_descriptors(context, &cubemap);
 
@@ -770,21 +774,21 @@ fn create_pre_filtered_map(context: &Rc<Context>, cubemap: &Texture, size: u32) 
                 .depth_bias_clamp(0.0)
                 .depth_bias_slope_factor(0.0);
 
-
             let dynamic_state = [vk::DynamicState::VIEWPORT, vk::DynamicState::SCISSOR];
             let dynamic_state_info =
                 vk::PipelineDynamicStateCreateInfo::builder().dynamic_states(&dynamic_state);
 
-
-            create_pipeline::<SkyboxVertex>(
+            create_env_pipeline::<SkyboxVertex>(
                 context,
-                "cubemap",
-                "pre_filtered",
-                &viewport_info,
-                &rasterizer_info,
-                Some(&dynamic_state_info),
-                layout,
-                renderpass,
+                EnvPipelineParameters {
+                    vertex_shader_name: "cubemap",
+                    fragment_shader_name: "pre_filtered",
+                    viewport_info: &viewport_info,
+                    rasterizer_info: &rasterizer_info,
+                    dynamic_state_info: Some(&dynamic_state_info),
+                    layout,
+                    render_pass,
+                },
             )
         };
 
@@ -823,7 +827,7 @@ fn create_pre_filtered_map(context: &Rc<Context>, cubemap: &Texture, size: u32) 
             .map(|view| {
                 let attachments = [*view];
                 let create_info = vk::FramebufferCreateInfo::builder()
-                    .render_pass(renderpass)
+                    .render_pass(render_pass)
                     .attachments(&attachments)
                     .width(viewport_size)
                     .height(viewport_size)
@@ -884,7 +888,7 @@ fn create_pre_filtered_map(context: &Rc<Context>, cubemap: &Texture, size: u32) 
                     let framebuffer = framebuffers[lod as usize][face];
 
                     let render_pass_begin_info = vk::RenderPassBeginInfo::builder()
-                        .render_pass(renderpass)
+                        .render_pass(render_pass)
                         .framebuffer(framebuffer)
                         .render_area(vk::Rect2D {
                             offset: vk::Offset2D { x: 0, y: 0 },
@@ -985,7 +989,7 @@ fn create_pre_filtered_map(context: &Rc<Context>, cubemap: &Texture, size: u32) 
             .for_each(|fb| device.destroy_framebuffer(*fb, None));
         device.destroy_pipeline(pipeline, None);
         device.destroy_pipeline_layout(pipeline_layout, None);
-        device.destroy_render_pass(renderpass, None);
+        device.destroy_render_pass(render_pass, None);
     }
 
     let time = start.elapsed().as_millis();
@@ -1002,7 +1006,7 @@ fn create_brdf_lookup(context: &Rc<Context>, size: u32) -> Texture {
 
     let quad_model = QuadModel::new(&context);
 
-    let renderpass = create_renderpass(context, vk::Format::R16G16_SFLOAT);
+    let render_pass = create_render_pass(context, vk::Format::R16G16_SFLOAT);
 
     let (pipeline_layout, pipeline) = {
         let layout = {
@@ -1012,7 +1016,6 @@ fn create_brdf_lookup(context: &Rc<Context>, size: u32) -> Texture {
         };
 
         let pipeline = {
-
             let viewports = [vk::Viewport {
                 x: 0.0,
                 y: 0.0,
@@ -1045,15 +1048,17 @@ fn create_brdf_lookup(context: &Rc<Context>, size: u32) -> Texture {
                 .depth_bias_clamp(0.0)
                 .depth_bias_slope_factor(0.0);
 
-            create_pipeline::<QuadVertex>(
+            create_env_pipeline::<QuadVertex>(
                 context,
-                "brdf_lookup",
-                "brdf_lookup",
-                &viewport_info,
-                &rasterizer_info,
-                None,
-                layout,
-                renderpass,
+                EnvPipelineParameters {
+                    vertex_shader_name: "brdf_lookup",
+                    fragment_shader_name: "brdf_lookup",
+                    viewport_info: &viewport_info,
+                    rasterizer_info: &rasterizer_info,
+                    dynamic_state_info: None,
+                    layout,
+                    render_pass,
+                },
             )
         };
 
@@ -1066,7 +1071,7 @@ fn create_brdf_lookup(context: &Rc<Context>, size: u32) -> Texture {
     let framebuffer = {
         let attachments = [lookup.view];
         let create_info = vk::FramebufferCreateInfo::builder()
-            .render_pass(renderpass)
+            .render_pass(render_pass)
             .attachments(&attachments)
             .width(size)
             .height(size)
@@ -1092,7 +1097,7 @@ fn create_brdf_lookup(context: &Rc<Context>, size: u32) -> Texture {
             ];
 
             let render_pass_begin_info = vk::RenderPassBeginInfo::builder()
-                .render_pass(renderpass)
+                .render_pass(render_pass)
                 .framebuffer(framebuffer)
                 .render_area(vk::Rect2D {
                     offset: vk::Offset2D { x: 0, y: 0 },
@@ -1144,7 +1149,7 @@ fn create_brdf_lookup(context: &Rc<Context>, size: u32) -> Texture {
         device.destroy_framebuffer(framebuffer, None);
         device.destroy_pipeline(pipeline, None);
         device.destroy_pipeline_layout(pipeline_layout, None);
-        device.destroy_render_pass(renderpass, None);
+        device.destroy_render_pass(render_pass, None);
     }
 
     let time = start.elapsed().as_millis();
@@ -1188,7 +1193,7 @@ fn get_view_matrices() -> [Matrix4<f32>; 6] {
     ]
 }
 
-fn create_renderpass(context: &Rc<Context>, format: vk::Format) -> vk::RenderPass {
+fn create_render_pass(context: &Rc<Context>, format: vk::Format) -> vk::RenderPass {
     let attachments_descs = [vk::AttachmentDescription::builder()
         .format(format)
         .samples(vk::SampleCountFlags::TYPE_1)
@@ -1219,7 +1224,7 @@ fn create_renderpass(context: &Rc<Context>, format: vk::Format) -> vk::RenderPas
         )
         .build()];
 
-    let renderpass_info = vk::RenderPassCreateInfo::builder()
+    let render_pass_info = vk::RenderPassCreateInfo::builder()
         .attachments(&attachments_descs)
         .subpasses(&subpass_descs)
         .dependencies(&subpass_deps);
@@ -1227,7 +1232,7 @@ fn create_renderpass(context: &Rc<Context>, format: vk::Format) -> vk::RenderPas
     unsafe {
         context
             .device()
-            .create_render_pass(&renderpass_info, None)
+            .create_render_pass(&render_pass_info, None)
             .unwrap()
     }
 }
@@ -1304,49 +1309,21 @@ fn create_descriptors(context: &Rc<Context>, texture: &Texture) -> Descriptors {
     Descriptors::new(Rc::clone(context), layout, pool, sets)
 }
 
-fn create_pipeline<V: Vertex>(
-    context: &Rc<Context>,
-    vertex_shader_name: &str,
-    fragment_shader_name: &str,
-    viewport_info: &vk::PipelineViewportStateCreateInfo,
-    rasterizer_info: &vk::PipelineRasterizationStateCreateInfo,
-    dynamic_state_info: Option<&vk::PipelineDynamicStateCreateInfo>,
+#[derive(Copy, Clone)]
+struct EnvPipelineParameters<'a> {
+    vertex_shader_name: &'static str,
+    fragment_shader_name: &'static str,
+    viewport_info: &'a vk::PipelineViewportStateCreateInfo,
+    rasterizer_info: &'a vk::PipelineRasterizationStateCreateInfo,
+    dynamic_state_info: Option<&'a vk::PipelineDynamicStateCreateInfo>,
     layout: vk::PipelineLayout,
-    renderpass: vk::RenderPass,
+    render_pass: vk::RenderPass,
+}
+
+fn create_env_pipeline<V: Vertex>(
+    context: &Rc<Context>,
+    params: EnvPipelineParameters,
 ) -> vk::Pipeline {
-    let vertex_shader_module = ShaderModule::new(
-        Rc::clone(context),
-        format!("assets/shaders/{}.vert.spv", vertex_shader_name),
-    );
-    let fragment_shader_module = ShaderModule::new(
-        Rc::clone(context),
-        format!("assets/shaders/{}.frag.spv", fragment_shader_name),
-    );
-
-
-    let entry_point_name = CString::new("main").unwrap();
-    let vertex_shader_state_info = vk::PipelineShaderStageCreateInfo::builder()
-        .stage(vk::ShaderStageFlags::VERTEX)
-        .module(vertex_shader_module.module())
-        .name(&entry_point_name)
-        .build();
-    let fragment_shader_state_info = vk::PipelineShaderStageCreateInfo::builder()
-        .stage(vk::ShaderStageFlags::FRAGMENT)
-        .module(fragment_shader_module.module())
-        .name(&entry_point_name)
-        .build();
-    let shader_states_infos = [vertex_shader_state_info, fragment_shader_state_info];
-
-    let bindings_descs = V::get_bindings_descriptions();
-    let attributes_descs = V::get_attributes_descriptions();
-    let vertex_input_info = vk::PipelineVertexInputStateCreateInfo::builder()
-        .vertex_binding_descriptions(&bindings_descs)
-        .vertex_attribute_descriptions(&attributes_descs);
-
-    let input_assembly_info = vk::PipelineInputAssemblyStateCreateInfo::builder()
-        .topology(vk::PrimitiveTopology::TRIANGLE_LIST)
-        .primitive_restart_enable(false);
-
     let multisampling_info = vk::PipelineMultisampleStateCreateInfo::builder()
         .sample_shading_enable(false)
         .rasterization_samples(vk::SampleCountFlags::TYPE_1)
@@ -1354,7 +1331,7 @@ fn create_pipeline<V: Vertex>(
         .alpha_to_coverage_enable(false)
         .alpha_to_one_enable(false);
 
-    let color_blend_attachments = [vk::PipelineColorBlendAttachmentState::builder()
+    let color_blend_attachment = vk::PipelineColorBlendAttachmentState::builder()
         .color_write_mask(vk::ColorComponentFlags::all())
         .blend_enable(false)
         .src_color_blend_factor(vk::BlendFactor::ONE)
@@ -1363,36 +1340,23 @@ fn create_pipeline<V: Vertex>(
         .src_alpha_blend_factor(vk::BlendFactor::ONE)
         .dst_alpha_blend_factor(vk::BlendFactor::ZERO)
         .alpha_blend_op(vk::BlendOp::ADD)
-        .build()];
+        .build();
 
-    let color_blending_info = vk::PipelineColorBlendStateCreateInfo::builder()
-        .logic_op_enable(false)
-        .logic_op(vk::LogicOp::COPY)
-        .attachments(&color_blend_attachments)
-        .blend_constants([0.0, 0.0, 0.0, 0.0]);
-
-    let mut pipeline_info = vk::GraphicsPipelineCreateInfo::builder()
-        .stages(&shader_states_infos)
-        .vertex_input_state(&vertex_input_info)
-        .input_assembly_state(&input_assembly_info)
-        .viewport_state(viewport_info)
-        .rasterization_state(rasterizer_info)
-        .multisample_state(&multisampling_info)
-        .color_blend_state(&color_blending_info)
-        .layout(layout)
-        .render_pass(renderpass)
-        .subpass(0);
-
-    if let Some(dynamic_state_info) = dynamic_state_info {
-        pipeline_info = pipeline_info.dynamic_state(dynamic_state_info);
-    }
-
-    let pipeline_infos = [pipeline_info.build()];
-
-    unsafe {
-        context
-            .device()
-            .create_graphics_pipelines(vk::PipelineCache::null(), &pipeline_infos, None)
-            .unwrap()[0]
-    }
+    create_pipeline::<V>(
+        context,
+        PipelineParameters {
+            vertex_shader_name: params.vertex_shader_name,
+            fragment_shader_name: params.fragment_shader_name,
+            multisampling_info: &multisampling_info,
+            viewport_info: params.viewport_info,
+            rasterizer_info: params.rasterizer_info,
+            dynamic_state_info: params.dynamic_state_info,
+            depth_stencil_info: None,
+            color_blend_attachment: &color_blend_attachment,
+            render_pass: params.render_pass,
+            layout: params.layout,
+            parent: None,
+            allow_derivatives: false,
+        },
+    )
 }

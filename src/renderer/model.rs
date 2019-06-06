@@ -1,4 +1,4 @@
-use super::create_pipeline;
+use super::{create_renderer_pipeline, RendererPipelineParameters};
 use crate::{environment::*, model::*, util::*, vulkan::*};
 use ash::{version::DeviceV1_0, vk, Device};
 use cgmath::{Matrix4, SquareMatrix};
@@ -31,12 +31,14 @@ impl ModelRenderer {
         let skin_ubos = create_skin_ubos(&context, &model, swapchain_props.image_count);
         let descriptors = create_descriptors(
             &context,
-            camera_buffers,
-            &transform_ubos,
-            &skin_ubos,
-            model.textures(),
-            &dummy_texture,
-            &environment,
+            DescriptorsResources {
+                camera_buffers,
+                model_transform_buffers: &transform_ubos,
+                model_skin_buffers: &skin_ubos,
+                textures: model.textures(),
+                dummy_texture: &dummy_texture,
+                environment,
+            },
         );
         let pipeline_layout = create_pipeline_layout(context.device(), descriptors.layout());
         let opaque_pipeline = create_opaque_pipeline(
@@ -119,7 +121,7 @@ impl ModelRenderer {
             let buffer = &mut self.transform_ubos[frame_index];
             unsafe {
                 let data_ptr = buffer.map_memory();
-                mem_copy_aligned(data_ptr, *elem_size as _, &transforms);
+                mem_copy_aligned(data_ptr, u64::from(*elem_size), &transforms);
             }
 
             let skin_nodes = self
@@ -134,13 +136,14 @@ impl ModelRenderer {
                 let skin = self.model.skin(node.skin_index().unwrap());
                 let mut matrices = [Matrix4::<f32>::identity(); MAX_JOINTS_PER_MESH];
 
-                for i in 0..MAX_JOINTS_PER_MESH {
-                    let matrix = skin
+                for (i, matrix) in matrices.iter_mut().enumerate().take(MAX_JOINTS_PER_MESH) {
+                    let joint_matrix = skin
                         .joint(i)
                         .map(|j| j.matrix())
-                        .unwrap_or(Matrix4::identity());
-                    matrices[i] = matrix;
+                        .unwrap_or_else(Matrix4::identity);
+                    *matrix = joint_matrix;
                 }
+
                 skin_matrices.push(matrices);
             }
             let elem_size = &self
@@ -149,7 +152,7 @@ impl ModelRenderer {
             let buffer = &mut self.skin_ubos[frame_index];
             unsafe {
                 let data_ptr = buffer.map_memory();
-                mem_copy_aligned(data_ptr, *elem_size as _, &skin_matrices);
+                mem_copy_aligned(data_ptr, u64::from(*elem_size), &skin_matrices);
             }
         }
     }
@@ -206,6 +209,16 @@ impl Drop for ModelRenderer {
     }
 }
 
+#[derive(Copy, Clone)]
+struct DescriptorsResources<'a> {
+    camera_buffers: &'a [Buffer],
+    model_transform_buffers: &'a [Buffer],
+    model_skin_buffers: &'a [Buffer],
+    textures: &'a [Texture],
+    dummy_texture: &'a Texture,
+    environment: &'a Environment,
+}
+
 fn create_transform_ubos(context: &Rc<Context>, model: &Model, count: u32) -> Vec<Buffer> {
     let mesh_node_count = model
         .nodes()
@@ -219,7 +232,7 @@ fn create_transform_ubos(context: &Rc<Context>, model: &Model, count: u32) -> Ve
         .map(|_| {
             let mut buffer = Buffer::create(
                 Rc::clone(context),
-                (elem_size * mesh_node_count) as _,
+                u64::from(elem_size * mesh_node_count),
                 vk::BufferUsageFlags::UNIFORM_BUFFER,
                 vk::MemoryPropertyFlags::HOST_VISIBLE | vk::MemoryPropertyFlags::HOST_COHERENT,
             );
@@ -242,7 +255,7 @@ fn create_skin_ubos(context: &Rc<Context>, model: &Model, count: u32) -> Vec<Buf
         .map(|_| {
             let mut buffer = Buffer::create(
                 Rc::clone(context),
-                (elem_size * skin_node_count) as _,
+                u64::from(elem_size * skin_node_count),
                 vk::BufferUsageFlags::UNIFORM_BUFFER,
                 vk::MemoryPropertyFlags::HOST_VISIBLE | vk::MemoryPropertyFlags::HOST_COHERENT,
             );
@@ -252,28 +265,10 @@ fn create_skin_ubos(context: &Rc<Context>, model: &Model, count: u32) -> Vec<Buf
         .collect::<Vec<_>>()
 }
 
-fn create_descriptors(
-    context: &Rc<Context>,
-    camera_buffers: &[Buffer],
-    model_transform_buffers: &[Buffer],
-    model_skin_buffers: &[Buffer],
-    textures: &[Texture],
-    dummy_texture: &Texture,
-    environment: &Environment,
-) -> Descriptors {
+fn create_descriptors(context: &Rc<Context>, resources: DescriptorsResources) -> Descriptors {
     let layout = create_descriptor_set_layout(context.device());
-    let pool = create_descriptor_pool(context.device(), camera_buffers.len() as _);
-    let sets = create_descriptor_sets(
-        context,
-        pool,
-        layout,
-        camera_buffers,
-        model_transform_buffers,
-        model_skin_buffers,
-        textures,
-        dummy_texture,
-        environment,
-    );
+    let pool = create_descriptor_pool(context.device(), resources.camera_buffers.len() as _);
+    let sets = create_descriptor_sets(context, pool, layout, resources);
     Descriptors::new(Rc::clone(context), layout, pool, sets)
 }
 
@@ -358,14 +353,9 @@ fn create_descriptor_sets(
     context: &Rc<Context>,
     pool: vk::DescriptorPool,
     layout: vk::DescriptorSetLayout,
-    camera_buffers: &[Buffer],
-    model_transform_buffers: &[Buffer],
-    model_skin_buffers: &[Buffer],
-    textures: &[Texture],
-    dummy_texture: &Texture,
-    environment: &Environment,
+    resources: DescriptorsResources,
 ) -> Vec<vk::DescriptorSet> {
-    let layouts = (0..camera_buffers.len())
+    let layouts = (0..resources.camera_buffers.len())
         .map(|_| layout)
         .collect::<Vec<_>>();
 
@@ -380,9 +370,9 @@ fn create_descriptor_sets(
     };
 
     sets.iter().enumerate().for_each(|(i, set)| {
-        let camera_ubo = &camera_buffers[i];
-        let model_transform_ubo = &model_transform_buffers[i];
-        let model_skin_ubo = &model_skin_buffers[i];
+        let camera_ubo = &resources.camera_buffers[i];
+        let model_transform_ubo = &resources.model_transform_buffers[i];
+        let model_skin_ubo = &resources.model_skin_buffers[i];
 
         let camera_buffer_info = [vk::DescriptorBufferInfo::builder()
             .buffer(camera_ubo.buffer)
@@ -403,7 +393,8 @@ fn create_descriptor_sets(
             .build()];
 
         let image_info = {
-            let mut infos = textures
+            let mut infos = resources
+                .textures
                 .iter()
                 .take(MAX_TEXTURE_COUNT as _)
                 .map(|texture| {
@@ -419,8 +410,8 @@ fn create_descriptor_sets(
                 infos.push(
                     vk::DescriptorImageInfo::builder()
                         .image_layout(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL)
-                        .image_view(dummy_texture.view)
-                        .sampler(dummy_texture.sampler.unwrap())
+                        .image_view(resources.dummy_texture.view)
+                        .sampler(resources.dummy_texture.sampler.unwrap())
                         .build(),
                 )
             }
@@ -430,20 +421,20 @@ fn create_descriptor_sets(
 
         let irradiance_info = [vk::DescriptorImageInfo::builder()
             .image_layout(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL)
-            .image_view(environment.irradiance().view)
-            .sampler(environment.irradiance().sampler.unwrap())
+            .image_view(resources.environment.irradiance().view)
+            .sampler(resources.environment.irradiance().sampler.unwrap())
             .build()];
 
         let pre_filtered_info = [vk::DescriptorImageInfo::builder()
             .image_layout(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL)
-            .image_view(environment.pre_filtered().view)
-            .sampler(environment.pre_filtered().sampler.unwrap())
+            .image_view(resources.environment.pre_filtered().view)
+            .sampler(resources.environment.pre_filtered().sampler.unwrap())
             .build()];
 
         let brdf_lookup_info = [vk::DescriptorImageInfo::builder()
             .image_layout(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL)
-            .image_view(environment.brdf_lookup().view)
-            .sampler(environment.brdf_lookup().sampler.unwrap())
+            .image_view(resources.environment.brdf_lookup().view)
+            .sampler(resources.environment.brdf_lookup().sampler.unwrap())
             .build()];
 
         let descriptor_writes = [
@@ -546,16 +537,18 @@ fn create_opaque_pipeline(
         .dst_alpha_blend_factor(vk::BlendFactor::ZERO)
         .alpha_blend_op(vk::BlendOp::ADD);
 
-    create_pipeline::<ModelVertex>(
+    create_renderer_pipeline::<ModelVertex>(
         context,
-        "model",
-        swapchain_properties,
-        msaa_samples,
-        render_pass,
-        layout,
-        &depth_stencil_info,
-        &color_blend_attachment,
-        None,
+        RendererPipelineParameters {
+            shader_name: "model",
+            swapchain_properties,
+            msaa_samples,
+            render_pass,
+            layout,
+            depth_stencil_info: &depth_stencil_info,
+            color_blend_attachment: &color_blend_attachment,
+            parent: None,
+        },
     )
 }
 
@@ -588,16 +581,18 @@ fn create_transparent_pipeline(
         .dst_alpha_blend_factor(vk::BlendFactor::ZERO)
         .alpha_blend_op(vk::BlendOp::ADD);
 
-    create_pipeline::<ModelVertex>(
+    create_renderer_pipeline::<ModelVertex>(
         context,
-        "model",
-        swapchain_properties,
-        msaa_samples,
-        render_pass,
-        layout,
-        &depth_stencil_info,
-        &color_blend_attachment,
-        Some(parent),
+        RendererPipelineParameters {
+            shader_name: "model",
+            swapchain_properties,
+            msaa_samples,
+            render_pass,
+            layout,
+            depth_stencil_info: &depth_stencil_info,
+            color_blend_attachment: &color_blend_attachment,
+            parent: Some(parent),
+        },
     )
 }
 

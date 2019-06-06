@@ -89,6 +89,7 @@ impl<S: BaseFloat> Mul<S> for AABB<S> {
 ///
 /// It inverts the projected y-axis. And set the depth range to 0..1
 /// instead of -1..1. Mind the vertex winding order though.
+#[rustfmt::skip]
 pub fn perspective<S, F>(fovy: F, aspect: S, near: S, far: S) -> Matrix4<S>
 where
     S: BaseFloat,
@@ -117,7 +118,6 @@ where
     let c3r2 = -(far * near) / (far - near);
     let c3r3 = S::zero();
 
-    #[cfg_attr(rustfmt, rustfmt::skip)]
     Matrix4::new(
         c0r0, c0r1, c0r2, c0r3,
         c1r0, c1r1, c1r2, c1r3,
@@ -169,7 +169,7 @@ pub fn slerp(left: Quaternion<f32>, right: Quaternion<f32>, amount: f32) -> Quat
         flag = true;
         num4 = -num4;
     }
-    if num4 > 0.999999 {
+    if num4 > 0.999_999 {
         num3 = 1.0 - num;
         num2 = if flag { -num } else { num };
     } else {

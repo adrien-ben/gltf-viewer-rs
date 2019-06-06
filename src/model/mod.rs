@@ -82,14 +82,14 @@ impl Model {
 
 impl Model {
     pub fn update(&mut self, delta_time: f32) -> bool {
-        let updated = if let Some(animation) = &mut self.animations.iter_mut().nth(0) {
+        let updated = if let Some(animation) = &mut self.animations.get_mut(0) {
             animation.animate(&mut self.nodes, delta_time)
         } else {
             false
         };
 
         if updated {
-            &mut self.nodes.transform(Some(self.global_transform));
+            self.nodes.transform(Some(self.global_transform));
             self.nodes
                 .get_skins_transform()
                 .iter()

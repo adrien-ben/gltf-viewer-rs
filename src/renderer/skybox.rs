@@ -1,4 +1,4 @@
-use super::create_pipeline;
+use super::{create_renderer_pipeline, RendererPipelineParameters};
 use crate::{environment::*, vulkan::*};
 use ash::{version::DeviceV1_0, vk, Device};
 use std::rc::Rc;
@@ -266,15 +266,17 @@ fn create_skybox_pipeline(
         .dst_alpha_blend_factor(vk::BlendFactor::ZERO)
         .alpha_blend_op(vk::BlendOp::ADD);
 
-    create_pipeline::<SkyboxVertex>(
+    create_renderer_pipeline::<SkyboxVertex>(
         context,
-        "skybox",
-        swapchain_properties,
-        msaa_samples,
-        render_pass,
-        layout,
-        &depth_stencil_info,
-        &color_blend_attachment,
-        None,
+        RendererPipelineParameters {
+            shader_name: "skybox",
+            swapchain_properties,
+            msaa_samples,
+            render_pass,
+            layout,
+            depth_stencil_info: &depth_stencil_info,
+            color_blend_attachment: &color_blend_attachment,
+            parent: None,
+        },
     )
 }
