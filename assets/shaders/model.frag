@@ -8,6 +8,7 @@
 // #define DEBUG_OCCLUSION 5
 // #define DEBUG_NORMAL 6
 // #define DEBUG_ALPHA 7
+// # define DEBUG_UVS 8
 
 struct TextureIds {
     uint color;
@@ -269,5 +270,9 @@ void main() {
 
 #ifdef DEBUG_ALPHA
      outColor = vec4(vec3(baseColor.a), 1.0);
+#endif
+
+#ifdef DEBUG_UVS
+     outColor = vec4(vec2(oTexcoords), 0.0, 1.0);
 #endif
 }

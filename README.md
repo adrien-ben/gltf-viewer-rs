@@ -8,6 +8,7 @@ using [Ash][2]. It runs on Window, Linux and MacOS.
 ## Features
 
 - [x] Mesh vertices and normals
+- [x] Tangents generation
 - [x] Material
   - [x] Base color factor and texture
   - [x] Metallic/Roughness factors and textures

@@ -1,4 +1,4 @@
-use super::{IndexBuffer, Material, ModelVertex, VertexBuffer};
+use super::{generate_tangents, IndexBuffer, Material, ModelVertex, VertexBuffer};
 use crate::{math::*, vulkan::*};
 use ash::vk;
 use cgmath::Vector3;
@@ -86,12 +86,6 @@ pub fn create_meshes_from_gltf(
         for primitive in mesh.primitives() {
             let reader = primitive.reader(|buffer| Some(&buffers[buffer.index()]));
 
-            let indices = read_indices(&reader).map(|indices| {
-                let offset = all_indices.len() * size_of::<u32>();
-                all_indices.extend_from_slice(&indices);
-                (offset, indices.len())
-            });
-
             if let Some(accessor) = primitive.get(&Semantic::Positions) {
                 let aabb = get_aabb(&primitive.bounding_box());
                 let positions = read_positions(&reader);
@@ -101,7 +95,7 @@ pub fn create_meshes_from_gltf(
                 let weights = read_weights(&reader);
                 let joints = read_joints(&reader);
 
-                let vertices = positions
+                let mut vertices = positions
                     .iter()
                     .enumerate()
                     .map(|(index, position)| {
@@ -122,6 +116,25 @@ pub fn create_meshes_from_gltf(
                         }
                     })
                     .collect::<Vec<_>>();
+
+                let indices = read_indices(&reader);
+
+                if !positions.is_empty()
+                    && !normals.is_empty()
+                    && !tex_coords.is_empty()
+                    && tangents.is_empty()
+                {
+                    generate_tangents(
+                        indices.as_ref().map(|indices| indices.as_slice()),
+                        &mut vertices,
+                    );
+                }
+
+                let indices = indices.map(|indices| {
+                    let offset = all_indices.len() * size_of::<u32>();
+                    all_indices.extend_from_slice(&indices);
+                    (offset, indices.len())
+                });
 
                 let offset = all_vertices.len() * size_of::<ModelVertex>();
                 all_vertices.extend_from_slice(&vertices);

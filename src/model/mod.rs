@@ -2,11 +2,13 @@ mod animation;
 mod error;
 mod material;
 mod mesh;
+mod mikktspace;
 mod node;
 mod skin;
 mod texture;
 mod vertex;
 
+use self::mikktspace::generate_tangents;
 pub use self::{
     animation::*, error::*, material::*, mesh::*, node::*, skin::*, texture::*, vertex::*,
 };
