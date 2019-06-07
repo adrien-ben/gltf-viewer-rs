@@ -101,17 +101,12 @@ pub struct IndexBuffer {
 }
 
 impl IndexBuffer {
-    pub fn new(
-        buffer: Rc<Buffer>,
-        offset: vk::DeviceSize,
-        element_count: u32,
-        index_type: vk::IndexType,
-    ) -> Self {
+    pub fn new(buffer: Rc<Buffer>, offset: vk::DeviceSize, element_count: u32) -> Self {
         Self {
             buffer,
             offset,
             element_count,
-            index_type,
+            index_type: vk::IndexType::UINT32,
         }
     }
 }

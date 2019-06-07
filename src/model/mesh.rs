@@ -1,14 +1,10 @@
 use super::{IndexBuffer, Material, ModelVertex, VertexBuffer};
 use crate::{math::*, vulkan::*};
 use ash::vk;
-use byteorder::{ByteOrder, LittleEndian};
 use cgmath::Vector3;
 use gltf::{
     buffer::{Buffer as GltfBuffer, Data},
-    mesh::{
-        util::{ReadIndices, ReadJoints, ReadTexCoords, ReadWeights},
-        Bounds, Reader, Semantic,
-    },
+    mesh::{Bounds, Reader, Semantic},
     Document,
 };
 use std::{mem::size_of, rc::Rc};
@@ -64,8 +60,8 @@ impl Primitive {
 /// Vertex buffer byte offset / element count
 type VertexBufferPart = (usize, usize);
 
-/// Index buffer byte offset / element count / type
-type IndexBufferPart = (usize, usize, vk::IndexType);
+/// Index buffer byte offset / element count
+type IndexBufferPart = (usize, usize);
 
 struct PrimitiveData {
     indices: Option<IndexBufferPart>,
@@ -79,10 +75,9 @@ pub fn create_meshes_from_gltf(
     document: &Document,
     buffers: &[Data],
 ) -> Vec<Mesh> {
-    // (usize, usize) -> byte offset, element count
     let mut meshes_data = Vec::<Vec<PrimitiveData>>::new();
     let mut all_vertices = Vec::<ModelVertex>::new();
-    let mut all_indices = Vec::<u8>::new();
+    let mut all_indices = Vec::<u32>::new();
 
     // Gather vertices and indices from all the meshes in the document
     for mesh in document.meshes() {
@@ -91,10 +86,10 @@ pub fn create_meshes_from_gltf(
         for primitive in mesh.primitives() {
             let reader = primitive.reader(|buffer| Some(&buffers[buffer.index()]));
 
-            let indices = read_indices(&reader).map(|(indices, count, index_type)| {
-                let offset = all_indices.len();
+            let indices = read_indices(&reader).map(|indices| {
+                let offset = all_indices.len() * size_of::<u32>();
                 all_indices.extend_from_slice(&indices);
-                (offset, count, index_type)
+                (offset, indices.len())
             });
 
             if let Some(accessor) = primitive.get(&Semantic::Positions) {
@@ -180,7 +175,6 @@ pub fn create_meshes_from_gltf(
                                 Rc::clone(indices.as_ref().unwrap()),
                                 mesh_indices.0 as _,
                                 mesh_indices.1 as _,
-                                mesh_indices.2 as _,
                             )
                         });
 
@@ -200,40 +194,13 @@ pub fn create_meshes_from_gltf(
     Vec::new()
 }
 
-fn read_indices<'a, 's, F>(reader: &Reader<'a, 's, F>) -> Option<(Vec<u8>, usize, vk::IndexType)>
+fn read_indices<'a, 's, F>(reader: &Reader<'a, 's, F>) -> Option<Vec<u32>>
 where
     F: Clone + Fn(GltfBuffer<'a>) -> Option<&'s [u8]>,
 {
-    reader.read_indices().and_then(|indices| {
-        let mut index_buffer = Vec::new();
-        let (count, index_type) = match indices {
-            ReadIndices::U32(indices) => {
-                let mut buffer = [0_u8; 4];
-                indices.for_each(|i| {
-                    LittleEndian::write_u32(&mut buffer, i);
-                    index_buffer.extend_from_slice(&buffer);
-                });
-                (indices.len(), vk::IndexType::UINT32)
-            }
-            ReadIndices::U16(indices) => {
-                let mut buffer = [0_u8; 2];
-                indices.for_each(|i| {
-                    LittleEndian::write_u16(&mut buffer, i);
-                    index_buffer.extend_from_slice(&buffer);
-                });
-                (indices.len(), vk::IndexType::UINT16)
-            }
-            ReadIndices::U8(indices) => {
-                let mut buffer = [0_u8; 2];
-                indices.map(u16::from).for_each(|i| {
-                    LittleEndian::write_u16(&mut buffer, i);
-                    index_buffer.extend_from_slice(&buffer);
-                });
-                (indices.len(), vk::IndexType::UINT16)
-            }
-        };
-        Some((index_buffer, count, index_type))
-    })
+    reader
+        .read_indices()
+        .map(|indices| indices.into_u32().collect::<Vec<_>>())
 }
 
 fn get_aabb(bounds: &Bounds<[f32; 3]>) -> AABB<f32> {
@@ -269,15 +236,9 @@ fn read_tex_coords<'a, 's, F>(reader: &Reader<'a, 's, F>) -> Vec<[f32; 2]>
 where
     F: Clone + Fn(GltfBuffer<'a>) -> Option<&'s [u8]>,
 {
-    reader.read_tex_coords(0).map_or(vec![], |coords| {
-        let coords = coords.into_f32().unwrap();
-        if let ReadTexCoords::F32(coords) = coords {
-            coords.collect()
-        } else {
-            log::warn!("Failed to cast tex coords into f32");
-            vec![]
-        }
-    })
+    reader
+        .read_tex_coords(0)
+        .map_or(vec![], |coords| coords.into_f32().collect())
 }
 
 fn read_tangents<'a, 's, F>(reader: &Reader<'a, 's, F>) -> Vec<[f32; 4]>
@@ -293,15 +254,9 @@ fn read_weights<'a, 's, F>(reader: &Reader<'a, 's, F>) -> Vec<[f32; 4]>
 where
     F: Clone + Fn(GltfBuffer<'a>) -> Option<&'s [u8]>,
 {
-    reader.read_weights(0).map_or(vec![], |weights| {
-        let weights = weights.into_f32().unwrap();
-        if let ReadWeights::F32(weights) = weights {
-            weights.collect()
-        } else {
-            log::warn!("Failed to cast weights into f32");
-            vec![]
-        }
-    })
+    reader
+        .read_weights(0)
+        .map_or(vec![], |weights| weights.into_f32().collect())
 }
 
 fn read_joints<'a, 's, F>(reader: &Reader<'a, 's, F>) -> Vec<[u32; 4]>
@@ -309,14 +264,9 @@ where
     F: Clone + Fn(GltfBuffer<'a>) -> Option<&'s [u8]>,
 {
     reader.read_joints(0).map_or(vec![], |joints| {
-        let joints = joints.into_u16().unwrap();
-        if let ReadJoints::U16(joints) = joints {
-            joints
-                .map(|[x, y, z, w]| [u32::from(x), u32::from(y), u32::from(z), u32::from(w)])
-                .collect()
-        } else {
-            log::warn!("Failed to cast joints into u32");
-            vec![]
-        }
+        joints
+            .into_u16()
+            .map(|[x, y, z, w]| [u32::from(x), u32::from(y), u32::from(z), u32::from(w)])
+            .collect()
     })
 }

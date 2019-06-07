@@ -4,7 +4,7 @@ use cgmath::{Quaternion, Vector3, VectorSpace};
 use gltf::{
     animation::{
         iter::Channels,
-        util::{ReadOutputs, Reader, Rotations},
+        util::{ReadOutputs, Reader},
         Channel as GltfChannel, Interpolation as GltfInterpolation, Property,
     },
     buffer::{Buffer, Data},
@@ -333,18 +333,10 @@ where
     reader
         .read_outputs()
         .map_or(vec![], |outputs| match outputs {
-            ReadOutputs::Rotations(scales) => {
-                let scales = scales.into_f32().unwrap();
-                match scales {
-                    Rotations::F32(rotations) => rotations
-                        .map(|r| Quaternion::new(r[3], r[0], r[1], r[2]))
-                        .collect(),
-                    _ => {
-                        log::warn!("Failed to cast rotations to F32");
-                        vec![]
-                    }
-                }
-            }
+            ReadOutputs::Rotations(scales) => scales
+                .into_f32()
+                .map(|r| Quaternion::new(r[3], r[0], r[1], r[2]))
+                .collect(),
             _ => vec![],
         })
 }
