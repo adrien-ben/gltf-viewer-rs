@@ -13,6 +13,7 @@ pub struct ModelRenderer {
     descriptors: Descriptors,
     transform_ubos: Vec<Buffer>,
     skin_ubos: Vec<Buffer>,
+    skin_matrices: Vec<Vec<JointsBuffer>>,
     pipeline_layout: vk::PipelineLayout,
     opaque_pipeline: vk::Pipeline,
     transparent_pipeline: vk::Pipeline,
@@ -30,7 +31,8 @@ impl ModelRenderer {
     ) -> Self {
         let dummy_texture = Texture::from_rgba(&context, 1, 1, &[0, 0, 0, 0]);
         let transform_ubos = create_transform_ubos(&context, &model, swapchain_props.image_count);
-        let skin_ubos = create_skin_ubos(&context, &model, swapchain_props.image_count);
+        let (skin_ubos, skin_matrices) =
+            create_skin_ubos(&context, &model, swapchain_props.image_count);
         let descriptors = create_descriptors(
             &context,
             DescriptorsResources {
@@ -66,6 +68,7 @@ impl ModelRenderer {
             descriptors,
             transform_ubos,
             skin_ubos,
+            skin_matrices,
             pipeline_layout,
             opaque_pipeline,
             transparent_pipeline,
@@ -124,28 +127,17 @@ impl ModelRenderer {
             mem_copy_aligned(data_ptr, u64::from(*elem_size), &transforms);
         }
 
-        let skin_nodes = self
-            .model
-            .nodes()
-            .nodes()
-            .iter()
-            .filter(|n| n.skin_index().is_some());
+        let skins = self.model.skins();
+        let skin_matrices = &mut self.skin_matrices[frame_index];
 
-        let mut skin_matrices = Vec::new();
-        for node in skin_nodes {
-            let skin = self.model.skin(node.skin_index().unwrap());
-            let mut matrices = [Matrix4::<f32>::identity(); MAX_JOINTS_PER_MESH];
-
-            for (i, matrix) in matrices.iter_mut().enumerate().take(MAX_JOINTS_PER_MESH) {
-                let joint_matrix = skin
-                    .joint(i)
-                    .map(|j| j.matrix())
-                    .unwrap_or_else(Matrix4::identity);
-                *matrix = joint_matrix;
+        for (index, skin) in skins.iter().enumerate() {
+            let matrices = &mut skin_matrices[index];
+            for (index, joint) in skin.joints().iter().enumerate() {
+                let joint_matrix = joint.matrix();
+                matrices[index] = joint_matrix;
             }
-
-            skin_matrices.push(matrices);
         }
+
         let elem_size = &self.context.get_ubo_alignment::<JointsBuffer>();
         let buffer = &mut self.skin_ubos[frame_index];
         unsafe {
@@ -239,28 +231,38 @@ fn create_transform_ubos(context: &Rc<Context>, model: &Model, count: u32) -> Ve
         .collect::<Vec<_>>()
 }
 
-fn create_skin_ubos(context: &Rc<Context>, model: &Model, count: u32) -> Vec<Buffer> {
-    let skin_node_count = model
-        .nodes()
-        .nodes()
-        .iter()
-        .filter(|n| n.skin_index().is_some())
-        .count()
-        .max(1) as u32;
+fn create_skin_ubos(
+    context: &Rc<Context>,
+    model: &Model,
+    count: u32,
+) -> (Vec<Buffer>, Vec<Vec<JointsBuffer>>) {
+    let skin_node_count = model.skins().len().max(1);
     let elem_size = context.get_ubo_alignment::<JointsBuffer>();
 
-    (0..count)
+    let buffers = (0..count)
         .map(|_| {
             let mut buffer = Buffer::create(
                 Rc::clone(context),
-                u64::from(elem_size * skin_node_count),
+                u64::from(elem_size * skin_node_count as u32),
                 vk::BufferUsageFlags::UNIFORM_BUFFER,
                 vk::MemoryPropertyFlags::HOST_VISIBLE | vk::MemoryPropertyFlags::HOST_COHERENT,
             );
             buffer.map_memory();
             buffer
         })
-        .collect::<Vec<_>>()
+        .collect();
+
+    let matrices = (0..count)
+        .map(|_| {
+            let mut matrices = Vec::with_capacity(skin_node_count);
+            for _ in 0..skin_node_count {
+                matrices.push([Matrix4::<f32>::identity(); MAX_JOINTS_PER_MESH]);
+            }
+            matrices
+        })
+        .collect();
+
+    (buffers, matrices)
 }
 
 fn create_descriptors(context: &Rc<Context>, resources: DescriptorsResources) -> Descriptors {

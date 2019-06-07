@@ -19,8 +19,8 @@ impl Skin {
 }
 
 impl Skin {
-    pub fn joint(&self, index: usize) -> Option<Joint> {
-        self.joints.get(index).copied()
+    pub fn joints(&self) -> &[Joint] {
+        &self.joints
     }
 }
 
@@ -61,6 +61,16 @@ pub fn create_skins_from_gltf(gltf_skins: GltfSkins, data: &[Data]) -> Vec<Skin>
 }
 
 fn map_skin(gltf_skin: &GltfSkin, data: &[Data]) -> Skin {
+    let joint_count = gltf_skin.joints().count();
+    if joint_count > MAX_JOINTS_PER_MESH {
+        log::warn!(
+            "Skin {} has more than {} joints ({}). Mesh might not display properly",
+            gltf_skin.index(),
+            MAX_JOINTS_PER_MESH,
+            joint_count
+        );
+    }
+
     let inverse_bind_matrices = map_inverse_bind_matrices(gltf_skin, data);
     let node_ids = map_node_ids(gltf_skin);
 

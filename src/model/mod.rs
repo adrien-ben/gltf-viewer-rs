@@ -108,8 +108,8 @@ impl Model {
         &self.meshes[index]
     }
 
-    pub fn skin(&self, index: usize) -> &Skin {
-        &self.skins[index]
+    pub fn skins(&self) -> &[Skin] {
+        &self.skins
     }
 
     pub fn nodes(&self) -> &Nodes {
