@@ -132,7 +132,7 @@ impl ModelRenderer {
 
         for (index, skin) in skins.iter().enumerate() {
             let matrices = &mut skin_matrices[index];
-            for (index, joint) in skin.joints().iter().enumerate() {
+            for (index, joint) in skin.joints().iter().take(MAX_JOINTS_PER_MESH).enumerate() {
                 let joint_matrix = joint.matrix();
                 matrices[index] = joint_matrix;
             }
