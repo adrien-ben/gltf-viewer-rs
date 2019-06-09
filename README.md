@@ -3,13 +3,13 @@
 This project is a [glTF 2.0][0] viewer written in Rust. Rendering is done using the [Vulkan API][1]
 using [Ash][2]. It runs on Window, Linux and MacOS.
 
-![Screenshot](images/screenshot0.PNG "Screenshot")
+![Screenshot](images/helmet_woods.png "Screenshot")
 
 ## Features
 
 - [x] Mesh vertices and normals
 - [x] Tangents generation
-- [x] Material
+- [ ] Material
   - [x] Base color factor and texture
   - [x] Metallic/Roughness factors and textures
   - [x] Emissive factor and texture
@@ -21,7 +21,7 @@ using [Ash][2]. It runs on Window, Linux and MacOS.
     - [x] Blend
   - [ ] Double sided surfaces
 - [x] IBL
-- [ ] Animations
+- [x] Animations
   - [x] Node animation
   - [x] Skinning
   - [x] Interpolation
@@ -92,3 +92,10 @@ HDRi textures have been downloaded from [hdriheaven][5].
 [3]: https://github.com/SaschaWillems/Vulkan
 [4]: https://github.com/matheowis/HDRI-to-CubeMap
 [5]: https://hdrihaven.com/
+
+## Screenshots
+
+|![Woods](images/helmet_woods.png "Woods")|![Sand](images/helmet_sand.png "Sand")|![Night](images/helmet_night.png "Night")|
+|---|---|---|
+|![Indoor](images/helmet_indoor.png "Indoor")|![Env](images/env.png "Env")|![Corset](images/corset.png "Corset")|
+|![MG08](images/mg08.png "MG08")|![Flight](images/flight_helmet.png "Flight Helmet")|![Junkrat](images/junkrat.png "Junkrat")|
