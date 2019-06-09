@@ -1,6 +1,6 @@
 use super::node::Nodes;
 use crate::math::slerp;
-use cgmath::{Quaternion, Vector3, VectorSpace};
+use cgmath::{InnerSpace, Quaternion, Vector3, VectorSpace};
 use gltf::{
     animation::{
         iter::Channels,
@@ -13,19 +13,67 @@ use gltf::{
 };
 use std::cmp::Ordering;
 
-trait LinearInterpolation: Copy + Clone {
-    fn interpolate(self, other: Self, amount: f32) -> Self;
+trait Interpolate: Copy {
+    fn linear(self, other: Self, amount: f32) -> Self;
+    
+    fn cubic_spline(
+        source: [Self; 3],
+        source_time: f32,
+        target: [Self; 3],
+        target_time: f32,
+        current_time: f32,
+    ) -> Self;
 }
 
-impl LinearInterpolation for Vector3<f32> {
-    fn interpolate(self, other: Self, amount: f32) -> Self {
+impl Interpolate for Vector3<f32> {
+    fn linear(self, other: Self, amount: f32) -> Self {
         self.lerp(other, amount)
+    }
+
+    fn cubic_spline(
+        source: [Self; 3],
+        source_time: f32,
+        target: [Self; 3],
+        target_time: f32,
+        amount: f32,
+    ) -> Self {
+        let t = amount;
+        let p0 = source[1];
+        let m0 = (target_time - source_time) * source[2];
+        let p1 = target[1];
+        let m1 = (target_time - source_time) * target[0];
+
+        (2.0 * t * t * t - 3.0 * t * t + 1.0) * p0
+            + (t * t * t - 2.0 * t * t + t) * m0
+            + (-2.0 * t * t * t + 3.0 * t * t) * p1
+            + (t * t * t - t * t) * m1
     }
 }
 
-impl LinearInterpolation for Quaternion<f32> {
-    fn interpolate(self, other: Self, amount: f32) -> Self {
+impl Interpolate for Quaternion<f32> {
+    fn linear(self, other: Self, amount: f32) -> Self {
         slerp(self, other, amount)
+    }
+
+    fn cubic_spline(
+        source: [Self; 3],
+        source_time: f32,
+        target: [Self; 3],
+        target_time: f32,
+        amount: f32,
+    ) -> Self {
+        let t = amount;
+        let p0 = source[1];
+        let m0 = (target_time - source_time) * source[2];
+        let p1 = target[1];
+        let m1 = (target_time - source_time) * target[0];
+
+        let result = (2.0 * t * t * t - 3.0 * t * t + 1.0) * p0
+            + (t * t * t - 2.0 * t * t + t) * m0
+            + (-2.0 * t * t * t + 3.0 * t * t) * p1
+            + (t * t * t - t * t) * m1;
+
+        result.normalize()
     }
 }
 
@@ -33,6 +81,7 @@ impl LinearInterpolation for Quaternion<f32> {
 enum Interpolation {
     Linear,
     Step,
+    CubicSpline,
 }
 
 #[derive(Debug)]
@@ -48,7 +97,7 @@ impl<T> Sampler<T> {
     }
 }
 
-impl<T: LinearInterpolation> Sampler<T> {
+impl<T: Interpolate> Sampler<T> {
     fn sample(&self, t: f32) -> Option<T> {
         let index = {
             let mut index = None;
@@ -68,15 +117,34 @@ impl<T: LinearInterpolation> Sampler<T> {
             let next_time = self.times[i + 1];
             let delta = next_time - previous_time;
             let from_start = t - previous_time;
-
-            let previous_value = self.values[i];
-            let next_value = self.values[i + 1];
+            let factor = from_start / delta;
 
             match self.interpolation {
-                Interpolation::Step => previous_value,
+                Interpolation::Step => self.values[i],
                 Interpolation::Linear => {
-                    let factor = from_start / delta;
-                    previous_value.interpolate(next_value, factor)
+                    let previous_value = self.values[i];
+                    let next_value = self.values[i + 1];
+
+                    previous_value.linear(next_value, factor)
+                }
+                Interpolation::CubicSpline => {
+                    let previous_values = [
+                        self.values[i * 3],
+                        self.values[i * 3 + 1],
+                        self.values[i * 3 + 2],
+                    ];
+                    let next_values = [
+                        self.values[i * 3 + 3],
+                        self.values[i * 3 + 4],
+                        self.values[i * 3 + 5],
+                    ];
+                    Interpolate::cubic_spline(
+                        previous_values,
+                        previous_time,
+                        next_values,
+                        next_time,
+                        factor,
+                    )
                 }
             }
         })
@@ -95,7 +163,7 @@ impl<T> Channel<T> {
     }
 }
 
-impl<T: LinearInterpolation> Channel<T> {
+impl<T: Interpolate> Channel<T> {
     fn sample(&self, t: f32) -> Option<(usize, T)> {
         self.sampler.sample(t).map(|s| (self.node_index, s))
     }
@@ -241,13 +309,13 @@ fn map_rotation_channel(
 ) -> Option<Channel<Quaternion<f32>>> {
     let gltf_sampler = gltf_channel.sampler();
     if let Property::Rotation = gltf_channel.target().property() {
-        map_interpolation(gltf_sampler.interpolation()).map(|i| {
+        map_interpolation(gltf_sampler.interpolation()).map(|interpolation| {
             let reader = gltf_channel.reader(|buffer| Some(&data[buffer.index()]));
             let times = read_times(&reader);
             let output = read_rotations(&reader);
             Channel {
                 sampler: Sampler {
-                    interpolation: i,
+                    interpolation,
                     times,
                     values: output,
                 },
@@ -291,6 +359,7 @@ fn map_interpolation(gltf_interpolation: GltfInterpolation) -> Option<Interpolat
     match gltf_interpolation {
         GltfInterpolation::Linear => Some(Interpolation::Linear),
         GltfInterpolation::Step => Some(Interpolation::Step),
+        GltfInterpolation::CubicSpline => Some(Interpolation::CubicSpline),
         _ => None,
     }
 }
