@@ -189,6 +189,7 @@ impl ModelRenderer {
 
 impl Drop for ModelRenderer {
     fn drop(&mut self) {
+        self.context.graphics_queue_wait_idle();
         let device = self.context.device();
         unsafe {
             device.destroy_pipeline(self.opaque_pipeline, None);

@@ -326,6 +326,8 @@ impl BaseApp {
     fn load_new_model(&mut self) {
         let path = self.path_to_load.take();
         if let Some(path) = path {
+            self.model_renderer.take();
+
             let model = Model::create_from_file(&self.context, path);
             if let Err(err) = model {
                 log::error!("Failed to load model. Cause {}", err);
