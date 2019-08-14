@@ -1,9 +1,9 @@
 use super::{Context, Image, ImageParameters, Texture};
 use ash::{version::DeviceV1_0, vk, Device};
-use std::rc::Rc;
+use std::sync::Arc;
 
 pub struct RenderPass {
-    context: Rc<Context>,
+    context: Arc<Context>,
     color_attachment: Option<Texture>,
     depth_attachment: Texture,
     render_pass: vk::RenderPass,
@@ -11,7 +11,7 @@ pub struct RenderPass {
 
 impl RenderPass {
     pub fn create(
-        context: Rc<Context>,
+        context: Arc<Context>,
         extent: vk::Extent2D,
         format: vk::Format,
         depth_format: vk::Format,
@@ -150,13 +150,13 @@ fn create_render_pass(
 }
 
 fn create_color_texture(
-    context: &Rc<Context>,
+    context: &Arc<Context>,
     format: vk::Format,
     extent: vk::Extent2D,
     msaa_samples: vk::SampleCountFlags,
 ) -> Texture {
     let image = Image::create(
-        Rc::clone(context),
+        Arc::clone(context),
         ImageParameters {
             mem_properties: vk::MemoryPropertyFlags::DEVICE_LOCAL,
             extent,
@@ -175,7 +175,7 @@ fn create_color_texture(
 
     let view = image.create_view(vk::ImageViewType::TYPE_2D, vk::ImageAspectFlags::COLOR);
 
-    Texture::new(Rc::clone(context), image, view, None)
+    Texture::new(Arc::clone(context), image, view, None)
 }
 
 /// Create the depth buffer texture (image, memory and view).
@@ -183,13 +183,13 @@ fn create_color_texture(
 /// This function also transitions the image to be ready to be used
 /// as a depth/stencil attachement.
 fn create_depth_texture(
-    context: &Rc<Context>,
+    context: &Arc<Context>,
     format: vk::Format,
     extent: vk::Extent2D,
     msaa_samples: vk::SampleCountFlags,
 ) -> Texture {
     let image = Image::create(
-        Rc::clone(context),
+        Arc::clone(context),
         ImageParameters {
             mem_properties: vk::MemoryPropertyFlags::DEVICE_LOCAL,
             extent,
@@ -207,5 +207,5 @@ fn create_depth_texture(
 
     let view = image.create_view(vk::ImageViewType::TYPE_2D, vk::ImageAspectFlags::DEPTH);
 
-    Texture::new(Rc::clone(context), image, view, None)
+    Texture::new(Arc::clone(context), image, view, None)
 }

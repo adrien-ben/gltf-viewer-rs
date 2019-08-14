@@ -1,10 +1,10 @@
 use super::material::MAX_TEXTURE_COUNT;
 use crate::vulkan::*;
 use gltf::image::{Data, Format};
-use std::rc::Rc;
+use std::sync::Arc;
 
 /// Create
-pub fn create_textures_from_gltf(context: &Rc<Context>, images: &[Data]) -> Vec<Texture> {
+pub fn create_textures_from_gltf(context: &Arc<Context>, images: &[Data]) -> Vec<Texture> {
     if images.len() > MAX_TEXTURE_COUNT as _ {
         log::warn!(
             "The model contains more than {} textures ({}). Some textures might not display properly", MAX_TEXTURE_COUNT, images.len()

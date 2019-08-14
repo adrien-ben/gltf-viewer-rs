@@ -8,7 +8,7 @@ use crate::{
 };
 use ash::{version::DeviceV1_0, vk};
 use cgmath::{Deg, Matrix4, Point3, Vector3};
-use std::{mem::size_of, path::Path, rc::Rc, time::Instant};
+use std::{mem::size_of, path::Path, sync::Arc, time::Instant};
 
 pub struct Environment {
     skybox: Texture,
@@ -18,7 +18,7 @@ pub struct Environment {
 }
 
 impl Environment {
-    pub fn new<P: Into<String>>(context: &Rc<Context>, path: Option<P>) -> Self {
+    pub fn new<P: Into<String>>(context: &Arc<Context>, path: Option<P>) -> Self {
         let skybox = create_skybox_cubemap(&context, path);
         let irradiance = create_irradiance_map(&context, &skybox, 32);
         let pre_filtered = create_pre_filtered_map(&context, &skybox, 512);
@@ -82,7 +82,7 @@ pub struct SkyboxModel {
 }
 
 impl SkyboxModel {
-    pub fn new(context: &Rc<Context>) -> Self {
+    pub fn new(context: &Arc<Context>) -> Self {
         let indices: [u32; 36] = [
             0, 1, 2, 2, 3, 0, 1, 5, 6, 6, 2, 1, 5, 4, 7, 7, 6, 5, 4, 0, 3, 3, 7, 4, 3, 2, 6, 6, 7,
             3, 4, 5, 1, 1, 0, 4,
@@ -156,7 +156,7 @@ struct QuadModel {
 }
 
 impl QuadModel {
-    fn new(context: &Rc<Context>) -> Self {
+    fn new(context: &Arc<Context>) -> Self {
         let indices: [u32; 6] = [0, 1, 2, 2, 3, 0];
         let indices = create_device_local_buffer_with_data::<u8, _>(
             context,
@@ -188,7 +188,7 @@ pub enum CubemapTexturePath {
     Equirectangular(String, u32),
 }
 
-fn create_skybox_cubemap<P: Into<String>>(context: &Rc<Context>, path: Option<P>) -> Texture {
+fn create_skybox_cubemap<P: Into<String>>(context: &Arc<Context>, path: Option<P>) -> Texture {
     let path = match path {
         Some(path) => CubemapTexturePath::Equirectangular(path.into(), 1024),
         _ => CubemapTexturePath::SixFaces {
@@ -203,7 +203,7 @@ fn create_skybox_cubemap<P: Into<String>>(context: &Rc<Context>, path: Option<P>
     create_cubemap(context, path)
 }
 
-fn create_cubemap(context: &Rc<Context>, path: CubemapTexturePath) -> Texture {
+fn create_cubemap(context: &Arc<Context>, path: CubemapTexturePath) -> Texture {
     use CubemapTexturePath::*;
     match path {
         Equirectangular(path, size) => {
@@ -239,7 +239,7 @@ fn create_cubemap(context: &Rc<Context>, path: CubemapTexturePath) -> Texture {
 }
 
 fn create_cubemap_from_equirectangular_texture<P: AsRef<Path>>(
-    context: &Rc<Context>,
+    context: &Arc<Context>,
     path: P,
     size: u32,
 ) -> Texture {
@@ -486,7 +486,7 @@ fn create_cubemap_from_equirectangular_texture<P: AsRef<Path>>(
     cubemap
 }
 
-fn create_irradiance_map(context: &Rc<Context>, cubemap: &Texture, size: u32) -> Texture {
+fn create_irradiance_map(context: &Arc<Context>, cubemap: &Texture, size: u32) -> Texture {
     log::info!("Creating irradiance map");
     let start = Instant::now();
 
@@ -721,7 +721,7 @@ fn create_irradiance_map(context: &Rc<Context>, cubemap: &Texture, size: u32) ->
     irradiance_map
 }
 
-fn create_pre_filtered_map(context: &Rc<Context>, cubemap: &Texture, size: u32) -> Texture {
+fn create_pre_filtered_map(context: &Arc<Context>, cubemap: &Texture, size: u32) -> Texture {
     log::info!("Creating pre-filtered map");
     let start = Instant::now();
 
@@ -998,7 +998,7 @@ fn create_pre_filtered_map(context: &Rc<Context>, cubemap: &Texture, size: u32) 
     pre_filtered
 }
 
-fn create_brdf_lookup(context: &Rc<Context>, size: u32) -> Texture {
+fn create_brdf_lookup(context: &Arc<Context>, size: u32) -> Texture {
     log::info!("Creating brdf lookup");
     let start = Instant::now();
 
@@ -1193,7 +1193,7 @@ fn get_view_matrices() -> [Matrix4<f32>; 6] {
     ]
 }
 
-fn create_render_pass(context: &Rc<Context>, format: vk::Format) -> vk::RenderPass {
+fn create_render_pass(context: &Arc<Context>, format: vk::Format) -> vk::RenderPass {
     let attachments_descs = [vk::AttachmentDescription::builder()
         .format(format)
         .samples(vk::SampleCountFlags::TYPE_1)
@@ -1237,7 +1237,7 @@ fn create_render_pass(context: &Rc<Context>, format: vk::Format) -> vk::RenderPa
     }
 }
 
-fn create_descriptors(context: &Rc<Context>, texture: &Texture) -> Descriptors {
+fn create_descriptors(context: &Arc<Context>, texture: &Texture) -> Descriptors {
     let device = context.device();
 
     let layout = {
@@ -1306,7 +1306,7 @@ fn create_descriptors(context: &Rc<Context>, texture: &Texture) -> Descriptors {
         sets
     };
 
-    Descriptors::new(Rc::clone(context), layout, pool, sets)
+    Descriptors::new(Arc::clone(context), layout, pool, sets)
 }
 
 #[derive(Copy, Clone)]
@@ -1321,7 +1321,7 @@ struct EnvPipelineParameters<'a> {
 }
 
 fn create_env_pipeline<V: Vertex>(
-    context: &Rc<Context>,
+    context: &Arc<Context>,
     params: EnvPipelineParameters,
 ) -> vk::Pipeline {
     let multisampling_info = vk::PipelineMultisampleStateCreateInfo::builder()

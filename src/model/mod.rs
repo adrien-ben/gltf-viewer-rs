@@ -14,7 +14,7 @@ pub use self::{
 };
 use crate::{math::*, vulkan::*};
 use cgmath::Matrix4;
-use std::{error::Error, path::Path, rc::Rc, result::Result};
+use std::{error::Error, path::Path, result::Result, sync::Arc};
 
 pub struct Model {
     meshes: Vec<Mesh>,
@@ -27,7 +27,7 @@ pub struct Model {
 
 impl Model {
     pub fn create_from_file<P: AsRef<Path>>(
-        context: &Rc<Context>,
+        context: &Arc<Context>,
         path: P,
     ) -> Result<Self, Box<dyn Error>> {
         log::debug!("Importing gltf file");

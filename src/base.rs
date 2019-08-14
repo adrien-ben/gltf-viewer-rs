@@ -6,7 +6,7 @@ use cgmath::{Deg, Matrix4, Point3, Vector3};
 use std::{
     mem::size_of,
     path::{Path, PathBuf},
-    rc::Rc,
+    sync::Arc,
     time::Instant,
 };
 use winit::{dpi::LogicalSize, Event, EventsLoop, Window, WindowBuilder, WindowEvent};
@@ -23,7 +23,7 @@ pub struct BaseApp {
     camera: Camera,
     input_state: InputState,
 
-    context: Rc<Context>,
+    context: Arc<Context>,
     swapchain_properties: SwapchainProperties,
     depth_format: vk::Format,
     msaa_samples: vk::SampleCountFlags,
@@ -55,7 +55,7 @@ impl BaseApp {
             .build(&events_loop)
             .unwrap();
 
-        let context = Rc::new(Context::new(&window));
+        let context = Arc::new(Context::new(&window));
 
         let swapchain_support_details = SwapchainSupportDetails::new(
             context.physical_device(),
@@ -69,7 +69,7 @@ impl BaseApp {
         log::debug!("msaa: {:?} - preferred was {}", msaa_samples, config.msaa());
 
         let render_pass = RenderPass::create(
-            Rc::clone(&context),
+            Arc::clone(&context),
             swapchain_properties.extent,
             swapchain_properties.format.format,
             depth_format,
@@ -77,7 +77,7 @@ impl BaseApp {
         );
 
         let swapchain = Swapchain::create(
-            Rc::clone(&context),
+            Arc::clone(&context),
             swapchain_support_details,
             resolution,
             config.vsync(),
@@ -89,7 +89,7 @@ impl BaseApp {
         let environment = Environment::new(&context, config.env());
 
         let skybox_renderer = SkyboxRenderer::create(
-            Rc::clone(&context),
+            Arc::clone(&context),
             &camera_uniform_buffers,
             swapchain_properties,
             &environment,
@@ -130,11 +130,11 @@ impl BaseApp {
         }
     }
 
-    fn create_camera_uniform_buffers(context: &Rc<Context>, count: u32) -> Vec<Buffer> {
+    fn create_camera_uniform_buffers(context: &Arc<Context>, count: u32) -> Vec<Buffer> {
         (0..count)
             .map(|_| {
                 let mut buffer = Buffer::create(
-                    Rc::clone(context),
+                    Arc::clone(context),
                     size_of::<CameraUBO>() as _,
                     vk::BufferUsageFlags::UNIFORM_BUFFER,
                     vk::MemoryPropertyFlags::HOST_VISIBLE | vk::MemoryPropertyFlags::HOST_COHERENT,
@@ -348,7 +348,7 @@ impl BaseApp {
             let model = model.unwrap();
 
             let model_renderer = ModelRenderer::create(
-                Rc::clone(&self.context),
+                Arc::clone(&self.context),
                 model,
                 &self.camera_uniform_buffers,
                 self.swapchain_properties,
@@ -498,7 +498,7 @@ impl BaseApp {
             .get_ideal_swapchain_properties(dimensions, self.config.vsync());
 
         let render_pass = RenderPass::create(
-            Rc::clone(&self.context),
+            Arc::clone(&self.context),
             swapchain_properties.extent,
             swapchain_properties.format.format,
             self.depth_format,
@@ -515,7 +515,7 @@ impl BaseApp {
         }
 
         let swapchain = Swapchain::create(
-            Rc::clone(&self.context),
+            Arc::clone(&self.context),
             swapchain_support_details,
             dimensions,
             self.config.vsync(),

@@ -1,14 +1,14 @@
 use super::Context;
 use ash::{version::DeviceV1_0, vk, Device};
-use std::{path::Path, rc::Rc};
+use std::{path::Path, sync::Arc};
 
 pub struct ShaderModule {
-    context: Rc<Context>,
+    context: Arc<Context>,
     module: vk::ShaderModule,
 }
 
 impl ShaderModule {
-    pub fn new<P: AsRef<Path>>(context: Rc<Context>, path: P) -> Self {
+    pub fn new<P: AsRef<Path>>(context: Arc<Context>, path: P) -> Self {
         let source = read_shader_from_file(path);
         let module = create_shader_module(context.device(), &source);
         Self { context, module }

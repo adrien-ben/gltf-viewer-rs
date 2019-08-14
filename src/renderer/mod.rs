@@ -4,7 +4,7 @@ mod skybox;
 pub use self::{model::*, skybox::*};
 use crate::vulkan::*;
 use ash::vk;
-use std::rc::Rc;
+use std::sync::Arc;
 
 #[derive(Copy, Clone)]
 struct RendererPipelineParameters<'a> {
@@ -19,7 +19,7 @@ struct RendererPipelineParameters<'a> {
 }
 
 fn create_renderer_pipeline<V: Vertex>(
-    context: &Rc<Context>,
+    context: &Arc<Context>,
     params: RendererPipelineParameters,
 ) -> vk::Pipeline {
     let multisampling_info = vk::PipelineMultisampleStateCreateInfo::builder()

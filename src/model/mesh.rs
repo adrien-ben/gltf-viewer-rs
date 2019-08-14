@@ -7,7 +7,7 @@ use gltf::{
     mesh::{Bounds, Reader, Semantic},
     Document,
 };
-use std::{mem::size_of, rc::Rc};
+use std::{mem::size_of, rc::Rc, sync::Arc};
 
 pub struct Mesh {
     primitives: Vec<Primitive>,
@@ -71,7 +71,7 @@ struct PrimitiveData {
 }
 
 pub fn create_meshes_from_gltf(
-    context: &Rc<Context>,
+    context: &Arc<Context>,
     document: &Document,
     buffers: &[Data],
 ) -> Vec<Mesh> {
