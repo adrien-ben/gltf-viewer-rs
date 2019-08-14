@@ -1,6 +1,6 @@
 use super::{Context, ShaderModule, Vertex};
 use ash::{version::DeviceV1_0, vk};
-use std::{ffi::CString, rc::Rc};
+use std::{ffi::CString, sync::Arc};
 
 #[derive(Copy, Clone)]
 pub struct PipelineParameters<'a> {
@@ -19,15 +19,15 @@ pub struct PipelineParameters<'a> {
 }
 
 pub fn create_pipeline<V: Vertex>(
-    context: &Rc<Context>,
+    context: &Arc<Context>,
     params: PipelineParameters,
 ) -> vk::Pipeline {
     let vertex_shader_module = ShaderModule::new(
-        Rc::clone(context),
+        Arc::clone(context),
         format!("assets/shaders/{}.vert.spv", params.vertex_shader_name),
     );
     let fragment_shader_module = ShaderModule::new(
-        Rc::clone(context),
+        Arc::clone(context),
         format!("assets/shaders/{}.frag.spv", params.fragment_shader_name),
     );
 
