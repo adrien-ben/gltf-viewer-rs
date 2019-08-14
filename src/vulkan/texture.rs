@@ -1,9 +1,9 @@
 use super::{buffer::*, context::*, image::*, util::*};
 use ash::{version::DeviceV1_0, vk};
-use std::{mem::size_of, rc::Rc};
+use std::{mem::size_of, sync::Arc};
 
 pub struct Texture {
-    context: Rc<Context>,
+    context: Arc<Context>,
     pub image: Image,
     pub view: vk::ImageView,
     pub sampler: Option<vk::Sampler>,
@@ -11,7 +11,7 @@ pub struct Texture {
 
 impl Texture {
     pub fn new(
-        context: Rc<Context>,
+        context: Arc<Context>,
         image: Image,
         view: vk::ImageView,
         sampler: Option<vk::Sampler>,
@@ -24,14 +24,14 @@ impl Texture {
         }
     }
 
-    pub fn from_rgba(context: &Rc<Context>, width: u32, height: u32, data: &[u8]) -> Self {
+    pub fn from_rgba(context: &Arc<Context>, width: u32, height: u32, data: &[u8]) -> Self {
         let max_mip_levels = ((width.min(height) as f32).log2().floor() + 1.0) as u32;
         let extent = vk::Extent2D { width, height };
         let image_size = (data.len() * size_of::<u8>()) as vk::DeviceSize;
         let device = context.device();
 
         let mut buffer = Buffer::create(
-            Rc::clone(context),
+            Arc::clone(context),
             image_size,
             vk::BufferUsageFlags::TRANSFER_SRC,
             vk::MemoryPropertyFlags::HOST_VISIBLE | vk::MemoryPropertyFlags::HOST_COHERENT,
@@ -43,7 +43,7 @@ impl Texture {
         }
 
         let image = Image::create(
-            Rc::clone(context),
+            Arc::clone(context),
             ImageParameters {
                 mem_properties: vk::MemoryPropertyFlags::DEVICE_LOCAL,
                 extent,
@@ -92,17 +92,17 @@ impl Texture {
             unsafe { device.create_sampler(&sampler_info, None).unwrap() }
         };
 
-        Texture::new(Rc::clone(context), image, image_view, Some(sampler))
+        Texture::new(Arc::clone(context), image, image_view, Some(sampler))
     }
 
-    pub fn from_rgba_32(context: &Rc<Context>, width: u32, height: u32, data: &[f32]) -> Self {
+    pub fn from_rgba_32(context: &Arc<Context>, width: u32, height: u32, data: &[f32]) -> Self {
         let max_mip_levels = ((width.min(height) as f32).log2().floor() + 1.0) as u32;
         let extent = vk::Extent2D { width, height };
         let image_size = (data.len() * size_of::<f32>()) as vk::DeviceSize;
         let device = context.device();
 
         let mut buffer = Buffer::create(
-            Rc::clone(context),
+            Arc::clone(context),
             image_size,
             vk::BufferUsageFlags::TRANSFER_SRC,
             vk::MemoryPropertyFlags::HOST_VISIBLE | vk::MemoryPropertyFlags::HOST_COHERENT,
@@ -114,7 +114,7 @@ impl Texture {
         }
 
         let image = Image::create(
-            Rc::clone(context),
+            Arc::clone(context),
             ImageParameters {
                 mem_properties: vk::MemoryPropertyFlags::DEVICE_LOCAL,
                 extent,
@@ -163,10 +163,10 @@ impl Texture {
             unsafe { device.create_sampler(&sampler_info, None).unwrap() }
         };
 
-        Texture::new(Rc::clone(context), image, image_view, Some(sampler))
+        Texture::new(Arc::clone(context), image, image_view, Some(sampler))
     }
 
-    pub fn create_cubemap_from_data(context: &Rc<Context>, size: u32, data: &[f32]) -> Self {
+    pub fn create_cubemap_from_data(context: &Arc<Context>, size: u32, data: &[f32]) -> Self {
         let max_mip_levels = (size as f32).log2().floor() as u32 + 1;
         let extent = vk::Extent2D {
             width: size,
@@ -177,7 +177,7 @@ impl Texture {
         let device = context.device();
 
         let mut buffer = Buffer::create(
-            Rc::clone(context),
+            Arc::clone(context),
             image_size,
             vk::BufferUsageFlags::TRANSFER_SRC,
             vk::MemoryPropertyFlags::HOST_VISIBLE | vk::MemoryPropertyFlags::HOST_COHERENT,
@@ -189,7 +189,7 @@ impl Texture {
         }
 
         let image = Image::create(
-            Rc::clone(context),
+            Arc::clone(context),
             ImageParameters {
                 mem_properties: vk::MemoryPropertyFlags::DEVICE_LOCAL,
                 extent,
@@ -240,10 +240,10 @@ impl Texture {
             unsafe { device.create_sampler(&sampler_info, None).unwrap() }
         };
 
-        Texture::new(Rc::clone(context), image, image_view, Some(sampler))
+        Texture::new(Arc::clone(context), image, image_view, Some(sampler))
     }
 
-    pub fn create_renderable_cubemap(context: &Rc<Context>, size: u32, mip_levels: u32) -> Self {
+    pub fn create_renderable_cubemap(context: &Arc<Context>, size: u32, mip_levels: u32) -> Self {
         let extent = vk::Extent2D {
             width: size,
             height: size,
@@ -252,7 +252,7 @@ impl Texture {
         let device = context.device();
 
         let image = Image::create(
-            Rc::clone(context),
+            Arc::clone(context),
             ImageParameters {
                 mem_properties: vk::MemoryPropertyFlags::DEVICE_LOCAL,
                 extent,
@@ -296,11 +296,11 @@ impl Texture {
             unsafe { device.create_sampler(&sampler_info, None).unwrap() }
         };
 
-        Texture::new(Rc::clone(context), image, image_view, Some(sampler))
+        Texture::new(Arc::clone(context), image, image_view, Some(sampler))
     }
 
     pub fn create_renderable_texture(
-        context: &Rc<Context>,
+        context: &Arc<Context>,
         width: u32,
         height: u32,
         format: vk::Format,
@@ -310,7 +310,7 @@ impl Texture {
         let device = context.device();
 
         let image = Image::create(
-            Rc::clone(context),
+            Arc::clone(context),
             ImageParameters {
                 mem_properties: vk::MemoryPropertyFlags::DEVICE_LOCAL,
                 extent,
@@ -348,7 +348,7 @@ impl Texture {
             unsafe { device.create_sampler(&sampler_info, None).unwrap() }
         };
 
-        Texture::new(Rc::clone(context), image, image_view, Some(sampler))
+        Texture::new(Arc::clone(context), image, image_view, Some(sampler))
     }
 }
 

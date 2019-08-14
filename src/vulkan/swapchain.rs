@@ -5,10 +5,10 @@ use ash::{
     version::DeviceV1_0,
     vk, Device,
 };
-use std::rc::Rc;
+use std::sync::Arc;
 
 pub struct Swapchain {
-    context: Rc<Context>,
+    context: Arc<Context>,
     swapchain: SwapchainLoader,
     swapchain_khr: vk::SwapchainKHR,
     properties: SwapchainProperties,
@@ -25,7 +25,7 @@ impl Swapchain {
     ///
     /// A tuple containing the swapchain loader and the actual swapchain.
     pub fn create(
-        context: Rc<Context>,
+        context: Arc<Context>,
         swapchain_support_details: SwapchainSupportDetails,
         dimensions: [u32; 2],
         preferred_vsync: bool,
@@ -119,7 +119,7 @@ impl Swapchain {
     }
 
     fn new(
-        context: Rc<Context>,
+        context: Arc<Context>,
         swapchain: SwapchainLoader,
         swapchain_khr: vk::SwapchainKHR,
         properties: SwapchainProperties,

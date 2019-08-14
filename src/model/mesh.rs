@@ -7,7 +7,7 @@ use gltf::{
     mesh::{Bounds, Reader, Semantic},
     Document,
 };
-use std::{mem::size_of, rc::Rc};
+use std::{mem::size_of, sync::Arc};
 
 pub struct Mesh {
     primitives: Vec<Primitive>,
@@ -71,7 +71,7 @@ struct PrimitiveData {
 }
 
 pub fn create_meshes_from_gltf(
-    context: &Rc<Context>,
+    context: &Arc<Context>,
     document: &Document,
     buffers: &[Data],
 ) -> Vec<Mesh> {
@@ -157,14 +157,14 @@ pub fn create_meshes_from_gltf(
         let indices = if all_indices.is_empty() {
             None
         } else {
-            Some(Rc::new(create_device_local_buffer_with_data::<u8, _>(
+            Some(Arc::new(create_device_local_buffer_with_data::<u8, _>(
                 context,
                 vk::BufferUsageFlags::INDEX_BUFFER,
                 &all_indices,
             )))
         };
 
-        let vertices = Rc::new(create_device_local_buffer_with_data::<u8, _>(
+        let vertices = Arc::new(create_device_local_buffer_with_data::<u8, _>(
             context,
             vk::BufferUsageFlags::VERTEX_BUFFER,
             &all_vertices,
@@ -178,14 +178,14 @@ pub fn create_meshes_from_gltf(
                     .map(|buffers| {
                         let mesh_vertices = buffers.vertices;
                         let vertex_buffer = VertexBuffer::new(
-                            Rc::clone(&vertices),
+                            Arc::clone(&vertices),
                             mesh_vertices.0 as _,
                             mesh_vertices.1 as _,
                         );
 
                         let index_buffer = buffers.indices.map(|mesh_indices| {
                             IndexBuffer::new(
-                                Rc::clone(indices.as_ref().unwrap()),
+                                Arc::clone(indices.as_ref().unwrap()),
                                 mesh_indices.0 as _,
                                 mesh_indices.1 as _,
                             )

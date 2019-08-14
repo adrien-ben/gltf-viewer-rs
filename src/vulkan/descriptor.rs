@@ -1,9 +1,9 @@
 use super::context::Context;
 use ash::{version::DeviceV1_0, vk};
-use std::rc::Rc;
+use std::sync::Arc;
 
 pub struct Descriptors {
-    context: Rc<Context>,
+    context: Arc<Context>,
     layout: vk::DescriptorSetLayout,
     pool: vk::DescriptorPool,
     sets: Vec<vk::DescriptorSet>,
@@ -11,7 +11,7 @@ pub struct Descriptors {
 
 impl Descriptors {
     pub fn new(
-        context: Rc<Context>,
+        context: Arc<Context>,
         layout: vk::DescriptorSetLayout,
         pool: vk::DescriptorPool,
         sets: Vec<vk::DescriptorSet>,

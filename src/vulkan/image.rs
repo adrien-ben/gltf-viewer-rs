@@ -3,7 +3,7 @@ use ash::{
     version::{DeviceV1_0, InstanceV1_0},
     vk, Device,
 };
-use std::rc::Rc;
+use std::sync::Arc;
 
 #[derive(Copy, Clone)]
 pub struct ImageParameters {
@@ -38,7 +38,7 @@ impl Default for ImageParameters {
 }
 
 pub struct Image {
-    context: Rc<Context>,
+    context: Arc<Context>,
     pub image: vk::Image,
     pub memory: vk::DeviceMemory,
     format: vk::Format,
@@ -48,7 +48,7 @@ pub struct Image {
 
 impl Image {
     fn new(
-        context: Rc<Context>,
+        context: Arc<Context>,
         image: vk::Image,
         memory: vk::DeviceMemory,
         format: vk::Format,
@@ -65,7 +65,7 @@ impl Image {
         }
     }
 
-    pub fn create(context: Rc<Context>, parameters: ImageParameters) -> Self {
+    pub fn create(context: Arc<Context>, parameters: ImageParameters) -> Self {
         let image_info = vk::ImageCreateInfo::builder()
             .image_type(vk::ImageType::TYPE_2D)
             .extent(vk::Extent3D {

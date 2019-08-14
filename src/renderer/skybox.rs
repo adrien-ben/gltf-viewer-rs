@@ -1,10 +1,10 @@
 use super::{create_renderer_pipeline, RendererPipelineParameters};
 use crate::{environment::*, vulkan::*};
 use ash::{version::DeviceV1_0, vk, Device};
-use std::rc::Rc;
+use std::sync::Arc;
 
 pub struct SkyboxRenderer {
-    context: Rc<Context>,
+    context: Arc<Context>,
     model: SkyboxModel,
     descriptors: Descriptors,
     pipeline_layout: vk::PipelineLayout,
@@ -13,7 +13,7 @@ pub struct SkyboxRenderer {
 
 impl SkyboxRenderer {
     pub fn create(
-        context: Rc<Context>,
+        context: Arc<Context>,
         camera_buffers: &[Buffer],
         swapchain_props: SwapchainProperties,
         environment: &Environment,
@@ -119,14 +119,14 @@ impl Drop for SkyboxRenderer {
 }
 
 fn create_descriptors(
-    context: &Rc<Context>,
+    context: &Arc<Context>,
     uniform_buffers: &[Buffer],
     environment: &Environment,
 ) -> Descriptors {
     let layout = create_descriptor_set_layout(context.device());
     let pool = create_descriptor_pool(context.device(), uniform_buffers.len() as _);
     let sets = create_descriptor_sets(context, pool, layout, uniform_buffers, environment.skybox());
-    Descriptors::new(Rc::clone(context), layout, pool, sets)
+    Descriptors::new(Arc::clone(context), layout, pool, sets)
 }
 
 fn create_descriptor_set_layout(device: &Device) -> vk::DescriptorSetLayout {
@@ -173,7 +173,7 @@ fn create_descriptor_pool(device: &Device, descriptor_count: u32) -> vk::Descrip
 }
 
 fn create_descriptor_sets(
-    context: &Rc<Context>,
+    context: &Arc<Context>,
     pool: vk::DescriptorPool,
     layout: vk::DescriptorSetLayout,
     buffers: &[Buffer],
@@ -239,7 +239,7 @@ fn create_pipeline_layout(
 }
 
 fn create_skybox_pipeline(
-    context: &Rc<Context>,
+    context: &Arc<Context>,
     swapchain_properties: SwapchainProperties,
     msaa_samples: vk::SampleCountFlags,
     render_pass: vk::RenderPass,

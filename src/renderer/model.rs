@@ -2,12 +2,12 @@ use super::{create_renderer_pipeline, RendererPipelineParameters};
 use crate::{environment::*, model::*, util::*, vulkan::*};
 use ash::{version::DeviceV1_0, vk, Device};
 use cgmath::{Matrix4, SquareMatrix};
-use std::{mem::size_of, rc::Rc};
+use std::{mem::size_of, sync::Arc};
 
 type JointsBuffer = [Matrix4<f32>; MAX_JOINTS_PER_MESH];
 
 pub struct ModelRenderer {
-    context: Rc<Context>,
+    context: Arc<Context>,
     model: Model,
     _dummy_texture: Texture,
     descriptors: Descriptors,
@@ -21,7 +21,7 @@ pub struct ModelRenderer {
 
 impl ModelRenderer {
     pub fn create(
-        context: Rc<Context>,
+        context: Arc<Context>,
         model: Model,
         camera_buffers: &[Buffer],
         swapchain_props: SwapchainProperties,
@@ -209,7 +209,7 @@ struct DescriptorsResources<'a> {
     environment: &'a Environment,
 }
 
-fn create_transform_ubos(context: &Rc<Context>, model: &Model, count: u32) -> Vec<Buffer> {
+fn create_transform_ubos(context: &Arc<Context>, model: &Model, count: u32) -> Vec<Buffer> {
     let mesh_node_count = model
         .nodes()
         .nodes()
@@ -221,7 +221,7 @@ fn create_transform_ubos(context: &Rc<Context>, model: &Model, count: u32) -> Ve
     (0..count)
         .map(|_| {
             let mut buffer = Buffer::create(
-                Rc::clone(context),
+                Arc::clone(context),
                 u64::from(elem_size * mesh_node_count),
                 vk::BufferUsageFlags::UNIFORM_BUFFER,
                 vk::MemoryPropertyFlags::HOST_VISIBLE | vk::MemoryPropertyFlags::HOST_COHERENT,
@@ -233,7 +233,7 @@ fn create_transform_ubos(context: &Rc<Context>, model: &Model, count: u32) -> Ve
 }
 
 fn create_skin_ubos(
-    context: &Rc<Context>,
+    context: &Arc<Context>,
     model: &Model,
     count: u32,
 ) -> (Vec<Buffer>, Vec<Vec<JointsBuffer>>) {
@@ -243,7 +243,7 @@ fn create_skin_ubos(
     let buffers = (0..count)
         .map(|_| {
             let mut buffer = Buffer::create(
-                Rc::clone(context),
+                Arc::clone(context),
                 u64::from(elem_size * skin_node_count as u32),
                 vk::BufferUsageFlags::UNIFORM_BUFFER,
                 vk::MemoryPropertyFlags::HOST_VISIBLE | vk::MemoryPropertyFlags::HOST_COHERENT,
@@ -266,11 +266,11 @@ fn create_skin_ubos(
     (buffers, matrices)
 }
 
-fn create_descriptors(context: &Rc<Context>, resources: DescriptorsResources) -> Descriptors {
+fn create_descriptors(context: &Arc<Context>, resources: DescriptorsResources) -> Descriptors {
     let layout = create_descriptor_set_layout(context.device());
     let pool = create_descriptor_pool(context.device(), resources.camera_buffers.len() as _);
     let sets = create_descriptor_sets(context, pool, layout, resources);
-    Descriptors::new(Rc::clone(context), layout, pool, sets)
+    Descriptors::new(Arc::clone(context), layout, pool, sets)
 }
 
 fn create_descriptor_set_layout(device: &Device) -> vk::DescriptorSetLayout {
@@ -352,7 +352,7 @@ fn create_descriptor_pool(device: &Device, descriptor_count: u32) -> vk::Descrip
 }
 
 fn create_descriptor_sets(
-    context: &Rc<Context>,
+    context: &Arc<Context>,
     pool: vk::DescriptorPool,
     layout: vk::DescriptorSetLayout,
     resources: DescriptorsResources,
@@ -512,7 +512,7 @@ fn create_pipeline_layout(
 }
 
 fn create_opaque_pipeline(
-    context: &Rc<Context>,
+    context: &Arc<Context>,
     swapchain_properties: SwapchainProperties,
     msaa_samples: vk::SampleCountFlags,
     render_pass: vk::RenderPass,
@@ -555,7 +555,7 @@ fn create_opaque_pipeline(
 }
 
 fn create_transparent_pipeline(
-    context: &Rc<Context>,
+    context: &Arc<Context>,
     swapchain_properties: SwapchainProperties,
     msaa_samples: vk::SampleCountFlags,
     render_pass: vk::RenderPass,

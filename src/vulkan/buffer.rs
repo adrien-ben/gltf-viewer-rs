@@ -1,9 +1,9 @@
 use super::{context::*, util::*};
 use ash::{version::DeviceV1_0, vk};
-use std::{ffi::c_void, mem::size_of, rc::Rc};
+use std::{ffi::c_void, mem::size_of, sync::Arc};
 
 pub struct Buffer {
-    context: Rc<Context>,
+    context: Arc<Context>,
     pub buffer: vk::Buffer,
     pub memory: vk::DeviceMemory,
     pub size: vk::DeviceSize,
@@ -12,7 +12,7 @@ pub struct Buffer {
 
 impl Buffer {
     fn new(
-        context: Rc<Context>,
+        context: Arc<Context>,
         buffer: vk::Buffer,
         memory: vk::DeviceMemory,
         size: vk::DeviceSize,
@@ -33,7 +33,7 @@ impl Buffer {
     /// The buffer, its memory and the actual size in bytes of the
     /// allocated memory since in may differ from the requested size.
     pub fn create(
-        context: Rc<Context>,
+        context: Arc<Context>,
         size: vk::DeviceSize,
         usage: vk::BufferUsageFlags,
         mem_properties: vk::MemoryPropertyFlags,
@@ -138,13 +138,13 @@ impl Drop for Buffer {
 /// staging buffer. Then we copy the data from the staging buffer to the
 /// final buffer using a one-time command buffer.
 pub fn create_device_local_buffer_with_data<A, T: Copy>(
-    context: &Rc<Context>,
+    context: &Arc<Context>,
     usage: vk::BufferUsageFlags,
     data: &[T],
 ) -> Buffer {
     let size = (data.len() * size_of::<T>()) as vk::DeviceSize;
     let mut staging_buffer = Buffer::create(
-        Rc::clone(context),
+        Arc::clone(context),
         size,
         vk::BufferUsageFlags::TRANSFER_SRC,
         vk::MemoryPropertyFlags::HOST_VISIBLE | vk::MemoryPropertyFlags::HOST_COHERENT,
@@ -156,7 +156,7 @@ pub fn create_device_local_buffer_with_data<A, T: Copy>(
     };
 
     let buffer = Buffer::create(
-        Rc::clone(context),
+        Arc::clone(context),
         size,
         vk::BufferUsageFlags::TRANSFER_DST | usage,
         vk::MemoryPropertyFlags::DEVICE_LOCAL,
