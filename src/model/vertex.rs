@@ -1,6 +1,6 @@
 use crate::vulkan::*;
 use ash::vk;
-use std::{mem::size_of, rc::Rc};
+use std::{mem::size_of, sync::Arc};
 
 #[derive(Clone, Copy, Debug)]
 pub struct ModelVertex {
@@ -64,13 +64,13 @@ impl Vertex for ModelVertex {
 }
 
 pub struct VertexBuffer {
-    buffer: Rc<Buffer>,
+    buffer: Arc<Buffer>,
     offset: vk::DeviceSize,
     element_count: u32,
 }
 
 impl VertexBuffer {
-    pub fn new(buffer: Rc<Buffer>, offset: vk::DeviceSize, element_count: u32) -> Self {
+    pub fn new(buffer: Arc<Buffer>, offset: vk::DeviceSize, element_count: u32) -> Self {
         Self {
             buffer,
             offset,
@@ -94,14 +94,14 @@ impl VertexBuffer {
 }
 
 pub struct IndexBuffer {
-    buffer: Rc<Buffer>,
+    buffer: Arc<Buffer>,
     offset: vk::DeviceSize,
     element_count: u32,
     index_type: vk::IndexType,
 }
 
 impl IndexBuffer {
-    pub fn new(buffer: Rc<Buffer>, offset: vk::DeviceSize, element_count: u32) -> Self {
+    pub fn new(buffer: Arc<Buffer>, offset: vk::DeviceSize, element_count: u32) -> Self {
         Self {
             buffer,
             offset,
