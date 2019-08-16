@@ -1,13 +1,23 @@
 use super::{context::*, util::*};
 use ash::{version::DeviceV1_0, vk};
-use std::{ffi::c_void, mem::size_of, sync::Arc};
+use std::{
+    ffi::c_void,
+    marker::{Send, Sync},
+    mem::size_of,
+    sync::Arc,
+};
+
+/// Wrapper over a raw pointer to make it moveable and accessible from other threads
+struct MemoryMapPointer(*mut c_void);
+unsafe impl Send for MemoryMapPointer {}
+unsafe impl Sync for MemoryMapPointer {}
 
 pub struct Buffer {
     context: Arc<Context>,
     pub buffer: vk::Buffer,
     pub memory: vk::DeviceMemory,
     pub size: vk::DeviceSize,
-    mapped_pointer: Option<*mut c_void>,
+    mapped_pointer: Option<MemoryMapPointer>,
 }
 
 impl Buffer {
@@ -94,8 +104,8 @@ impl Buffer {
     ///
     /// If the memory is already mapped it just returns the pointer.
     pub fn map_memory(&mut self) -> *mut c_void {
-        if let Some(ptr) = self.mapped_pointer {
-            ptr
+        if let Some(ptr) = &self.mapped_pointer {
+            ptr.0
         } else {
             unsafe {
                 let ptr = self
@@ -103,7 +113,7 @@ impl Buffer {
                     .device()
                     .map_memory(self.memory, 0, self.size, vk::MemoryMapFlags::empty())
                     .unwrap();
-                self.mapped_pointer = Some(ptr);
+                self.mapped_pointer = Some(MemoryMapPointer(ptr));
                 ptr
             }
         }
