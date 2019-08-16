@@ -1,20 +1,28 @@
 use super::material::MAX_TEXTURE_COUNT;
 use crate::vulkan::*;
+use ash::vk;
 use gltf::image::{Data, Format};
 use std::sync::Arc;
 
 /// Create
-pub fn create_textures_from_gltf(context: &Arc<Context>, images: &[Data]) -> Vec<Texture> {
+pub fn create_textures_from_gltf(
+    context: &Arc<Context>,
+    command_buffer: vk::CommandBuffer,
+    images: &[Data],
+) -> (Vec<Texture>, Vec<Buffer>) {
     if images.len() > MAX_TEXTURE_COUNT as _ {
         log::warn!(
             "The model contains more than {} textures ({}). Some textures might not display properly", MAX_TEXTURE_COUNT, images.len()
         );
     }
+
     images
         .iter()
         .map(|image| (image.width, image.height, build_rgba_buffer(image)))
-        .map(|(width, height, pixels)| Texture::from_rgba(&context, width, height, &pixels))
-        .collect()
+        .map(|(width, height, pixels)| {
+            Texture::cmd_from_rgba(&context, command_buffer, width, height, &pixels)
+        })
+        .unzip()
 }
 
 fn build_rgba_buffer(image: &Data) -> Vec<u8> {

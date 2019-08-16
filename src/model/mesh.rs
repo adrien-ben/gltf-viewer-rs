@@ -72,9 +72,10 @@ struct PrimitiveData {
 
 pub fn create_meshes_from_gltf(
     context: &Arc<Context>,
+    command_buffer: vk::CommandBuffer,
     document: &Document,
     buffers: &[Data],
-) -> Vec<Mesh> {
+) -> Option<(Vec<Mesh>, Buffer, Option<Buffer>)> {
     let mut meshes_data = Vec::<Vec<PrimitiveData>>::new();
     let mut all_vertices = Vec::<ModelVertex>::new();
     let mut all_indices = Vec::<u32>::new();
@@ -157,20 +158,24 @@ pub fn create_meshes_from_gltf(
         let indices = if all_indices.is_empty() {
             None
         } else {
-            Some(Arc::new(create_device_local_buffer_with_data::<u8, _>(
+            let (indices, staged_indices) = cmd_create_device_local_buffer_with_data::<u8, _>(
                 context,
+                command_buffer,
                 vk::BufferUsageFlags::INDEX_BUFFER,
                 &all_indices,
-            )))
+            );
+            Some((Arc::new(indices), staged_indices))
         };
 
-        let vertices = Arc::new(create_device_local_buffer_with_data::<u8, _>(
+        let (vertices, staged_vertices) = cmd_create_device_local_buffer_with_data::<u8, _>(
             context,
+            command_buffer,
             vk::BufferUsageFlags::VERTEX_BUFFER,
             &all_vertices,
-        ));
+        );
+        let vertices = Arc::new(vertices);
 
-        return meshes_data
+        let meshes = meshes_data
             .iter()
             .map(|primitives_buffers| {
                 let primitives = primitives_buffers
@@ -185,7 +190,7 @@ pub fn create_meshes_from_gltf(
 
                         let index_buffer = buffers.indices.map(|mesh_indices| {
                             IndexBuffer::new(
-                                Arc::clone(indices.as_ref().unwrap()),
+                                Arc::clone(indices.as_ref().map(|(indices, _)| indices).unwrap()),
                                 mesh_indices.0 as _,
                                 mesh_indices.1 as _,
                             )
@@ -202,9 +207,15 @@ pub fn create_meshes_from_gltf(
                 Mesh::new(primitives)
             })
             .collect();
+
+        return Some((
+            meshes,
+            staged_vertices,
+            indices.map(|(_, staged_indices)| staged_indices),
+        ));
     }
 
-    Vec::new()
+    None
 }
 
 fn read_indices<'a, 's, F>(reader: &Reader<'a, 's, F>) -> Option<Vec<u32>>

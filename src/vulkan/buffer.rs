@@ -1,13 +1,23 @@
 use super::{context::*, util::*};
 use ash::{version::DeviceV1_0, vk};
-use std::{ffi::c_void, mem::size_of, sync::Arc};
+use std::{
+    ffi::c_void,
+    marker::{Send, Sync},
+    mem::size_of,
+    sync::Arc,
+};
+
+/// Wrapper over a raw pointer to make it moveable and accessible from other threads
+struct MemoryMapPointer(*mut c_void);
+unsafe impl Send for MemoryMapPointer {}
+unsafe impl Sync for MemoryMapPointer {}
 
 pub struct Buffer {
     context: Arc<Context>,
     pub buffer: vk::Buffer,
     pub memory: vk::DeviceMemory,
     pub size: vk::DeviceSize,
-    mapped_pointer: Option<*mut c_void>,
+    mapped_pointer: Option<MemoryMapPointer>,
 }
 
 impl Buffer {
@@ -68,34 +78,28 @@ impl Buffer {
 }
 
 impl Buffer {
-    /// Copy the `size` first bytes of `src` this buffer.
-    ///
-    /// It's done using a command buffer allocated from
-    /// `command_pool`. The command buffer is cubmitted tp
-    /// `transfer_queue`.
-    pub fn copy(&self, src: &Buffer, size: vk::DeviceSize) {
-        self.context.execute_one_time_commands(|buffer| {
-            let region = vk::BufferCopy {
-                src_offset: 0,
-                dst_offset: 0,
-                size,
-            };
-            let regions = [region];
+    /// Register the commands to copy the `size` first bytes of `src` this buffer.
+    pub fn cmd_copy(&self, command_buffer: vk::CommandBuffer, src: &Buffer, size: vk::DeviceSize) {
+        let region = vk::BufferCopy {
+            src_offset: 0,
+            dst_offset: 0,
+            size,
+        };
+        let regions = [region];
 
-            unsafe {
-                self.context
-                    .device()
-                    .cmd_copy_buffer(buffer, src.buffer, self.buffer, &regions)
-            };
-        });
+        unsafe {
+            self.context
+                .device()
+                .cmd_copy_buffer(command_buffer, src.buffer, self.buffer, &regions)
+        };
     }
 
     /// Map the buffer memory and return the mapped pointer.
     ///
     /// If the memory is already mapped it just returns the pointer.
     pub fn map_memory(&mut self) -> *mut c_void {
-        if let Some(ptr) = self.mapped_pointer {
-            ptr
+        if let Some(ptr) = &self.mapped_pointer {
+            ptr.0
         } else {
             unsafe {
                 let ptr = self
@@ -103,7 +107,7 @@ impl Buffer {
                     .device()
                     .map_memory(self.memory, 0, self.size, vk::MemoryMapFlags::empty())
                     .unwrap();
-                self.mapped_pointer = Some(ptr);
+                self.mapped_pointer = Some(MemoryMapPointer(ptr));
                 ptr
             }
         }
@@ -142,6 +146,18 @@ pub fn create_device_local_buffer_with_data<A, T: Copy>(
     usage: vk::BufferUsageFlags,
     data: &[T],
 ) -> Buffer {
+    let (buffer, _) = context.execute_one_time_commands(|command_buffer| {
+        cmd_create_device_local_buffer_with_data::<A, _>(context, command_buffer, usage, data)
+    });
+    buffer
+}
+
+pub fn cmd_create_device_local_buffer_with_data<A, T: Copy>(
+    context: &Arc<Context>,
+    command_buffer: vk::CommandBuffer,
+    usage: vk::BufferUsageFlags,
+    data: &[T],
+) -> (Buffer, Buffer) {
     let size = (data.len() * size_of::<T>()) as vk::DeviceSize;
     let mut staging_buffer = Buffer::create(
         Arc::clone(context),
@@ -162,7 +178,7 @@ pub fn create_device_local_buffer_with_data<A, T: Copy>(
         vk::MemoryPropertyFlags::DEVICE_LOCAL,
     );
 
-    buffer.copy(&staging_buffer, staging_buffer.size);
+    buffer.cmd_copy(command_buffer, &staging_buffer, staging_buffer.size);
 
-    buffer
+    (buffer, staging_buffer)
 }

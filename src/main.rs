@@ -4,6 +4,7 @@ mod config;
 mod controls;
 mod environment;
 mod error;
+mod loader;
 mod math;
 mod model;
 mod renderer;

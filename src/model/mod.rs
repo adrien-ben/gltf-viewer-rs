@@ -13,8 +13,15 @@ pub use self::{
     animation::*, error::*, material::*, mesh::*, node::*, skin::*, texture::*, vertex::*,
 };
 use crate::{math::*, vulkan::*};
+use ash::vk;
 use cgmath::Matrix4;
 use std::{error::Error, path::Path, result::Result, sync::Arc};
+
+pub struct ModelStagingResources {
+    _staged_vertices: Buffer,
+    _staged_indices: Option<Buffer>,
+    _staged_textures: Vec<Buffer>,
+}
 
 pub struct Model {
     meshes: Vec<Mesh>,
@@ -27,9 +34,10 @@ pub struct Model {
 
 impl Model {
     pub fn create_from_file<P: AsRef<Path>>(
-        context: &Arc<Context>,
+        context: Arc<Context>,
+        command_buffer: vk::CommandBuffer,
         path: P,
-    ) -> Result<Self, Box<dyn Error>> {
+    ) -> Result<PreLoadedResource<Model, ModelStagingResources>, Box<dyn Error>> {
         log::debug!("Importing gltf file");
         let (document, buffers, images) = gltf::import(path)?;
 
@@ -38,12 +46,14 @@ impl Model {
             return Err(Box::new(ModelLoadingError::new("There is no scene")));
         }
 
-        let meshes = create_meshes_from_gltf(context, &document, &buffers);
-        if meshes.is_empty() {
+        let meshes = create_meshes_from_gltf(&context, command_buffer, &document, &buffers);
+        if meshes.is_none() {
             return Err(Box::new(ModelLoadingError::new(
                 "Could not find any renderable primitives",
             )));
         }
+
+        let (meshes, staged_vertices, staged_indices) = meshes.unwrap();
 
         let scene = document
             .default_scene()
@@ -69,16 +79,30 @@ impl Model {
             transform
         };
 
-        let textures = texture::create_textures_from_gltf(context, &images);
+        let (textures, staged_textures) =
+            texture::create_textures_from_gltf(&context, command_buffer, &images);
 
-        Ok(Model {
+        let model = Model {
             meshes,
             nodes,
             global_transform,
             animations,
             skins,
             textures,
-        })
+        };
+
+        let model_staging_res = ModelStagingResources {
+            _staged_vertices: staged_vertices,
+            _staged_indices: staged_indices,
+            _staged_textures: staged_textures,
+        };
+
+        Ok(PreLoadedResource::new(
+            context,
+            command_buffer,
+            model,
+            model_staging_res,
+        ))
     }
 }
 
