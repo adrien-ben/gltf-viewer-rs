@@ -36,6 +36,7 @@ using [Ash][2]. It runs on Window, Linux and MacOS.
   - [x] Orbital
   - [ ] First Person
 - [x] Drag and drop
+- [x] Background loading
 
 ## Controls
 

@@ -15,7 +15,7 @@ use std::cmp::Ordering;
 
 trait Interpolate: Copy {
     fn linear(self, other: Self, amount: f32) -> Self;
-    
+
     fn cubic_spline(
         source: [Self; 3],
         source_time: f32,

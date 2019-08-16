@@ -25,6 +25,19 @@ impl Texture {
     }
 
     pub fn from_rgba(context: &Arc<Context>, width: u32, height: u32, data: &[u8]) -> Self {
+        let (texture, _) = context.execute_one_time_commands(|command_buffer| {
+            Self::cmd_from_rgba(context, command_buffer, width, height, data)
+        });
+        texture
+    }
+
+    pub fn cmd_from_rgba(
+        context: &Arc<Context>,
+        command_buffer: vk::CommandBuffer,
+        width: u32,
+        height: u32,
+        data: &[u8],
+    ) -> (Self, Buffer) {
         let max_mip_levels = ((width.min(height) as f32).log2().floor() + 1.0) as u32;
         let extent = vk::Extent2D { width, height };
         let image_size = (data.len() * size_of::<u8>()) as vk::DeviceSize;
@@ -59,14 +72,15 @@ impl Texture {
         // Transition the image layout and copy the buffer into the image
         // and transition the layout again to be readable from fragment shader.
         {
-            image.transition_image_layout(
+            image.cmd_transition_image_layout(
+                command_buffer,
                 vk::ImageLayout::UNDEFINED,
                 vk::ImageLayout::TRANSFER_DST_OPTIMAL,
             );
 
-            image.copy_buffer(&buffer, extent);
+            image.cmd_copy_buffer(command_buffer, &buffer, extent);
 
-            image.generate_mipmaps(extent);
+            image.cmd_generate_mipmaps(command_buffer, extent);
         }
 
         let image_view = image.create_view(vk::ImageViewType::TYPE_2D, vk::ImageAspectFlags::COLOR);
@@ -92,7 +106,9 @@ impl Texture {
             unsafe { device.create_sampler(&sampler_info, None).unwrap() }
         };
 
-        Texture::new(Arc::clone(context), image, image_view, Some(sampler))
+        let texture = Texture::new(Arc::clone(context), image, image_view, Some(sampler));
+
+        (texture, buffer)
     }
 
     pub fn from_rgba_32(context: &Arc<Context>, width: u32, height: u32, data: &[f32]) -> Self {

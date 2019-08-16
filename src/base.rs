@@ -1,5 +1,5 @@
 use crate::{
-    camera::*, config::*, controls::*, environment::*, math, model::*, renderer::*, vulkan::*,
+    camera::*, config::*, controls::*, environment::*, loader::*, math, renderer::*, vulkan::*,
 };
 use ash::{version::DeviceV1_0, vk, Device};
 use cgmath::{Deg, Matrix4, Point3, Vector3};
@@ -37,6 +37,8 @@ pub struct BaseApp {
 
     command_buffers: Vec<vk::CommandBuffer>,
     in_flight_frames: InFlightFrames,
+
+    loader: Loader,
 }
 
 impl BaseApp {
@@ -107,6 +109,8 @@ impl BaseApp {
 
         let in_flight_frames = Self::create_sync_objects(context.device());
 
+        let loader = Loader::new(Arc::new(context.new_thread()));
+
         Self {
             events_loop,
             _window: window,
@@ -127,6 +131,7 @@ impl BaseApp {
             model_renderer: None,
             command_buffers,
             in_flight_frames,
+            loader,
         }
     }
 
@@ -169,11 +174,14 @@ impl BaseApp {
     ) -> Vec<vk::CommandBuffer> {
         let device = context.device();
 
-        let allocate_info = vk::CommandBufferAllocateInfo::builder()
-            .command_pool(context.general_command_pool())
-            .level(vk::CommandBufferLevel::PRIMARY)
-            .command_buffer_count(swapchain.image_count() as _);
-        let buffers = unsafe { device.allocate_command_buffers(&allocate_info).unwrap() };
+        let buffers = {
+            let allocate_info = vk::CommandBufferAllocateInfo::builder()
+                .command_pool(context.general_command_pool())
+                .level(vk::CommandBufferLevel::PRIMARY)
+                .command_buffer_count(swapchain.image_count() as _);
+
+            unsafe { device.allocate_command_buffers(&allocate_info).unwrap() }
+        };
 
         buffers.iter().enumerate().for_each(|(i, buffer)| {
             let buffer = *buffer;
@@ -317,6 +325,7 @@ impl BaseApp {
 
         self.resize_dimensions = resize_dimensions;
         if path_to_load.is_some() {
+            self.loader.load(path_to_load.as_ref().cloned().unwrap());
             self.path_to_load = path_to_load;
         }
         self.input_state = input_state;
@@ -324,28 +333,16 @@ impl BaseApp {
     }
 
     fn load_new_model(&mut self) {
-        let path = self.path_to_load.take();
-        if let Some(path) = path {
+        if let Some(model) = self.loader.get_model() {
             self.model_renderer.take();
 
-            let model = Model::create_from_file(&self.context, path);
-            if let Err(err) = model {
-                log::error!("Failed to load model. Cause {}", err);
-                return;
-            }
-
-            let device = self.context.device();
-
             self.context.graphics_queue_wait_idle();
-
             unsafe {
-                device.free_command_buffers(
+                self.context.device().free_command_buffers(
                     self.context.general_command_pool(),
                     &self.command_buffers,
                 );
             }
-
-            let model = model.unwrap();
 
             let model_renderer = ModelRenderer::create(
                 Arc::clone(&self.context),
