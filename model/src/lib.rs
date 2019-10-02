@@ -1,5 +1,6 @@
 mod animation;
 mod error;
+mod light;
 mod material;
 mod mesh;
 mod mikktspace;
@@ -10,7 +11,7 @@ mod vertex;
 
 use self::mikktspace::generate_tangents;
 pub use self::{
-    animation::*, error::*, material::*, mesh::*, node::*, skin::*, texture::*, vertex::*,
+    animation::*, error::*, light::*, material::*, mesh::*, node::*, skin::*, texture::*, vertex::*,
 };
 use ash::vk;
 use cgmath::Matrix4;
@@ -31,6 +32,7 @@ pub struct Model {
     animations: Vec<Animation>,
     skins: Vec<Skin>,
     textures: Vec<Texture>,
+    lights: Vec<Light>,
 }
 
 impl Model {
@@ -87,6 +89,8 @@ impl Model {
         let (textures, staged_textures) =
             texture::create_textures_from_gltf(&context, command_buffer, &images);
 
+        let lights = create_lights_from_gltf(&document);
+
         let model = Model {
             meshes,
             nodes,
@@ -94,6 +98,7 @@ impl Model {
             animations,
             skins,
             textures,
+            lights,
         };
 
         let model_staging_res = ModelStagingResources {
@@ -157,6 +162,10 @@ impl Model {
 
     pub fn textures(&self) -> &[Texture] {
         &self.textures
+    }
+
+    pub fn lights(&self) -> &[Light] {
+        &self.lights
     }
 }
 
