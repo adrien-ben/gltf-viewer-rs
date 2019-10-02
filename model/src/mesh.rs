@@ -96,6 +96,7 @@ pub fn create_meshes_from_gltf(
                 let tangents = read_tangents(&reader);
                 let weights = read_weights(&reader);
                 let joints = read_joints(&reader);
+                let colors = read_colors(&reader);
 
                 let mut vertices = positions
                     .iter()
@@ -107,6 +108,7 @@ pub fn create_meshes_from_gltf(
                         let tangent = *tangents.get(index).unwrap_or(&[1.0, 1.0, 1.0, 1.0]);
                         let weights = *weights.get(index).unwrap_or(&[0.0, 0.0, 0.0, 0.0]);
                         let joints = *joints.get(index).unwrap_or(&[0, 0, 0, 0]);
+                        let colors = *colors.get(index).unwrap_or(&[1.0, 1.0, 1.0, 1.0]);
 
                         ModelVertex {
                             position,
@@ -115,6 +117,7 @@ pub fn create_meshes_from_gltf(
                             tangent,
                             weights,
                             joints,
+                            colors,
                         }
                     })
                     .collect::<Vec<_>>();
@@ -294,4 +297,13 @@ where
             .map(|[x, y, z, w]| [u32::from(x), u32::from(y), u32::from(z), u32::from(w)])
             .collect()
     })
+}
+
+fn read_colors<'a, 's, F>(reader: &Reader<'a, 's, F>) -> Vec<[f32; 4]>
+where
+    F: Clone + Fn(GltfBuffer<'a>) -> Option<&'s [u8]>,
+{
+    reader
+        .read_colors(0)
+        .map_or(vec![], |colors| colors.into_rgba_f32().collect())
 }

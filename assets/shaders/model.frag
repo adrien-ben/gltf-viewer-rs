@@ -21,7 +21,8 @@ struct TextureIds {
 layout(location = 0) in vec3 oNormals;
 layout(location = 1) in vec2 oTexcoords;
 layout(location = 2) in vec3 oPositions;
-layout(location = 3) in mat3 oTBN;
+layout(location = 3) in vec4 oColors;
+layout(location = 4) in mat3 oTBN;
 
 layout(binding = 0) uniform CameraUBO {
      mat4 view;
@@ -76,7 +77,7 @@ vec4 getBaseColor(TextureIds textureIds) {
         vec4 sampledColor= texture(texSamplers[textureIds.color], oTexcoords);
         color *= vec4(pow(sampledColor.rgb, vec3(2.2)), sampledColor.a);
     }
-    return color;
+    return color * oColors;
 }
 
 float getMetallic(TextureIds textureIds) {

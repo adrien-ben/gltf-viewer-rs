@@ -7,6 +7,7 @@ layout(location = 2) in vec2 vTexcoords;
 layout(location = 3) in vec4 vTangents;
 layout(location = 4) in vec4 vWeights;
 layout(location = 5) in uvec4 vJoints;
+layout(location = 6) in vec4 vColors;
 
 layout(binding = 0) uniform CameraUBO {
      mat4 view;
@@ -25,7 +26,8 @@ layout(binding = 2) uniform SkinUBO {
 layout(location = 0) out vec3 oNormals;
 layout(location = 1) out vec2 oTexcoords;
 layout(location = 2) out vec3 oPositions;
-layout(location = 3) out mat3 oTBN;
+layout(location = 3) out vec4 oColors;
+layout(location = 4) out mat3 oTBN;
 
 void main() {
     mat4 world = transform.matrix;
@@ -45,5 +47,6 @@ void main() {
     oTexcoords = vTexcoords;
     oPositions = (world * vec4(vPositions, 1.0)).xyz;
     oTBN = mat3(tangent, bitangent, normal);
+    oColors = vColors;
     gl_Position = cameraUBO.proj * cameraUBO.view * world * vec4(vPositions, 1.0);
 }
