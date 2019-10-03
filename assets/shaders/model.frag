@@ -24,12 +24,6 @@ layout(location = 2) in vec3 oPositions;
 layout(location = 3) in vec4 oColors;
 layout(location = 4) in mat3 oTBN;
 
-layout(binding = 0) uniform CameraUBO {
-     mat4 view;
-     mat4 proj;
-     vec3 eye;
-} cameraUBO;
-
 layout(push_constant) uniform Material {
     vec4 color;
     vec4 emissiveAndRoughness;
@@ -42,6 +36,11 @@ layout(push_constant) uniform Material {
     float alphaCutoff;
 } material;
 
+layout(binding = 0) uniform Camera {
+    mat4 view;
+    mat4 proj;
+    vec3 eye;    
+} cameraUBO;
 layout(binding = 3) uniform sampler2D texSamplers[61]; // TODO: Use specialization
 layout(binding = 4) uniform samplerCube irradianceMapSampler;
 layout(binding = 5) uniform samplerCube preFilteredSampler;
@@ -49,10 +48,6 @@ layout(binding = 6) uniform sampler2D brdfLookupSampler;
 
 layout(location = 0) out vec4 outColor;
 
-const vec3 LIGHTS_DIR[] = {
-    vec3(1.0, 0.0, -1.0), 
-    vec3(-1.0, 0.0, 1.0)
-};
 const vec3 DIELECTRIC_SPECULAR = vec3(0.04);
 const vec3 BLACK = vec3(0.0);
 const float PI = 3.14159;
@@ -230,12 +225,6 @@ void main() {
     vec3 v = normalize(cameraUBO.eye - oPositions);
 
     vec3 color = vec3(0.0);
-    // for (int i = 0; i < 2; i++) {
-    //     vec3 light_dir = LIGHTS_DIR[i];
-    //     vec3 l = -normalize(light_dir);
-    //     vec3 h = normalize(l + v);
-    //     color += computeColor(baseColor.rgb, metallic, roughness, n, l, v, h);
-    // }
 
     vec3 ambient = computeIBL(baseColor.rgb, v, n, metallic, roughness);
 

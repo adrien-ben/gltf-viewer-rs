@@ -149,7 +149,7 @@ impl ModelRenderer {
         }
     }
 
-    pub fn draw(&self, command_buffer: vk::CommandBuffer, frame_index: usize) {
+    pub fn cmd_draw(&self, command_buffer: vk::CommandBuffer, frame_index: usize) {
         let device = self.context.device();
         // Bind opaque pipeline
         unsafe {

@@ -63,7 +63,7 @@ impl SkyboxRenderer {
 }
 
 impl SkyboxRenderer {
-    pub fn draw(&self, command_buffer: vk::CommandBuffer, frame_index: usize) {
+    pub fn cmd_draw(&self, command_buffer: vk::CommandBuffer, frame_index: usize) {
         let device = self.context.device();
         // Bind skybox pipeline
         unsafe {

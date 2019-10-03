@@ -232,10 +232,10 @@ impl Viewer {
                 };
             }
 
-            skybox_renderer.draw(buffer, i);
+            skybox_renderer.cmd_draw(buffer, i);
 
             if let Some(model_renderer) = model_renderer {
-                model_renderer.draw(buffer, i);
+                model_renderer.cmd_draw(buffer, i);
             }
 
             // End render pass
