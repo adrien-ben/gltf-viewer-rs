@@ -47,7 +47,7 @@ impl ModelRenderer {
                 environment,
             },
         );
-        let pipeline_layout = create_pipeline_layout(context.device(), descriptors.layout());
+        let pipeline_layout = create_pipeline_layout(context.device(), &descriptors);
         let opaque_pipeline = create_opaque_pipeline(
             &context,
             swapchain_props,
@@ -160,13 +160,25 @@ impl ModelRenderer {
             )
         };
 
+        // Bind static data
+        unsafe {
+            device.cmd_bind_descriptor_sets(
+                command_buffer,
+                vk::PipelineBindPoint::GRAPHICS,
+                self.pipeline_layout,
+                1,
+                &[self.descriptors.static_data_set],
+                &[],
+            )
+        };
+
         // Draw opaque primitives
         register_model_draw_commands(
             &self.context,
             self.pipeline_layout,
             command_buffer,
             &self.model,
-            &self.descriptors.sets()[frame_index..=frame_index],
+            &self.descriptors.dynamic_data_sets[frame_index..=frame_index],
             |p| !p.material().is_transparent(),
         );
 
@@ -184,7 +196,7 @@ impl ModelRenderer {
             self.pipeline_layout,
             command_buffer,
             &self.model,
-            &self.descriptors.sets()[frame_index..=frame_index],
+            &self.descriptors.dynamic_data_sets[frame_index..=frame_index],
             |p| p.material().is_transparent(),
         );
     }
@@ -210,6 +222,46 @@ struct DescriptorsResources<'a> {
     textures: &'a [Texture],
     dummy_texture: &'a Texture,
     environment: &'a Environment,
+}
+
+pub struct Descriptors {
+    context: Arc<Context>,
+    pool: vk::DescriptorPool,
+    dynamic_data_layout: vk::DescriptorSetLayout,
+    dynamic_data_sets: Vec<vk::DescriptorSet>,
+    static_data_layout: vk::DescriptorSetLayout,
+    static_data_set: vk::DescriptorSet,
+}
+
+impl Descriptors {
+    pub fn new(
+        context: Arc<Context>,
+        pool: vk::DescriptorPool,
+        dynamic_data_layout: vk::DescriptorSetLayout,
+        dynamic_data_sets: Vec<vk::DescriptorSet>,
+        static_data_layout: vk::DescriptorSetLayout,
+        static_data_set: vk::DescriptorSet,
+    ) -> Self {
+        Self {
+            context,
+            pool,
+            dynamic_data_layout,
+            dynamic_data_sets,
+            static_data_layout,
+            static_data_set,
+        }
+    }
+}
+
+impl Drop for Descriptors {
+    fn drop(&mut self) {
+        let device = self.context.device();
+        unsafe {
+            device.destroy_descriptor_pool(self.pool, None);
+            device.destroy_descriptor_set_layout(self.dynamic_data_layout, None);
+            device.destroy_descriptor_set_layout(self.static_data_layout, None);
+        }
+    }
 }
 
 fn create_transform_ubos(context: &Arc<Context>, model: &Model, count: u32) -> Vec<Buffer> {
@@ -270,65 +322,24 @@ fn create_skin_ubos(
 }
 
 fn create_descriptors(context: &Arc<Context>, resources: DescriptorsResources) -> Descriptors {
-    let layout = create_descriptor_set_layout(context.device());
     let pool = create_descriptor_pool(context.device(), resources.camera_buffers.len() as _);
-    let sets = create_descriptor_sets(context, pool, layout, resources);
-    Descriptors::new(Arc::clone(context), layout, pool, sets)
-}
 
-fn create_descriptor_set_layout(device: &Device) -> vk::DescriptorSetLayout {
-    let bindings = [
-        vk::DescriptorSetLayoutBinding::builder()
-            .binding(0)
-            .descriptor_type(vk::DescriptorType::UNIFORM_BUFFER)
-            .descriptor_count(1)
-            .stage_flags(vk::ShaderStageFlags::VERTEX | vk::ShaderStageFlags::FRAGMENT)
-            .build(),
-        vk::DescriptorSetLayoutBinding::builder()
-            .binding(1)
-            .descriptor_type(vk::DescriptorType::UNIFORM_BUFFER_DYNAMIC)
-            .descriptor_count(1)
-            .stage_flags(vk::ShaderStageFlags::VERTEX)
-            .build(),
-        vk::DescriptorSetLayoutBinding::builder()
-            .binding(2)
-            .descriptor_type(vk::DescriptorType::UNIFORM_BUFFER_DYNAMIC)
-            .descriptor_count(1)
-            .stage_flags(vk::ShaderStageFlags::VERTEX)
-            .build(),
-        vk::DescriptorSetLayoutBinding::builder()
-            .binding(3)
-            .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
-            .descriptor_count(MAX_TEXTURE_COUNT)
-            .stage_flags(vk::ShaderStageFlags::FRAGMENT)
-            .build(),
-        vk::DescriptorSetLayoutBinding::builder()
-            .binding(4)
-            .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
-            .descriptor_count(1)
-            .stage_flags(vk::ShaderStageFlags::FRAGMENT)
-            .build(),
-        vk::DescriptorSetLayoutBinding::builder()
-            .binding(5)
-            .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
-            .descriptor_count(1)
-            .stage_flags(vk::ShaderStageFlags::FRAGMENT)
-            .build(),
-        vk::DescriptorSetLayoutBinding::builder()
-            .binding(6)
-            .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
-            .descriptor_count(1)
-            .stage_flags(vk::ShaderStageFlags::FRAGMENT)
-            .build(),
-    ];
+    let dynamic_data_layout = create_dynamic_data_descriptor_set_layout(context.device());
+    let dynamic_data_sets =
+        create_dynamic_data_descriptor_sets(context, pool, dynamic_data_layout, resources);
 
-    let layout_info = vk::DescriptorSetLayoutCreateInfo::builder().bindings(&bindings);
+    let static_data_layout = create_static_data_descriptor_set_layout(context.device());
+    let static_data_sets =
+        create_static_data_descriptor_sets(context, pool, static_data_layout, resources);
 
-    unsafe {
-        device
-            .create_descriptor_set_layout(&layout_info, None)
-            .unwrap()
-    }
+    Descriptors::new(
+        Arc::clone(context),
+        pool,
+        dynamic_data_layout,
+        dynamic_data_sets,
+        static_data_layout,
+        static_data_sets,
+    )
 }
 
 fn create_descriptor_pool(device: &Device, descriptor_count: u32) -> vk::DescriptorPool {
@@ -343,18 +354,18 @@ fn create_descriptor_pool(device: &Device, descriptor_count: u32) -> vk::Descrip
         },
         vk::DescriptorPoolSize {
             ty: vk::DescriptorType::COMBINED_IMAGE_SAMPLER,
-            descriptor_count: descriptor_count * (MAX_TEXTURE_COUNT + 3),
+            descriptor_count: MAX_TEXTURE_COUNT + 3,
         },
     ];
 
     let create_info = vk::DescriptorPoolCreateInfo::builder()
         .pool_sizes(&pool_sizes)
-        .max_sets(descriptor_count);
+        .max_sets(descriptor_count + 1);
 
     unsafe { device.create_descriptor_pool(&create_info, None).unwrap() }
 }
 
-fn create_descriptor_sets(
+fn create_dynamic_data_descriptor_sets(
     context: &Arc<Context>,
     pool: vk::DescriptorPool,
     layout: vk::DescriptorSetLayout,
@@ -397,51 +408,6 @@ fn create_descriptor_sets(
             .range(size_of::<JointsBuffer>() as _)
             .build()];
 
-        let image_info = {
-            let mut infos = resources
-                .textures
-                .iter()
-                .take(MAX_TEXTURE_COUNT as _)
-                .map(|texture| {
-                    vk::DescriptorImageInfo::builder()
-                        .image_layout(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL)
-                        .image_view(texture.view)
-                        .sampler(texture.sampler.unwrap())
-                        .build()
-                })
-                .collect::<Vec<_>>();
-
-            while infos.len() < MAX_TEXTURE_COUNT as _ {
-                infos.push(
-                    vk::DescriptorImageInfo::builder()
-                        .image_layout(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL)
-                        .image_view(resources.dummy_texture.view)
-                        .sampler(resources.dummy_texture.sampler.unwrap())
-                        .build(),
-                )
-            }
-
-            infos
-        };
-
-        let irradiance_info = [vk::DescriptorImageInfo::builder()
-            .image_layout(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL)
-            .image_view(resources.environment.irradiance().view)
-            .sampler(resources.environment.irradiance().sampler.unwrap())
-            .build()];
-
-        let pre_filtered_info = [vk::DescriptorImageInfo::builder()
-            .image_layout(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL)
-            .image_view(resources.environment.pre_filtered().view)
-            .sampler(resources.environment.pre_filtered().sampler.unwrap())
-            .build()];
-
-        let brdf_lookup_info = [vk::DescriptorImageInfo::builder()
-            .image_layout(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL)
-            .image_view(resources.environment.brdf_lookup().view)
-            .sampler(resources.environment.brdf_lookup().sampler.unwrap())
-            .build()];
-
         let descriptor_writes = [
             vk::WriteDescriptorSet::builder()
                 .dst_set(*set)
@@ -461,30 +427,6 @@ fn create_descriptor_sets(
                 .descriptor_type(vk::DescriptorType::UNIFORM_BUFFER_DYNAMIC)
                 .buffer_info(&model_skin_buffer_info)
                 .build(),
-            vk::WriteDescriptorSet::builder()
-                .dst_set(*set)
-                .dst_binding(3)
-                .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
-                .image_info(&image_info)
-                .build(),
-            vk::WriteDescriptorSet::builder()
-                .dst_set(*set)
-                .dst_binding(4)
-                .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
-                .image_info(&irradiance_info)
-                .build(),
-            vk::WriteDescriptorSet::builder()
-                .dst_set(*set)
-                .dst_binding(5)
-                .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
-                .image_info(&pre_filtered_info)
-                .build(),
-            vk::WriteDescriptorSet::builder()
-                .dst_set(*set)
-                .dst_binding(6)
-                .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
-                .image_info(&brdf_lookup_info)
-                .build(),
         ];
 
         unsafe {
@@ -497,11 +439,177 @@ fn create_descriptor_sets(
     sets
 }
 
-fn create_pipeline_layout(
-    device: &Device,
-    descriptor_set_layout: vk::DescriptorSetLayout,
-) -> vk::PipelineLayout {
-    let layouts = [descriptor_set_layout];
+fn create_dynamic_data_descriptor_set_layout(device: &Device) -> vk::DescriptorSetLayout {
+    let bindings = [
+        vk::DescriptorSetLayoutBinding::builder()
+            .binding(0)
+            .descriptor_type(vk::DescriptorType::UNIFORM_BUFFER)
+            .descriptor_count(1)
+            .stage_flags(vk::ShaderStageFlags::VERTEX | vk::ShaderStageFlags::FRAGMENT)
+            .build(),
+        vk::DescriptorSetLayoutBinding::builder()
+            .binding(1)
+            .descriptor_type(vk::DescriptorType::UNIFORM_BUFFER_DYNAMIC)
+            .descriptor_count(1)
+            .stage_flags(vk::ShaderStageFlags::VERTEX)
+            .build(),
+        vk::DescriptorSetLayoutBinding::builder()
+            .binding(2)
+            .descriptor_type(vk::DescriptorType::UNIFORM_BUFFER_DYNAMIC)
+            .descriptor_count(1)
+            .stage_flags(vk::ShaderStageFlags::VERTEX)
+            .build(),
+    ];
+
+    let layout_info = vk::DescriptorSetLayoutCreateInfo::builder().bindings(&bindings);
+
+    unsafe {
+        device
+            .create_descriptor_set_layout(&layout_info, None)
+            .unwrap()
+    }
+}
+
+fn create_static_data_descriptor_set_layout(device: &Device) -> vk::DescriptorSetLayout {
+    let bindings = [
+        vk::DescriptorSetLayoutBinding::builder()
+            .binding(3)
+            .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
+            .descriptor_count(MAX_TEXTURE_COUNT)
+            .stage_flags(vk::ShaderStageFlags::FRAGMENT)
+            .build(),
+        vk::DescriptorSetLayoutBinding::builder()
+            .binding(4)
+            .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
+            .descriptor_count(1)
+            .stage_flags(vk::ShaderStageFlags::FRAGMENT)
+            .build(),
+        vk::DescriptorSetLayoutBinding::builder()
+            .binding(5)
+            .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
+            .descriptor_count(1)
+            .stage_flags(vk::ShaderStageFlags::FRAGMENT)
+            .build(),
+        vk::DescriptorSetLayoutBinding::builder()
+            .binding(6)
+            .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
+            .descriptor_count(1)
+            .stage_flags(vk::ShaderStageFlags::FRAGMENT)
+            .build(),
+    ];
+
+    let layout_info = vk::DescriptorSetLayoutCreateInfo::builder().bindings(&bindings);
+
+    unsafe {
+        device
+            .create_descriptor_set_layout(&layout_info, None)
+            .unwrap()
+    }
+}
+
+fn create_static_data_descriptor_sets(
+    context: &Arc<Context>,
+    pool: vk::DescriptorPool,
+    layout: vk::DescriptorSetLayout,
+    resources: DescriptorsResources,
+) -> vk::DescriptorSet {
+    let layouts = [layout];
+    let allocate_info = vk::DescriptorSetAllocateInfo::builder()
+        .descriptor_pool(pool)
+        .set_layouts(&layouts);
+    let set = unsafe {
+        context
+            .device()
+            .allocate_descriptor_sets(&allocate_info)
+            .unwrap()[0]
+    };
+
+    let image_info = {
+        let mut infos = resources
+            .textures
+            .iter()
+            .take(MAX_TEXTURE_COUNT as _)
+            .map(|texture| {
+                vk::DescriptorImageInfo::builder()
+                    .image_layout(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL)
+                    .image_view(texture.view)
+                    .sampler(texture.sampler.unwrap())
+                    .build()
+            })
+            .collect::<Vec<_>>();
+
+        while infos.len() < MAX_TEXTURE_COUNT as _ {
+            infos.push(
+                vk::DescriptorImageInfo::builder()
+                    .image_layout(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL)
+                    .image_view(resources.dummy_texture.view)
+                    .sampler(resources.dummy_texture.sampler.unwrap())
+                    .build(),
+            )
+        }
+
+        infos
+    };
+
+    let irradiance_info = [vk::DescriptorImageInfo::builder()
+        .image_layout(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL)
+        .image_view(resources.environment.irradiance().view)
+        .sampler(resources.environment.irradiance().sampler.unwrap())
+        .build()];
+
+    let pre_filtered_info = [vk::DescriptorImageInfo::builder()
+        .image_layout(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL)
+        .image_view(resources.environment.pre_filtered().view)
+        .sampler(resources.environment.pre_filtered().sampler.unwrap())
+        .build()];
+
+    let brdf_lookup_info = [vk::DescriptorImageInfo::builder()
+        .image_layout(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL)
+        .image_view(resources.environment.brdf_lookup().view)
+        .sampler(resources.environment.brdf_lookup().sampler.unwrap())
+        .build()];
+
+    let descriptor_writes = [
+        vk::WriteDescriptorSet::builder()
+            .dst_set(set)
+            .dst_binding(3)
+            .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
+            .image_info(&image_info)
+            .build(),
+        vk::WriteDescriptorSet::builder()
+            .dst_set(set)
+            .dst_binding(4)
+            .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
+            .image_info(&irradiance_info)
+            .build(),
+        vk::WriteDescriptorSet::builder()
+            .dst_set(set)
+            .dst_binding(5)
+            .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
+            .image_info(&pre_filtered_info)
+            .build(),
+        vk::WriteDescriptorSet::builder()
+            .dst_set(set)
+            .dst_binding(6)
+            .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
+            .image_info(&brdf_lookup_info)
+            .build(),
+    ];
+
+    unsafe {
+        context
+            .device()
+            .update_descriptor_sets(&descriptor_writes, &[])
+    }
+
+    set
+}
+
+fn create_pipeline_layout(device: &Device, descriptors: &Descriptors) -> vk::PipelineLayout {
+    let layouts = [
+        descriptors.dynamic_data_layout,
+        descriptors.static_data_layout,
+    ];
     let push_constant_range = [vk::PushConstantRange {
         stage_flags: vk::ShaderStageFlags::FRAGMENT,
         offset: 0,
@@ -606,7 +714,7 @@ fn register_model_draw_commands<F>(
     pipeline_layout: vk::PipelineLayout,
     command_buffer: vk::CommandBuffer,
     model: &Model,
-    descriptor_set: &[vk::DescriptorSet],
+    dynamic_descriptors: &[vk::DescriptorSet],
     primitive_filter: F,
 ) where
     F: FnMut(&&Primitive) -> bool + Copy,
@@ -632,7 +740,7 @@ fn register_model_draw_commands<F>(
                 vk::PipelineBindPoint::GRAPHICS,
                 pipeline_layout,
                 0,
-                &descriptor_set,
+                &dynamic_descriptors,
                 &[
                     model_transform_ubo_offset * index as u32,
                     model_skin_ubo_offset * skin_index as u32,

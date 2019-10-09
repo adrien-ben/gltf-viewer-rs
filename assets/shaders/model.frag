@@ -36,15 +36,15 @@ layout(push_constant) uniform Material {
     float alphaCutoff;
 } material;
 
-layout(binding = 0) uniform Camera {
+layout(binding = 0, set = 0) uniform Camera {
     mat4 view;
     mat4 proj;
     vec3 eye;    
 } cameraUBO;
-layout(binding = 3) uniform sampler2D texSamplers[61]; // TODO: Use specialization
-layout(binding = 4) uniform samplerCube irradianceMapSampler;
-layout(binding = 5) uniform samplerCube preFilteredSampler;
-layout(binding = 6) uniform sampler2D brdfLookupSampler;
+layout(binding = 3, set = 1) uniform sampler2D texSamplers[61]; // TODO: Use specialization
+layout(binding = 4, set = 1) uniform samplerCube irradianceMapSampler;
+layout(binding = 5, set = 1) uniform samplerCube preFilteredSampler;
+layout(binding = 6, set = 1) uniform sampler2D brdfLookupSampler;
 
 layout(location = 0) out vec4 outColor;
 

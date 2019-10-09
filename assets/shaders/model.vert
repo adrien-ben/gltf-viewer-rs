@@ -9,17 +9,17 @@ layout(location = 4) in vec4 vWeights;
 layout(location = 5) in uvec4 vJoints;
 layout(location = 6) in vec4 vColors;
 
-layout(binding = 0) uniform CameraUBO {
+layout(binding = 0, set = 0) uniform CameraUBO {
      mat4 view;
      mat4 proj;
      vec3 eye;
 } cameraUBO;
 
-layout(binding = 1) uniform TransformUBO {
+layout(binding = 1, set = 0) uniform TransformUBO {
     mat4 matrix;
 } transform;
 
-layout(binding = 2) uniform SkinUBO {
+layout(binding = 2, set = 0) uniform SkinUBO {
     mat4 jointMatrices[128];
 } skin;
 

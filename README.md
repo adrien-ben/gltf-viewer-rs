@@ -72,7 +72,7 @@ You can provide a yaml configuration file with `--config` (or `-c`). Check [this
 with `--file` (or `-f`)
 
 ```sh
-RUST_LOG=gltf_viewer_rs=warn cargo run -- --config config.yml --file C:\\dev\\assets\\glTF-Sample-Models\\2.0\\Triangle\\glTF\\Triangle.gltf
+RUST_LOG=gltf_viewer_rs=warn,vulkan=warn cargo run -- --config config.yml --file C:\\dev\\assets\\glTF-Sample-Models\\2.0\\Triangle\\glTF\\Triangle.gltf
 ```
 
 ## Known issues
