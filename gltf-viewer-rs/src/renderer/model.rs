@@ -42,9 +42,9 @@ impl ModelRenderer {
                 camera_buffers,
                 model_transform_buffers: &transform_ubos,
                 model_skin_buffers: &skin_ubos,
-                textures: model.textures(),
                 dummy_texture: &dummy_texture,
                 environment,
+                model: &model,
             },
         );
         let pipeline_layout = create_pipeline_layout(context.device(), &descriptors);
@@ -179,6 +179,7 @@ impl ModelRenderer {
             command_buffer,
             &self.model,
             &self.descriptors.dynamic_data_sets[frame_index..=frame_index],
+            &self.descriptors.per_primitive_sets,
             |p| !p.material().is_transparent(),
         );
 
@@ -197,6 +198,7 @@ impl ModelRenderer {
             command_buffer,
             &self.model,
             &self.descriptors.dynamic_data_sets[frame_index..=frame_index],
+            &self.descriptors.per_primitive_sets,
             |p| p.material().is_transparent(),
         );
     }
@@ -219,9 +221,9 @@ struct DescriptorsResources<'a> {
     camera_buffers: &'a [Buffer],
     model_transform_buffers: &'a [Buffer],
     model_skin_buffers: &'a [Buffer],
-    textures: &'a [Texture],
     dummy_texture: &'a Texture,
     environment: &'a Environment,
+    model: &'a Model,
 }
 
 pub struct Descriptors {
@@ -231,6 +233,8 @@ pub struct Descriptors {
     dynamic_data_sets: Vec<vk::DescriptorSet>,
     static_data_layout: vk::DescriptorSetLayout,
     static_data_set: vk::DescriptorSet,
+    per_primitive_layout: vk::DescriptorSetLayout,
+    per_primitive_sets: Vec<vk::DescriptorSet>,
 }
 
 impl Descriptors {
@@ -241,6 +245,8 @@ impl Descriptors {
         dynamic_data_sets: Vec<vk::DescriptorSet>,
         static_data_layout: vk::DescriptorSetLayout,
         static_data_set: vk::DescriptorSet,
+        per_primitive_layout: vk::DescriptorSetLayout,
+        per_primitive_sets: Vec<vk::DescriptorSet>,
     ) -> Self {
         Self {
             context,
@@ -249,6 +255,8 @@ impl Descriptors {
             dynamic_data_sets,
             static_data_layout,
             static_data_set,
+            per_primitive_layout,
+            per_primitive_sets,
         }
     }
 }
@@ -260,6 +268,7 @@ impl Drop for Descriptors {
             device.destroy_descriptor_pool(self.pool, None);
             device.destroy_descriptor_set_layout(self.dynamic_data_layout, None);
             device.destroy_descriptor_set_layout(self.static_data_layout, None);
+            device.destroy_descriptor_set_layout(self.per_primitive_layout, None);
         }
     }
 }
@@ -322,7 +331,7 @@ fn create_skin_ubos(
 }
 
 fn create_descriptors(context: &Arc<Context>, resources: DescriptorsResources) -> Descriptors {
-    let pool = create_descriptor_pool(context.device(), resources.camera_buffers.len() as _);
+    let pool = create_descriptor_pool(context.device(), resources);
 
     let dynamic_data_layout = create_dynamic_data_descriptor_set_layout(context.device());
     let dynamic_data_sets =
@@ -332,6 +341,10 @@ fn create_descriptors(context: &Arc<Context>, resources: DescriptorsResources) -
     let static_data_sets =
         create_static_data_descriptor_sets(context, pool, static_data_layout, resources);
 
+    let per_primitive_layout = create_per_primitive_descriptor_set_layout(context.device());
+    let per_primitive_sets =
+        create_per_primitive_descriptor_sets(context, pool, per_primitive_layout, resources);
+
     Descriptors::new(
         Arc::clone(context),
         pool,
@@ -339,10 +352,19 @@ fn create_descriptors(context: &Arc<Context>, resources: DescriptorsResources) -
         dynamic_data_sets,
         static_data_layout,
         static_data_sets,
+        per_primitive_layout,
+        per_primitive_sets,
     )
 }
 
-fn create_descriptor_pool(device: &Device, descriptor_count: u32) -> vk::DescriptorPool {
+fn create_descriptor_pool(
+    device: &Device,
+    descriptors_resources: DescriptorsResources,
+) -> vk::DescriptorPool {
+    let descriptor_count = descriptors_resources.camera_buffers.len() as u32;
+    let primitive_count = descriptors_resources.model.primitive_count() as u32;
+    let textures_desc_count = primitive_count * 5;
+
     let pool_sizes = [
         vk::DescriptorPoolSize {
             ty: vk::DescriptorType::UNIFORM_BUFFER,
@@ -354,13 +376,13 @@ fn create_descriptor_pool(device: &Device, descriptor_count: u32) -> vk::Descrip
         },
         vk::DescriptorPoolSize {
             ty: vk::DescriptorType::COMBINED_IMAGE_SAMPLER,
-            descriptor_count: MAX_TEXTURE_COUNT + 3,
+            descriptor_count: textures_desc_count + 3,
         },
     ];
 
     let create_info = vk::DescriptorPoolCreateInfo::builder()
         .pool_sizes(&pool_sizes)
-        .max_sets(descriptor_count + 1);
+        .max_sets(descriptor_count + 1 + primitive_count);
 
     unsafe { device.create_descriptor_pool(&create_info, None).unwrap() }
 }
@@ -475,7 +497,7 @@ fn create_static_data_descriptor_set_layout(device: &Device) -> vk::DescriptorSe
         vk::DescriptorSetLayoutBinding::builder()
             .binding(3)
             .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
-            .descriptor_count(MAX_TEXTURE_COUNT)
+            .descriptor_count(1)
             .stage_flags(vk::ShaderStageFlags::FRAGMENT)
             .build(),
         vk::DescriptorSetLayoutBinding::builder()
@@ -486,12 +508,6 @@ fn create_static_data_descriptor_set_layout(device: &Device) -> vk::DescriptorSe
             .build(),
         vk::DescriptorSetLayoutBinding::builder()
             .binding(5)
-            .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
-            .descriptor_count(1)
-            .stage_flags(vk::ShaderStageFlags::FRAGMENT)
-            .build(),
-        vk::DescriptorSetLayoutBinding::builder()
-            .binding(6)
             .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
             .descriptor_count(1)
             .stage_flags(vk::ShaderStageFlags::FRAGMENT)
@@ -524,33 +540,6 @@ fn create_static_data_descriptor_sets(
             .unwrap()[0]
     };
 
-    let image_info = {
-        let mut infos = resources
-            .textures
-            .iter()
-            .take(MAX_TEXTURE_COUNT as _)
-            .map(|texture| {
-                vk::DescriptorImageInfo::builder()
-                    .image_layout(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL)
-                    .image_view(texture.view)
-                    .sampler(texture.sampler.unwrap())
-                    .build()
-            })
-            .collect::<Vec<_>>();
-
-        while infos.len() < MAX_TEXTURE_COUNT as _ {
-            infos.push(
-                vk::DescriptorImageInfo::builder()
-                    .image_layout(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL)
-                    .image_view(resources.dummy_texture.view)
-                    .sampler(resources.dummy_texture.sampler.unwrap())
-                    .build(),
-            )
-        }
-
-        infos
-    };
-
     let irradiance_info = [vk::DescriptorImageInfo::builder()
         .image_layout(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL)
         .image_view(resources.environment.irradiance().view)
@@ -574,23 +563,17 @@ fn create_static_data_descriptor_sets(
             .dst_set(set)
             .dst_binding(3)
             .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
-            .image_info(&image_info)
+            .image_info(&irradiance_info)
             .build(),
         vk::WriteDescriptorSet::builder()
             .dst_set(set)
             .dst_binding(4)
             .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
-            .image_info(&irradiance_info)
-            .build(),
-        vk::WriteDescriptorSet::builder()
-            .dst_set(set)
-            .dst_binding(5)
-            .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
             .image_info(&pre_filtered_info)
             .build(),
         vk::WriteDescriptorSet::builder()
             .dst_set(set)
-            .dst_binding(6)
+            .dst_binding(5)
             .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
             .image_info(&brdf_lookup_info)
             .build(),
@@ -605,10 +588,170 @@ fn create_static_data_descriptor_sets(
     set
 }
 
+fn create_per_primitive_descriptor_set_layout(device: &Device) -> vk::DescriptorSetLayout {
+    let bindings = [
+        vk::DescriptorSetLayoutBinding::builder()
+            .binding(6)
+            .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
+            .descriptor_count(1)
+            .stage_flags(vk::ShaderStageFlags::FRAGMENT)
+            .build(),
+        vk::DescriptorSetLayoutBinding::builder()
+            .binding(7)
+            .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
+            .descriptor_count(1)
+            .stage_flags(vk::ShaderStageFlags::FRAGMENT)
+            .build(),
+        vk::DescriptorSetLayoutBinding::builder()
+            .binding(8)
+            .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
+            .descriptor_count(1)
+            .stage_flags(vk::ShaderStageFlags::FRAGMENT)
+            .build(),
+        vk::DescriptorSetLayoutBinding::builder()
+            .binding(9)
+            .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
+            .descriptor_count(1)
+            .stage_flags(vk::ShaderStageFlags::FRAGMENT)
+            .build(),
+        vk::DescriptorSetLayoutBinding::builder()
+            .binding(10)
+            .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
+            .descriptor_count(1)
+            .stage_flags(vk::ShaderStageFlags::FRAGMENT)
+            .build(),
+    ];
+
+    let layout_info = vk::DescriptorSetLayoutCreateInfo::builder().bindings(&bindings);
+
+    unsafe {
+        device
+            .create_descriptor_set_layout(&layout_info, None)
+            .unwrap()
+    }
+}
+
+fn create_per_primitive_descriptor_sets(
+    context: &Arc<Context>,
+    pool: vk::DescriptorPool,
+    layout: vk::DescriptorSetLayout,
+    resources: DescriptorsResources,
+) -> Vec<vk::DescriptorSet> {
+    let layouts = (0..resources.model.primitive_count())
+        .map(|_| layout)
+        .collect::<Vec<_>>();
+
+    let allocate_info = vk::DescriptorSetAllocateInfo::builder()
+        .descriptor_pool(pool)
+        .set_layouts(&layouts);
+    let sets = unsafe {
+        context
+            .device()
+            .allocate_descriptor_sets(&allocate_info)
+            .unwrap()
+    };
+
+    let model = resources.model;
+    let textures = resources.model.textures();
+    let mut primitive_index = 0;
+    for mesh in model.meshes() {
+        for primitive in mesh.primitives() {
+            let material = primitive.material();
+
+            let albedo = material
+                .get_color_texture_index()
+                .map_or(resources.dummy_texture, |i| &textures[i]);
+            let normals = material
+                .get_normals_texture_index()
+                .map_or(resources.dummy_texture, |i| &textures[i]);
+            let metallic_roughness = material
+                .get_metallic_roughness_texture_index()
+                .map_or(resources.dummy_texture, |i| &textures[i]);
+            let occlusion = material
+                .get_occlusion_texture_index()
+                .map_or(resources.dummy_texture, |i| &textures[i]);
+            let emissive = material
+                .get_emissive_texture_index()
+                .map_or(resources.dummy_texture, |i| &textures[i]);
+
+            let albedo_info = [vk::DescriptorImageInfo::builder()
+                .image_layout(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL)
+                .image_view(albedo.view)
+                .sampler(albedo.sampler.unwrap())
+                .build()];
+            let normals_info = [vk::DescriptorImageInfo::builder()
+                .image_layout(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL)
+                .image_view(normals.view)
+                .sampler(normals.sampler.unwrap())
+                .build()];
+            let metallic_roughness_info = [vk::DescriptorImageInfo::builder()
+                .image_layout(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL)
+                .image_view(metallic_roughness.view)
+                .sampler(metallic_roughness.sampler.unwrap())
+                .build()];
+            let occlusion_info = [vk::DescriptorImageInfo::builder()
+                .image_layout(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL)
+                .image_view(occlusion.view)
+                .sampler(occlusion.sampler.unwrap())
+                .build()];
+            let emissive_info = [vk::DescriptorImageInfo::builder()
+                .image_layout(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL)
+                .image_view(emissive.view)
+                .sampler(emissive.sampler.unwrap())
+                .build()];
+
+            let set = sets[primitive_index];
+            primitive_index += 1;
+
+            let descriptor_writes = [
+                vk::WriteDescriptorSet::builder()
+                    .dst_set(set)
+                    .dst_binding(6)
+                    .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
+                    .image_info(&albedo_info)
+                    .build(),
+                vk::WriteDescriptorSet::builder()
+                    .dst_set(set)
+                    .dst_binding(7)
+                    .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
+                    .image_info(&normals_info)
+                    .build(),
+                vk::WriteDescriptorSet::builder()
+                    .dst_set(set)
+                    .dst_binding(8)
+                    .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
+                    .image_info(&metallic_roughness_info)
+                    .build(),
+                vk::WriteDescriptorSet::builder()
+                    .dst_set(set)
+                    .dst_binding(9)
+                    .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
+                    .image_info(&occlusion_info)
+                    .build(),
+                vk::WriteDescriptorSet::builder()
+                    .dst_set(set)
+                    .dst_binding(10)
+                    .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
+                    .image_info(&emissive_info)
+                    .build(),
+            ];
+
+            unsafe {
+                context
+                    .device()
+                    .update_descriptor_sets(&descriptor_writes, &[])
+            }
+        }
+    }
+
+    sets
+}
+
 fn create_pipeline_layout(device: &Device, descriptors: &Descriptors) -> vk::PipelineLayout {
     let layouts = [
         descriptors.dynamic_data_layout,
         descriptors.static_data_layout,
+        descriptors.per_primitive_layout,
     ];
     let push_constant_range = [vk::PushConstantRange {
         stage_flags: vk::ShaderStageFlags::FRAGMENT,
@@ -715,6 +858,7 @@ fn register_model_draw_commands<F>(
     command_buffer: vk::CommandBuffer,
     model: &Model,
     dynamic_descriptors: &[vk::DescriptorSet],
+    per_primitive_descriptors: &[vk::DescriptorSet],
     primitive_filter: F,
 ) where
     F: FnMut(&&Primitive) -> bool + Copy,
@@ -749,6 +893,20 @@ fn register_model_draw_commands<F>(
         };
 
         for primitive in mesh.primitives().iter().filter(primitive_filter) {
+            let primitive_index = primitive.index();
+
+            // Bind descriptor sets
+            unsafe {
+                device.cmd_bind_descriptor_sets(
+                    command_buffer,
+                    vk::PipelineBindPoint::GRAPHICS,
+                    pipeline_layout,
+                    2,
+                    &per_primitive_descriptors[primitive_index..=primitive_index],
+                    &[],
+                )
+            };
+
             unsafe {
                 device.cmd_bind_vertex_buffers(
                     command_buffer,
@@ -770,7 +928,7 @@ fn register_model_draw_commands<F>(
             }
             // Push material constants
             unsafe {
-                let material = primitive.material();
+                let material: MaterialUniform = primitive.material().into();
                 let material_contants = any_as_u8_slice(&material);
                 device.cmd_push_constants(
                     command_buffer,

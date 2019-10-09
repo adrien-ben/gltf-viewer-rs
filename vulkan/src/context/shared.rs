@@ -153,7 +153,6 @@ fn is_device_suitable(
         && extention_support
         && is_swapchain_adequate
         && features.sampler_anisotropy == vk::TRUE
-        && features.shader_sampled_image_array_dynamic_indexing == vk::TRUE
 }
 
 fn check_device_extension_support(instance: &Instance, device: vk::PhysicalDevice) -> bool {

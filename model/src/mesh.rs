@@ -28,12 +28,17 @@ impl Mesh {
         &self.primitives
     }
 
+    pub fn primitive_count(&self) -> usize {
+        self.primitives.len()
+    }
+
     pub fn aabb(&self) -> AABB<f32> {
         self.aabb
     }
 }
 
 pub struct Primitive {
+    index: usize,
     vertices: VertexBuffer,
     indices: Option<IndexBuffer>,
     material: Material,
@@ -41,6 +46,10 @@ pub struct Primitive {
 }
 
 impl Primitive {
+    pub fn index(&self) -> usize {
+        self.index
+    }
+
     pub fn vertices(&self) -> &VertexBuffer {
         &self.vertices
     }
@@ -65,10 +74,17 @@ type VertexBufferPart = (usize, usize);
 type IndexBufferPart = (usize, usize);
 
 struct PrimitiveData {
+    index: usize,
     indices: Option<IndexBufferPart>,
     vertices: VertexBufferPart,
     material: Material,
     aabb: AABB<f32>,
+}
+
+pub struct Meshes {
+    pub meshes: Vec<Mesh>,
+    pub vertices: Buffer,
+    pub indices: Option<Buffer>,
 }
 
 pub fn create_meshes_from_gltf(
@@ -76,10 +92,12 @@ pub fn create_meshes_from_gltf(
     command_buffer: vk::CommandBuffer,
     document: &Document,
     buffers: &[Data],
-) -> Option<(Vec<Mesh>, Buffer, Option<Buffer>)> {
+) -> Option<Meshes> {
     let mut meshes_data = Vec::<Vec<PrimitiveData>>::new();
     let mut all_vertices = Vec::<ModelVertex>::new();
     let mut all_indices = Vec::<u32>::new();
+
+    let mut primitive_count = 0;
 
     // Gather vertices and indices from all the meshes in the document
     for mesh in document.meshes() {
@@ -144,9 +162,13 @@ pub fn create_meshes_from_gltf(
                 let offset = all_vertices.len() * size_of::<ModelVertex>();
                 all_vertices.extend_from_slice(&vertices);
 
-                let material = Material::from(primitive.material());
+                let material = primitive.material().into();
+
+                let index = primitive_count;
+                primitive_count += 1;
 
                 primitives_buffers.push(PrimitiveData {
+                    index,
                     indices,
                     vertices: (offset, accessor.count()),
                     material,
@@ -201,6 +223,7 @@ pub fn create_meshes_from_gltf(
                         });
 
                         Primitive {
+                            index: buffers.index,
                             vertices: vertex_buffer,
                             indices: index_buffer,
                             material: buffers.material,
@@ -212,11 +235,11 @@ pub fn create_meshes_from_gltf(
             })
             .collect();
 
-        return Some((
+        return Some(Meshes {
             meshes,
-            staged_vertices,
-            indices.map(|(_, staged_indices)| staged_indices),
-        ));
+            vertices: staged_vertices,
+            indices: indices.map(|(_, staged_indices)| staged_indices),
+        });
     }
 
     None

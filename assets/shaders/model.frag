@@ -41,10 +41,14 @@ layout(binding = 0, set = 0) uniform Camera {
     mat4 proj;
     vec3 eye;    
 } cameraUBO;
-layout(binding = 3, set = 1) uniform sampler2D texSamplers[61]; // TODO: Use specialization
-layout(binding = 4, set = 1) uniform samplerCube irradianceMapSampler;
-layout(binding = 5, set = 1) uniform samplerCube preFilteredSampler;
-layout(binding = 6, set = 1) uniform sampler2D brdfLookupSampler;
+layout(binding = 3, set = 1) uniform samplerCube irradianceMapSampler;
+layout(binding = 4, set = 1) uniform samplerCube preFilteredSampler;
+layout(binding = 5, set = 1) uniform sampler2D brdfLookupSampler;
+layout(binding = 6, set = 2) uniform sampler2D colorSampler;
+layout(binding = 7, set = 2) uniform sampler2D normalsSampler;
+layout(binding = 8, set = 2) uniform sampler2D metallicRoughnessSampler;
+layout(binding = 9, set = 2) uniform sampler2D occlusionSampler;
+layout(binding = 10, set = 2) uniform sampler2D emissiveSampler;
 
 layout(location = 0) out vec4 outColor;
 
@@ -69,7 +73,7 @@ TextureIds getTextureIds() {
 vec4 getBaseColor(TextureIds textureIds) {
     vec4 color = material.color;
     if(textureIds.color != NO_TEXTURE_ID) {
-        vec4 sampledColor= texture(texSamplers[textureIds.color], oTexcoords);
+        vec4 sampledColor= texture(colorSampler, oTexcoords);
         color *= vec4(pow(sampledColor.rgb, vec3(2.2)), sampledColor.a);
     }
     return color * oColors;
@@ -78,7 +82,7 @@ vec4 getBaseColor(TextureIds textureIds) {
 float getMetallic(TextureIds textureIds) {
     float metallic = material.metallic;
     if(textureIds.metallicRoughness != NO_TEXTURE_ID) {
-        metallic *= texture(texSamplers[textureIds.metallicRoughness], oTexcoords).b;
+        metallic *= texture(metallicRoughnessSampler, oTexcoords).b;
     }
     return metallic;
 }
@@ -86,7 +90,7 @@ float getMetallic(TextureIds textureIds) {
 float getRoughness(TextureIds textureIds) {
     float roughness = material.emissiveAndRoughness.a;
     if(textureIds.metallicRoughness != NO_TEXTURE_ID) {
-        roughness *= texture(texSamplers[textureIds.metallicRoughness], oTexcoords).g;
+        roughness *= texture(metallicRoughnessSampler, oTexcoords).g;
     }
     return roughness;
 }
@@ -94,14 +98,14 @@ float getRoughness(TextureIds textureIds) {
 vec3 getEmissiveColor(TextureIds textureIds) {
     vec3 emissive = material.emissiveAndRoughness.rgb;
     if(textureIds.emissive != NO_TEXTURE_ID) {
-        emissive *= pow(texture(texSamplers[textureIds.emissive], oTexcoords).rgb, vec3(2.2));
+        emissive *= pow(texture(emissiveSampler, oTexcoords).rgb, vec3(2.2));
     }
     return emissive;
 }
 
 vec3 getNormal(TextureIds textureIds) {
     if (textureIds.normal != NO_TEXTURE_ID) {
-        vec3 normal = texture(texSamplers[textureIds.normal], oTexcoords).rgb * 2.0 - 1.0;
+        vec3 normal = texture(normalsSampler, oTexcoords).rgb * 2.0 - 1.0;
         return normalize(oTBN * normal);
     }
     return normalize(oNormals);
@@ -110,7 +114,7 @@ vec3 getNormal(TextureIds textureIds) {
 vec3 occludeAmbientColor(vec3 ambientColor, TextureIds textureIds) {
     float sampledOcclusion = 0.0;
     if (textureIds.occlusion != NO_TEXTURE_ID) {
-        sampledOcclusion = texture(texSamplers[textureIds.occlusion], oTexcoords).r;
+        sampledOcclusion = texture(occlusionSampler, oTexcoords).r;
     }
     return mix(ambientColor, ambientColor * sampledOcclusion, material.occlusion);
 }

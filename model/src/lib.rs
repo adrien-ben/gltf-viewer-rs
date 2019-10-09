@@ -54,7 +54,11 @@ impl Model {
             )));
         }
 
-        let (meshes, staged_vertices, staged_indices) = meshes.unwrap();
+        let Meshes {
+            meshes,
+            vertices: staged_vertices,
+            indices: staged_indices,
+        } = meshes.unwrap();
 
         let scene = document
             .default_scene()
@@ -131,8 +135,16 @@ impl Model {
 }
 
 impl Model {
+    pub fn meshes(&self) -> &[Mesh] {
+        &self.meshes
+    }
+
     pub fn mesh(&self, index: usize) -> &Mesh {
         &self.meshes[index]
+    }
+
+    pub fn primitive_count(&self) -> usize {
+        self.meshes.iter().map(Mesh::primitive_count).sum()
     }
 
     pub fn skins(&self) -> &[Skin] {
