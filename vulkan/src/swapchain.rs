@@ -65,9 +65,7 @@ impl Swapchain {
                 .image_color_space(format.color_space)
                 .image_extent(extent)
                 .image_array_layers(1)
-                .image_usage(
-                    vk::ImageUsageFlags::COLOR_ATTACHMENT | vk::ImageUsageFlags::TRANSFER_DST,
-                );
+                .image_usage(vk::ImageUsageFlags::COLOR_ATTACHMENT);
 
             builder = if graphics != present {
                 builder
