@@ -4,8 +4,8 @@ use std::{ffi::CString, sync::Arc};
 
 #[derive(Copy, Clone)]
 pub struct PipelineParameters<'a> {
-    pub vertex_shader_name: &'static str,
-    pub fragment_shader_name: &'static str,
+    pub vertex_shader_params: ShaderParameters<'a>,
+    pub fragment_shader_params: ShaderParameters<'a>,
     pub multisampling_info: &'a vk::PipelineMultisampleStateCreateInfo,
     pub viewport_info: &'a vk::PipelineViewportStateCreateInfo,
     pub rasterizer_info: &'a vk::PipelineRasterizationStateCreateInfo,
@@ -22,26 +22,22 @@ pub fn create_pipeline<V: Vertex>(
     context: &Arc<Context>,
     params: PipelineParameters,
 ) -> vk::Pipeline {
-    let vertex_shader_module = ShaderModule::new(
-        Arc::clone(context),
-        format!("assets/shaders/{}.vert.spv", params.vertex_shader_name),
-    );
-    let fragment_shader_module = ShaderModule::new(
-        Arc::clone(context),
-        format!("assets/shaders/{}.frag.spv", params.fragment_shader_name),
+    let entry_point_name = CString::new("main").unwrap();
+
+    let (_vertex_shader_module, vertex_shader_state_info) = create_shader_stage_info(
+        context,
+        &entry_point_name,
+        vk::ShaderStageFlags::VERTEX,
+        params.vertex_shader_params,
     );
 
-    let entry_point_name = CString::new("main").unwrap();
-    let vertex_shader_state_info = vk::PipelineShaderStageCreateInfo::builder()
-        .stage(vk::ShaderStageFlags::VERTEX)
-        .module(vertex_shader_module.module())
-        .name(&entry_point_name)
-        .build();
-    let fragment_shader_state_info = vk::PipelineShaderStageCreateInfo::builder()
-        .stage(vk::ShaderStageFlags::FRAGMENT)
-        .module(fragment_shader_module.module())
-        .name(&entry_point_name)
-        .build();
+    let (_fragment_shader_module, fragment_shader_state_info) = create_shader_stage_info(
+        context,
+        &entry_point_name,
+        vk::ShaderStageFlags::FRAGMENT,
+        params.fragment_shader_params,
+    );
+
     let shader_states_infos = [vertex_shader_state_info, fragment_shader_state_info];
 
     let bindings_descs = V::get_bindings_descriptions();
@@ -98,5 +94,57 @@ pub fn create_pipeline<V: Vertex>(
             .device()
             .create_graphics_pipelines(vk::PipelineCache::null(), &pipeline_infos, None)
             .expect("Failed to create graphics pipeline")[0]
+    }
+}
+
+fn create_shader_stage_info(
+    context: &Arc<Context>,
+    entry_point_name: &CString,
+    stage: vk::ShaderStageFlags,
+    params: ShaderParameters,
+) -> (ShaderModule, vk::PipelineShaderStageCreateInfo) {
+    let extension = get_shader_file_extension(stage);
+    let shader_path = format!("assets/shaders/{}.{}.spv", params.name, extension);
+    let module = ShaderModule::new(Arc::clone(context), &shader_path);
+
+    let mut stage_info = vk::PipelineShaderStageCreateInfo::builder()
+        .stage(stage)
+        .module(module.module())
+        .name(entry_point_name);
+    if let Some(specialization) = params.specialization {
+        stage_info = stage_info.specialization_info(specialization);
+    }
+    let stage_info = stage_info.build();
+
+    (module, stage_info)
+}
+
+fn get_shader_file_extension(stage: vk::ShaderStageFlags) -> &'static str {
+    match stage {
+        vk::ShaderStageFlags::VERTEX => "vert",
+        vk::ShaderStageFlags::FRAGMENT => "frag",
+        _ => panic!("Unsupported shader stage"),
+    }
+}
+
+#[derive(Copy, Clone, Debug)]
+pub struct ShaderParameters<'a> {
+    name: &'static str,
+    specialization: Option<&'a vk::SpecializationInfo>,
+}
+
+impl<'a> ShaderParameters<'a> {
+    pub fn new(name: &'static str) -> Self {
+        Self {
+            name,
+            specialization: None,
+        }
+    }
+
+    pub fn specialized(name: &'static str, specialization: &'a vk::SpecializationInfo) -> Self {
+        Self {
+            name,
+            specialization: Some(specialization),
+        }
     }
 }

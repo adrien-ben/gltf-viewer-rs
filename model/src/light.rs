@@ -28,7 +28,7 @@ impl Light {
     }
 }
 
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, PartialEq, Debug)]
 pub enum Type {
     Directional,
     Point,

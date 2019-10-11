@@ -9,6 +9,8 @@ use vulkan::*;
 #[derive(Copy, Clone)]
 struct RendererPipelineParameters<'a> {
     shader_name: &'static str,
+    vertex_shader_specialization: Option<&'a vk::SpecializationInfo>,
+    fragment_shader_specialization: Option<&'a vk::SpecializationInfo>,
     swapchain_properties: SwapchainProperties,
     msaa_samples: vk::SampleCountFlags,
     render_pass: vk::RenderPass,
@@ -22,6 +24,17 @@ fn create_renderer_pipeline<V: Vertex>(
     context: &Arc<Context>,
     params: RendererPipelineParameters,
 ) -> vk::Pipeline {
+    let vertex_shader_params = params
+        .vertex_shader_specialization
+        .map_or(ShaderParameters::new(params.shader_name), |s| {
+            ShaderParameters::specialized(params.shader_name, s)
+        });
+    let fragment_shader_params = params
+        .fragment_shader_specialization
+        .map_or(ShaderParameters::new(params.shader_name), |s| {
+            ShaderParameters::specialized(params.shader_name, s)
+        });
+
     let multisampling_info = vk::PipelineMultisampleStateCreateInfo::builder()
         .sample_shading_enable(false)
         .rasterization_samples(params.msaa_samples)
@@ -60,8 +73,8 @@ fn create_renderer_pipeline<V: Vertex>(
     create_pipeline::<V>(
         context,
         PipelineParameters {
-            vertex_shader_name: params.shader_name,
-            fragment_shader_name: params.shader_name,
+            vertex_shader_params,
+            fragment_shader_params,
             multisampling_info: &multisampling_info,
             viewport_info: &viewport_info,
             rasterizer_info: &rasterizer_info,

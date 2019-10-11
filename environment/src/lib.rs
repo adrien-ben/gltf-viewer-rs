@@ -14,7 +14,7 @@ use std::sync::Arc;
 use vulkan::ash::{version::DeviceV1_0, vk};
 use vulkan::{
     create_device_local_buffer_with_data, create_pipeline, Buffer, Context, Descriptors,
-    PipelineParameters, Texture, Vertex,
+    PipelineParameters, ShaderParameters, Texture, Vertex,
 };
 
 pub struct Environment {
@@ -310,8 +310,8 @@ fn create_env_pipeline<V: Vertex>(
     create_pipeline::<V>(
         context,
         PipelineParameters {
-            vertex_shader_name: params.vertex_shader_name,
-            fragment_shader_name: params.fragment_shader_name,
+            vertex_shader_params: ShaderParameters::new(params.vertex_shader_name),
+            fragment_shader_params: ShaderParameters::new(params.fragment_shader_name),
             multisampling_info: &multisampling_info,
             viewport_info: params.viewport_info,
             rasterizer_info: params.rasterizer_info,
