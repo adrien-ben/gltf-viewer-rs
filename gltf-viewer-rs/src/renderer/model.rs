@@ -1,11 +1,34 @@
 use super::{create_renderer_pipeline, RendererPipelineParameters};
 use ash::{version::DeviceV1_0, vk, Device};
 use environment::*;
-use math::cgmath::{Matrix4, SquareMatrix};
+use math::cgmath::{InnerSpace, Matrix4, SquareMatrix, Vector4};
 use model::*;
 use std::{mem::size_of, sync::Arc};
 use util::*;
 use vulkan::*;
+
+const DYNAMIC_DATA_SET_INDEX: u32 = 0;
+const STATIC_DATA_SET_INDEX: u32 = 1;
+const PER_PRIMITIVE_DATA_SET_INDEX: u32 = 2;
+
+const CAMERA_UBO_BINDING: u32 = 0;
+const LIGHT_UBO_BINDING: u32 = 1;
+const TRANSFORMS_UBO_BINDING: u32 = 2;
+const SKINS_UBO_BINDING: u32 = 3;
+const IRRADIANCE_SAMPLER_BINDING: u32 = 4;
+const PRE_FILTERED_SAMPLER_BINDING: u32 = 5;
+const BRDF_SAMPLER_BINDING: u32 = 6;
+const COLOR_SAMPLER_BINDING: u32 = 7;
+const NORMALS_SAMPLER_BINDING: u32 = 8;
+const METALLIC_ROUGHNESS_SAMPLER_BINDING: u32 = 9;
+const OCCLUSION_SAMPLER_BINDING: u32 = 10;
+const EMISSIVE_SAMPLER_BINDING: u32 = 11;
+
+const DIRECTIONAL_LIGHT_TYPE: u32 = 0;
+const POINT_LIGHT_TYPE: u32 = 1;
+const SPOT_LIGHT_TYPE: u32 = 2;
+
+const DEFAULT_LIGHT_DIRECTION: [f32; 4] = [0.0, 0.0, -1.0, 0.0];
 
 type JointsBuffer = [Matrix4<f32>; MAX_JOINTS_PER_MESH];
 
@@ -13,10 +36,11 @@ pub struct ModelRenderer {
     context: Arc<Context>,
     model: Model,
     _dummy_texture: Texture,
-    descriptors: Descriptors,
     transform_ubos: Vec<Buffer>,
     skin_ubos: Vec<Buffer>,
     skin_matrices: Vec<Vec<JointsBuffer>>,
+    light_buffers: Vec<Buffer>,
+    descriptors: Descriptors,
     pipeline_layout: vk::PipelineLayout,
     opaque_pipeline: vk::Pipeline,
     transparent_pipeline: vk::Pipeline,
@@ -33,15 +57,20 @@ impl ModelRenderer {
         render_pass: &RenderPass,
     ) -> Self {
         let dummy_texture = Texture::from_rgba(&context, 1, 1, &[0, 0, 0, 0]);
+
+        // UBOS
         let transform_ubos = create_transform_ubos(&context, &model, swapchain_props.image_count);
         let (skin_ubos, skin_matrices) =
             create_skin_ubos(&context, &model, swapchain_props.image_count);
+        let light_buffers = create_lights_ubos(&context, &model, swapchain_props.image_count);
+
         let descriptors = create_descriptors(
             &context,
             DescriptorsResources {
                 camera_buffers,
                 model_transform_buffers: &transform_ubos,
                 model_skin_buffers: &skin_ubos,
+                light_buffers: &light_buffers,
                 dummy_texture: &dummy_texture,
                 environment,
                 model: &model,
@@ -54,6 +83,7 @@ impl ModelRenderer {
             msaa_samples,
             render_pass.get_render_pass(),
             pipeline_layout,
+            &model,
         );
         let transparent_pipeline = create_transparent_pipeline(
             &context,
@@ -62,16 +92,18 @@ impl ModelRenderer {
             render_pass.get_render_pass(),
             pipeline_layout,
             opaque_pipeline,
+            &model,
         );
 
         Self {
             context,
             model,
             _dummy_texture: dummy_texture,
-            descriptors,
             transform_ubos,
             skin_ubos,
             skin_matrices,
+            light_buffers,
+            descriptors,
             pipeline_layout,
             opaque_pipeline,
             transparent_pipeline,
@@ -96,6 +128,7 @@ impl ModelRenderer {
             msaa_samples,
             render_pass.get_render_pass(),
             self.pipeline_layout,
+            &self.model,
         );
         self.transparent_pipeline = create_transparent_pipeline(
             &self.context,
@@ -104,6 +137,7 @@ impl ModelRenderer {
             render_pass.get_render_pass(),
             self.pipeline_layout,
             self.opaque_pipeline,
+            &self.model,
         );
     }
 }
@@ -114,38 +148,64 @@ impl ModelRenderer {
     }
 
     pub fn update_buffers(&mut self, frame_index: usize) {
-        let mesh_nodes = self
-            .model
-            .nodes()
-            .nodes()
-            .iter()
-            .filter(|n| n.mesh_index().is_some());
+        // Update transform buffers
+        {
+            let mesh_nodes = self
+                .model
+                .nodes()
+                .nodes()
+                .iter()
+                .filter(|n| n.mesh_index().is_some());
 
-        let transforms = mesh_nodes.map(|n| n.transform()).collect::<Vec<_>>();
+            let transforms = mesh_nodes.map(|n| n.transform()).collect::<Vec<_>>();
 
-        let elem_size = &self.context.get_ubo_alignment::<Matrix4<f32>>();
-        let buffer = &mut self.transform_ubos[frame_index];
-        unsafe {
-            let data_ptr = buffer.map_memory();
-            mem_copy_aligned(data_ptr, u64::from(*elem_size), &transforms);
-        }
-
-        let skins = self.model.skins();
-        let skin_matrices = &mut self.skin_matrices[frame_index];
-
-        for (index, skin) in skins.iter().enumerate() {
-            let matrices = &mut skin_matrices[index];
-            for (index, joint) in skin.joints().iter().take(MAX_JOINTS_PER_MESH).enumerate() {
-                let joint_matrix = joint.matrix();
-                matrices[index] = joint_matrix;
+            let elem_size = &self.context.get_ubo_alignment::<Matrix4<f32>>();
+            let buffer = &mut self.transform_ubos[frame_index];
+            unsafe {
+                let data_ptr = buffer.map_memory();
+                mem_copy_aligned(data_ptr, u64::from(*elem_size), &transforms);
             }
         }
 
-        let elem_size = &self.context.get_ubo_alignment::<JointsBuffer>();
-        let buffer = &mut self.skin_ubos[frame_index];
-        unsafe {
-            let data_ptr = buffer.map_memory();
-            mem_copy_aligned(data_ptr, u64::from(*elem_size), &skin_matrices);
+        // Update skin buffers
+        {
+            let skins = self.model.skins();
+            let skin_matrices = &mut self.skin_matrices[frame_index];
+
+            for (index, skin) in skins.iter().enumerate() {
+                let matrices = &mut skin_matrices[index];
+                for (index, joint) in skin.joints().iter().take(MAX_JOINTS_PER_MESH).enumerate() {
+                    let joint_matrix = joint.matrix();
+                    matrices[index] = joint_matrix;
+                }
+            }
+
+            let elem_size = &self.context.get_ubo_alignment::<JointsBuffer>();
+            let buffer = &mut self.skin_ubos[frame_index];
+            unsafe {
+                let data_ptr = buffer.map_memory();
+                mem_copy_aligned(data_ptr, u64::from(*elem_size), &skin_matrices);
+            }
+        }
+
+        // Update light buffers
+        {
+            let model = &self.model;
+
+            let uniforms = model
+                .nodes()
+                .nodes()
+                .iter()
+                .filter(|n| n.light_index().is_some())
+                .map(|n| (n.transform(), n.light_index().unwrap()))
+                .map(|(t, i)| (t, model.lights()[i]).into())
+                .collect::<Vec<LightUniform>>();
+
+            if !uniforms.is_empty() {
+                let buffer = &mut self.light_buffers[frame_index];
+                let data_ptr = buffer.map_memory();
+                unsafe { mem_copy(data_ptr, &uniforms) };
+            }
         }
     }
 
@@ -166,7 +226,7 @@ impl ModelRenderer {
                 command_buffer,
                 vk::PipelineBindPoint::GRAPHICS,
                 self.pipeline_layout,
-                1,
+                STATIC_DATA_SET_INDEX,
                 &[self.descriptors.static_data_set],
                 &[],
             )
@@ -212,63 +272,6 @@ impl Drop for ModelRenderer {
             device.destroy_pipeline(self.opaque_pipeline, None);
             device.destroy_pipeline(self.transparent_pipeline, None);
             device.destroy_pipeline_layout(self.pipeline_layout, None);
-        }
-    }
-}
-
-#[derive(Copy, Clone)]
-struct DescriptorsResources<'a> {
-    camera_buffers: &'a [Buffer],
-    model_transform_buffers: &'a [Buffer],
-    model_skin_buffers: &'a [Buffer],
-    dummy_texture: &'a Texture,
-    environment: &'a Environment,
-    model: &'a Model,
-}
-
-pub struct Descriptors {
-    context: Arc<Context>,
-    pool: vk::DescriptorPool,
-    dynamic_data_layout: vk::DescriptorSetLayout,
-    dynamic_data_sets: Vec<vk::DescriptorSet>,
-    static_data_layout: vk::DescriptorSetLayout,
-    static_data_set: vk::DescriptorSet,
-    per_primitive_layout: vk::DescriptorSetLayout,
-    per_primitive_sets: Vec<vk::DescriptorSet>,
-}
-
-impl Descriptors {
-    pub fn new(
-        context: Arc<Context>,
-        pool: vk::DescriptorPool,
-        dynamic_data_layout: vk::DescriptorSetLayout,
-        dynamic_data_sets: Vec<vk::DescriptorSet>,
-        static_data_layout: vk::DescriptorSetLayout,
-        static_data_set: vk::DescriptorSet,
-        per_primitive_layout: vk::DescriptorSetLayout,
-        per_primitive_sets: Vec<vk::DescriptorSet>,
-    ) -> Self {
-        Self {
-            context,
-            pool,
-            dynamic_data_layout,
-            dynamic_data_sets,
-            static_data_layout,
-            static_data_set,
-            per_primitive_layout,
-            per_primitive_sets,
-        }
-    }
-}
-
-impl Drop for Descriptors {
-    fn drop(&mut self) {
-        let device = self.context.device();
-        unsafe {
-            device.destroy_descriptor_pool(self.pool, None);
-            device.destroy_descriptor_set_layout(self.dynamic_data_layout, None);
-            device.destroy_descriptor_set_layout(self.static_data_layout, None);
-            device.destroy_descriptor_set_layout(self.per_primitive_layout, None);
         }
     }
 }
@@ -330,6 +333,88 @@ fn create_skin_ubos(
     (buffers, matrices)
 }
 
+fn create_lights_ubos(context: &Arc<Context>, model: &Model, count: u32) -> Vec<Buffer> {
+    let light_count = model
+        .nodes()
+        .nodes()
+        .iter()
+        .filter(|n| n.light_index().is_some())
+        .count();
+
+    // Buffer size cannot be 0 so we allocate at least anough space for one light
+    // Probably a bad idea but I'd rather avoid creating a specific shader
+    let buffer_size = std::cmp::max(1, light_count) * size_of::<LightUniform>();
+
+    (0..count)
+        .map(|_| {
+            Buffer::create(
+                Arc::clone(context),
+                buffer_size as vk::DeviceSize,
+                vk::BufferUsageFlags::UNIFORM_BUFFER,
+                vk::MemoryPropertyFlags::HOST_VISIBLE | vk::MemoryPropertyFlags::HOST_COHERENT,
+            )
+        })
+        .collect::<Vec<_>>()
+}
+
+#[derive(Copy, Clone)]
+struct DescriptorsResources<'a> {
+    camera_buffers: &'a [Buffer],
+    model_transform_buffers: &'a [Buffer],
+    model_skin_buffers: &'a [Buffer],
+    light_buffers: &'a [Buffer],
+    dummy_texture: &'a Texture,
+    environment: &'a Environment,
+    model: &'a Model,
+}
+
+pub struct Descriptors {
+    context: Arc<Context>,
+    pool: vk::DescriptorPool,
+    dynamic_data_layout: vk::DescriptorSetLayout,
+    dynamic_data_sets: Vec<vk::DescriptorSet>,
+    static_data_layout: vk::DescriptorSetLayout,
+    static_data_set: vk::DescriptorSet,
+    per_primitive_layout: vk::DescriptorSetLayout,
+    per_primitive_sets: Vec<vk::DescriptorSet>,
+}
+
+impl Descriptors {
+    pub fn new(
+        context: Arc<Context>,
+        pool: vk::DescriptorPool,
+        dynamic_data_layout: vk::DescriptorSetLayout,
+        dynamic_data_sets: Vec<vk::DescriptorSet>,
+        static_data_layout: vk::DescriptorSetLayout,
+        static_data_set: vk::DescriptorSet,
+        per_primitive_layout: vk::DescriptorSetLayout,
+        per_primitive_sets: Vec<vk::DescriptorSet>,
+    ) -> Self {
+        Self {
+            context,
+            pool,
+            dynamic_data_layout,
+            dynamic_data_sets,
+            static_data_layout,
+            static_data_set,
+            per_primitive_layout,
+            per_primitive_sets,
+        }
+    }
+}
+
+impl Drop for Descriptors {
+    fn drop(&mut self) {
+        let device = self.context.device();
+        unsafe {
+            device.destroy_descriptor_pool(self.pool, None);
+            device.destroy_descriptor_set_layout(self.dynamic_data_layout, None);
+            device.destroy_descriptor_set_layout(self.static_data_layout, None);
+            device.destroy_descriptor_set_layout(self.per_primitive_layout, None);
+        }
+    }
+}
+
 fn create_descriptors(context: &Arc<Context>, resources: DescriptorsResources) -> Descriptors {
     let pool = create_descriptor_pool(context.device(), resources);
 
@@ -368,7 +453,7 @@ fn create_descriptor_pool(
     let pool_sizes = [
         vk::DescriptorPoolSize {
             ty: vk::DescriptorType::UNIFORM_BUFFER,
-            descriptor_count,
+            descriptor_count: descriptor_count * 2,
         },
         vk::DescriptorPoolSize {
             ty: vk::DescriptorType::UNIFORM_BUFFER_DYNAMIC,
@@ -385,6 +470,43 @@ fn create_descriptor_pool(
         .max_sets(descriptor_count + 1 + primitive_count);
 
     unsafe { device.create_descriptor_pool(&create_info, None).unwrap() }
+}
+
+fn create_dynamic_data_descriptor_set_layout(device: &Device) -> vk::DescriptorSetLayout {
+    let bindings = [
+        vk::DescriptorSetLayoutBinding::builder()
+            .binding(CAMERA_UBO_BINDING)
+            .descriptor_type(vk::DescriptorType::UNIFORM_BUFFER)
+            .descriptor_count(1)
+            .stage_flags(vk::ShaderStageFlags::VERTEX | vk::ShaderStageFlags::FRAGMENT)
+            .build(),
+        vk::DescriptorSetLayoutBinding::builder()
+            .binding(LIGHT_UBO_BINDING)
+            .descriptor_type(vk::DescriptorType::UNIFORM_BUFFER)
+            .descriptor_count(1)
+            .stage_flags(vk::ShaderStageFlags::FRAGMENT)
+            .build(),
+        vk::DescriptorSetLayoutBinding::builder()
+            .binding(TRANSFORMS_UBO_BINDING)
+            .descriptor_type(vk::DescriptorType::UNIFORM_BUFFER_DYNAMIC)
+            .descriptor_count(1)
+            .stage_flags(vk::ShaderStageFlags::VERTEX)
+            .build(),
+        vk::DescriptorSetLayoutBinding::builder()
+            .binding(SKINS_UBO_BINDING)
+            .descriptor_type(vk::DescriptorType::UNIFORM_BUFFER_DYNAMIC)
+            .descriptor_count(1)
+            .stage_flags(vk::ShaderStageFlags::VERTEX)
+            .build(),
+    ];
+
+    let layout_info = vk::DescriptorSetLayoutCreateInfo::builder().bindings(&bindings);
+
+    unsafe {
+        device
+            .create_descriptor_set_layout(&layout_info, None)
+            .unwrap()
+    }
 }
 
 fn create_dynamic_data_descriptor_sets(
@@ -409,11 +531,18 @@ fn create_dynamic_data_descriptor_sets(
 
     sets.iter().enumerate().for_each(|(i, set)| {
         let camera_ubo = &resources.camera_buffers[i];
+        let light_buffer = &resources.light_buffers[i];
         let model_transform_ubo = &resources.model_transform_buffers[i];
         let model_skin_ubo = &resources.model_skin_buffers[i];
 
         let camera_buffer_info = [vk::DescriptorBufferInfo::builder()
             .buffer(camera_ubo.buffer)
+            .offset(0)
+            .range(vk::WHOLE_SIZE)
+            .build()];
+
+        let light_buffer_info = [vk::DescriptorBufferInfo::builder()
+            .buffer(light_buffer.buffer)
             .offset(0)
             .range(vk::WHOLE_SIZE)
             .build()];
@@ -433,19 +562,25 @@ fn create_dynamic_data_descriptor_sets(
         let descriptor_writes = [
             vk::WriteDescriptorSet::builder()
                 .dst_set(*set)
-                .dst_binding(0)
+                .dst_binding(CAMERA_UBO_BINDING)
                 .descriptor_type(vk::DescriptorType::UNIFORM_BUFFER)
                 .buffer_info(&camera_buffer_info)
                 .build(),
             vk::WriteDescriptorSet::builder()
                 .dst_set(*set)
-                .dst_binding(1)
+                .dst_binding(LIGHT_UBO_BINDING)
+                .descriptor_type(vk::DescriptorType::UNIFORM_BUFFER)
+                .buffer_info(&light_buffer_info)
+                .build(),
+            vk::WriteDescriptorSet::builder()
+                .dst_set(*set)
+                .dst_binding(TRANSFORMS_UBO_BINDING)
                 .descriptor_type(vk::DescriptorType::UNIFORM_BUFFER_DYNAMIC)
                 .buffer_info(&model_transform_buffer_info)
                 .build(),
             vk::WriteDescriptorSet::builder()
                 .dst_set(*set)
-                .dst_binding(2)
+                .dst_binding(SKINS_UBO_BINDING)
                 .descriptor_type(vk::DescriptorType::UNIFORM_BUFFER_DYNAMIC)
                 .buffer_info(&model_skin_buffer_info)
                 .build(),
@@ -461,53 +596,22 @@ fn create_dynamic_data_descriptor_sets(
     sets
 }
 
-fn create_dynamic_data_descriptor_set_layout(device: &Device) -> vk::DescriptorSetLayout {
-    let bindings = [
-        vk::DescriptorSetLayoutBinding::builder()
-            .binding(0)
-            .descriptor_type(vk::DescriptorType::UNIFORM_BUFFER)
-            .descriptor_count(1)
-            .stage_flags(vk::ShaderStageFlags::VERTEX | vk::ShaderStageFlags::FRAGMENT)
-            .build(),
-        vk::DescriptorSetLayoutBinding::builder()
-            .binding(1)
-            .descriptor_type(vk::DescriptorType::UNIFORM_BUFFER_DYNAMIC)
-            .descriptor_count(1)
-            .stage_flags(vk::ShaderStageFlags::VERTEX)
-            .build(),
-        vk::DescriptorSetLayoutBinding::builder()
-            .binding(2)
-            .descriptor_type(vk::DescriptorType::UNIFORM_BUFFER_DYNAMIC)
-            .descriptor_count(1)
-            .stage_flags(vk::ShaderStageFlags::VERTEX)
-            .build(),
-    ];
-
-    let layout_info = vk::DescriptorSetLayoutCreateInfo::builder().bindings(&bindings);
-
-    unsafe {
-        device
-            .create_descriptor_set_layout(&layout_info, None)
-            .unwrap()
-    }
-}
-
 fn create_static_data_descriptor_set_layout(device: &Device) -> vk::DescriptorSetLayout {
     let bindings = [
         vk::DescriptorSetLayoutBinding::builder()
-            .binding(3)
+            .binding(IRRADIANCE_SAMPLER_BINDING)
             .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
             .descriptor_count(1)
             .stage_flags(vk::ShaderStageFlags::FRAGMENT)
             .build(),
         vk::DescriptorSetLayoutBinding::builder()
-            .binding(4)
+            .binding(PRE_FILTERED_SAMPLER_BINDING)
             .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
             .descriptor_count(1)
             .stage_flags(vk::ShaderStageFlags::FRAGMENT)
             .build(),
         vk::DescriptorSetLayoutBinding::builder()
-            .binding(5)
+            .binding(BRDF_SAMPLER_BINDING)
             .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
             .descriptor_count(1)
             .stage_flags(vk::ShaderStageFlags::FRAGMENT)
@@ -561,19 +665,19 @@ fn create_static_data_descriptor_sets(
     let descriptor_writes = [
         vk::WriteDescriptorSet::builder()
             .dst_set(set)
-            .dst_binding(3)
+            .dst_binding(IRRADIANCE_SAMPLER_BINDING)
             .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
             .image_info(&irradiance_info)
             .build(),
         vk::WriteDescriptorSet::builder()
             .dst_set(set)
-            .dst_binding(4)
+            .dst_binding(PRE_FILTERED_SAMPLER_BINDING)
             .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
             .image_info(&pre_filtered_info)
             .build(),
         vk::WriteDescriptorSet::builder()
             .dst_set(set)
-            .dst_binding(5)
+            .dst_binding(BRDF_SAMPLER_BINDING)
             .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
             .image_info(&brdf_lookup_info)
             .build(),
@@ -591,31 +695,31 @@ fn create_static_data_descriptor_sets(
 fn create_per_primitive_descriptor_set_layout(device: &Device) -> vk::DescriptorSetLayout {
     let bindings = [
         vk::DescriptorSetLayoutBinding::builder()
-            .binding(6)
+            .binding(COLOR_SAMPLER_BINDING)
             .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
             .descriptor_count(1)
             .stage_flags(vk::ShaderStageFlags::FRAGMENT)
             .build(),
         vk::DescriptorSetLayoutBinding::builder()
-            .binding(7)
+            .binding(NORMALS_SAMPLER_BINDING)
             .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
             .descriptor_count(1)
             .stage_flags(vk::ShaderStageFlags::FRAGMENT)
             .build(),
         vk::DescriptorSetLayoutBinding::builder()
-            .binding(8)
+            .binding(METALLIC_ROUGHNESS_SAMPLER_BINDING)
             .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
             .descriptor_count(1)
             .stage_flags(vk::ShaderStageFlags::FRAGMENT)
             .build(),
         vk::DescriptorSetLayoutBinding::builder()
-            .binding(9)
+            .binding(OCCLUSION_SAMPLER_BINDING)
             .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
             .descriptor_count(1)
             .stage_flags(vk::ShaderStageFlags::FRAGMENT)
             .build(),
         vk::DescriptorSetLayoutBinding::builder()
-            .binding(10)
+            .binding(EMISSIVE_SAMPLER_BINDING)
             .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
             .descriptor_count(1)
             .stage_flags(vk::ShaderStageFlags::FRAGMENT)
@@ -706,31 +810,31 @@ fn create_per_primitive_descriptor_sets(
             let descriptor_writes = [
                 vk::WriteDescriptorSet::builder()
                     .dst_set(set)
-                    .dst_binding(6)
+                    .dst_binding(COLOR_SAMPLER_BINDING)
                     .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
                     .image_info(&albedo_info)
                     .build(),
                 vk::WriteDescriptorSet::builder()
                     .dst_set(set)
-                    .dst_binding(7)
+                    .dst_binding(NORMALS_SAMPLER_BINDING)
                     .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
                     .image_info(&normals_info)
                     .build(),
                 vk::WriteDescriptorSet::builder()
                     .dst_set(set)
-                    .dst_binding(8)
+                    .dst_binding(METALLIC_ROUGHNESS_SAMPLER_BINDING)
                     .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
                     .image_info(&metallic_roughness_info)
                     .build(),
                 vk::WriteDescriptorSet::builder()
                     .dst_set(set)
-                    .dst_binding(9)
+                    .dst_binding(OCCLUSION_SAMPLER_BINDING)
                     .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
                     .image_info(&occlusion_info)
                     .build(),
                 vk::WriteDescriptorSet::builder()
                     .dst_set(set)
-                    .dst_binding(10)
+                    .dst_binding(EMISSIVE_SAMPLER_BINDING)
                     .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
                     .image_info(&emissive_info)
                     .build(),
@@ -771,7 +875,10 @@ fn create_opaque_pipeline(
     msaa_samples: vk::SampleCountFlags,
     render_pass: vk::RenderPass,
     layout: vk::PipelineLayout,
+    model: &Model,
 ) -> vk::Pipeline {
+    let (specialization_info, _map_entries, _data) = create_model_frag_shader_specialization(model);
+
     let depth_stencil_info = vk::PipelineDepthStencilStateCreateInfo::builder()
         .depth_test_enable(true)
         .depth_write_enable(true)
@@ -797,6 +904,8 @@ fn create_opaque_pipeline(
         context,
         RendererPipelineParameters {
             shader_name: "model",
+            vertex_shader_specialization: None,
+            fragment_shader_specialization: Some(&specialization_info),
             swapchain_properties,
             msaa_samples,
             render_pass,
@@ -815,7 +924,10 @@ fn create_transparent_pipeline(
     render_pass: vk::RenderPass,
     layout: vk::PipelineLayout,
     parent: vk::Pipeline,
+    model: &Model,
 ) -> vk::Pipeline {
+    let (specialization_info, _map_entries, _data) = create_model_frag_shader_specialization(model);
+
     let depth_stencil_info = vk::PipelineDepthStencilStateCreateInfo::builder()
         .depth_test_enable(true)
         .depth_write_enable(false)
@@ -841,6 +953,8 @@ fn create_transparent_pipeline(
         context,
         RendererPipelineParameters {
             shader_name: "model",
+            vertex_shader_specialization: None,
+            fragment_shader_specialization: Some(&specialization_info),
             swapchain_properties,
             msaa_samples,
             render_pass,
@@ -850,6 +964,36 @@ fn create_transparent_pipeline(
             parent: Some(parent),
         },
     )
+}
+
+fn create_model_frag_shader_specialization(
+    model: &Model,
+) -> (
+    vk::SpecializationInfo,
+    Vec<vk::SpecializationMapEntry>,
+    Vec<u8>,
+) {
+    let map_entries = vec![vk::SpecializationMapEntry {
+        constant_id: 0,
+        offset: 0,
+        size: size_of::<u32>(),
+    }];
+
+    let light_count = model
+        .nodes()
+        .nodes()
+        .iter()
+        .filter(|n| n.light_index().is_some())
+        .count() as u32;
+
+    let data = Vec::from(unsafe { any_as_u8_slice(&[light_count]) });
+
+    let specialization_info = vk::SpecializationInfo::builder()
+        .map_entries(&map_entries)
+        .data(&data)
+        .build();
+
+    (specialization_info, map_entries, data)
 }
 
 fn register_model_draw_commands<F>(
@@ -883,7 +1027,7 @@ fn register_model_draw_commands<F>(
                 command_buffer,
                 vk::PipelineBindPoint::GRAPHICS,
                 pipeline_layout,
-                0,
+                DYNAMIC_DATA_SET_INDEX,
                 &dynamic_descriptors,
                 &[
                     model_transform_ubo_offset * index as u32,
@@ -901,7 +1045,7 @@ fn register_model_draw_commands<F>(
                     command_buffer,
                     vk::PipelineBindPoint::GRAPHICS,
                     pipeline_layout,
-                    2,
+                    PER_PRIMITIVE_DATA_SET_INDEX,
                     &per_primitive_descriptors[primitive_index..=primitive_index],
                     &[],
                 )
@@ -965,6 +1109,68 @@ fn register_model_draw_commands<F>(
                     };
                 }
             }
+        }
+    }
+}
+
+#[derive(Copy, Clone, Debug)]
+#[repr(C)]
+struct LightUniform {
+    position: [f32; 4],
+    direction: [f32; 4],
+    color: [f32; 4],
+    intensity: f32,
+    range: f32,
+    angle_scale: f32,
+    angle_offset: f32,
+    light_type: u32,
+    pad: [u32; 3],
+}
+
+impl From<(Matrix4<f32>, Light)> for LightUniform {
+    fn from((transform, light): (Matrix4<f32>, Light)) -> Self {
+        let position = [transform.w.x, transform.w.y, transform.w.z, 0.0];
+
+        let direction = (transform * Vector4::from(DEFAULT_LIGHT_DIRECTION))
+            .normalize()
+            .into();
+
+        let color = light.color();
+        let color = [color[0], color[1], color[2], 0.0];
+
+        let intensity = light.intensity();
+
+        let range = light.range().unwrap_or(-1.0);
+
+        let (angle_scale, angle_offset) = match light.light_type() {
+            Type::Spot {
+                inner_cone_angle,
+                outer_cone_angle,
+            } => {
+                let outer_cos = outer_cone_angle.cos();
+                let angle_scale = 1.0 / math::max(0.001, inner_cone_angle.cos() - outer_cos);
+                let angle_offset = -outer_cos * angle_scale;
+                (angle_scale, angle_offset)
+            }
+            _ => (-1.0, -1.0),
+        };
+
+        let light_type = match light.light_type() {
+            Type::Directional => DIRECTIONAL_LIGHT_TYPE,
+            Type::Point => POINT_LIGHT_TYPE,
+            Type::Spot { .. } => SPOT_LIGHT_TYPE,
+        };
+
+        Self {
+            position,
+            direction,
+            color,
+            intensity,
+            range,
+            angle_scale,
+            angle_offset,
+            light_type,
+            pad: [0, 0, 0],
         }
     }
 }

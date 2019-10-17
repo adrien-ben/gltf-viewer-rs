@@ -271,6 +271,8 @@ fn create_skybox_pipeline(
         context,
         RendererPipelineParameters {
             shader_name: "skybox",
+            vertex_shader_specialization: None,
+            fragment_shader_specialization: None,
             swapchain_properties,
             msaa_samples,
             render_pass,

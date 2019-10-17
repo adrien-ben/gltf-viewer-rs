@@ -58,6 +58,22 @@ pub fn clamp<T: PartialOrd>(value: T, min: T, max: T) -> T {
     }
 }
 
+/// Returns the min value of two PartialOrd values.
+pub fn min<S: PartialOrd>(v1: S, v2: S) -> S {
+    match v1.partial_cmp(&v2) {
+        Some(Ordering::Less) => v1,
+        _ => v2,
+    }
+}
+
+/// Returns the max value of two PartialOrd values.
+pub fn max<S: PartialOrd>(v1: S, v2: S) -> S {
+    match v1.partial_cmp(&v2) {
+        Some(Ordering::Greater) => v1,
+        _ => v2,
+    }
+}
+
 /// Return the partial minimum from an Iterator of PartialOrd if it exists.
 pub fn partial_min<I, S>(iter: I) -> Option<S>
 where

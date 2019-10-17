@@ -10,6 +10,25 @@
 // #define DEBUG_ALPHA 7
 // # define DEBUG_UVS 8
 
+// -- Constants --
+layout(constant_id = 0) const uint LIGHT_COUNT = 1;
+
+const vec3 DIELECTRIC_SPECULAR = vec3(0.04);
+const vec3 BLACK = vec3(0.0);
+const float PI = 3.14159;
+
+const uint NO_TEXTURE_ID = 255;
+
+const uint ALPHA_MODE_MASK = 1;
+const uint ALPHA_MODE_BLEND = 2;
+
+const float MAX_REFLECTION_LOD = 9.0; // last mip mips for 512 px res TODO: specializations ?
+
+const uint DIRECTIONAL_LIGHT_TYPE = 0;
+const uint POINT_LIGHT_TYPE = 1;
+const uint SPOT_LIGHT_TYPE = 2;
+
+// -- Structures --
 struct TextureIds {
     uint color;
     uint metallicRoughness;
@@ -18,12 +37,25 @@ struct TextureIds {
     uint occlusion;
 };
 
+struct Light {
+    vec4 position;
+    vec4 direction;
+    vec4 color;
+    float intensity;
+    float range;
+    float angleScale;
+    float angleOffset;
+    uint type;
+};
+
+// -- Inputs --
 layout(location = 0) in vec3 oNormals;
 layout(location = 1) in vec2 oTexcoords;
 layout(location = 2) in vec3 oPositions;
 layout(location = 3) in vec4 oColors;
 layout(location = 4) in mat3 oTBN;
 
+// -- Push constants
 layout(push_constant) uniform Material {
     vec4 color;
     vec4 emissiveAndRoughness;
@@ -36,29 +68,26 @@ layout(push_constant) uniform Material {
     float alphaCutoff;
 } material;
 
+// -- Descriptors --
 layout(binding = 0, set = 0) uniform Camera {
     mat4 view;
     mat4 proj;
     vec3 eye;    
 } cameraUBO;
-layout(binding = 3, set = 1) uniform samplerCube irradianceMapSampler;
-layout(binding = 4, set = 1) uniform samplerCube preFilteredSampler;
-layout(binding = 5, set = 1) uniform sampler2D brdfLookupSampler;
-layout(binding = 6, set = 2) uniform sampler2D colorSampler;
-layout(binding = 7, set = 2) uniform sampler2D normalsSampler;
-layout(binding = 8, set = 2) uniform sampler2D metallicRoughnessSampler;
-layout(binding = 9, set = 2) uniform sampler2D occlusionSampler;
-layout(binding = 10, set = 2) uniform sampler2D emissiveSampler;
+layout(binding = 1, set = 0) uniform Lights {
+    Light lights[LIGHT_COUNT];
+} lights;
+layout(binding = 4, set = 1) uniform samplerCube irradianceMapSampler;
+layout(binding = 5, set = 1) uniform samplerCube preFilteredSampler;
+layout(binding = 6, set = 1) uniform sampler2D brdfLookupSampler;
+layout(binding = 7, set = 2) uniform sampler2D colorSampler;
+layout(binding = 8, set = 2) uniform sampler2D normalsSampler;
+layout(binding = 9, set = 2) uniform sampler2D metallicRoughnessSampler;
+layout(binding = 10, set = 2) uniform sampler2D occlusionSampler;
+layout(binding = 11, set = 2) uniform sampler2D emissiveSampler;
 
+// Output
 layout(location = 0) out vec4 outColor;
-
-const vec3 DIELECTRIC_SPECULAR = vec3(0.04);
-const vec3 BLACK = vec3(0.0);
-const float PI = 3.14159;
-const uint NO_TEXTURE_ID = 255;
-const uint ALPHA_MODE_MASK = 1;
-const uint ALPHA_MODE_BLEND = 2;
-const float MAX_REFLECTION_LOD = 9.0; // last mip mips for 512 px res TODO: specializations ?
 
 TextureIds getTextureIds() {
     return TextureIds(
@@ -162,7 +191,14 @@ float d(float a, vec3 n, vec3 h) {
     return aa / (PI * denom * denom);
 }
 
-vec3 computeColor(vec3 baseColor, float metallic, float roughness, vec3 n, vec3 l, vec3 v, vec3 h) {
+float computeAttenuation(float distance, float range) {
+    if (range < 0.0) {
+        return 1.0;
+    }
+    return max(min(1.0 - pow(distance / range, 4.0), 1.0), 0.0) / pow(distance, 2.0);
+}
+
+vec3 computeColor(vec3 baseColor, float metallic, float roughness, vec3 n, vec3 l, vec3 v, vec3 h, vec3 lightColor, float lightIntensity) {
     vec3 color = vec3(0.0);
     if (dot(n, l) > 0.0 || dot(n, v) > 0.0) {
         vec3 cDiffuse = mix(baseColor * (1.0 - DIELECTRIC_SPECULAR.r), BLACK, metallic);
@@ -176,9 +212,43 @@ vec3 computeColor(vec3 baseColor, float metallic, float roughness, vec3 n, vec3 
         vec3 diffuse = cDiffuse / PI;
         vec3 fDiffuse = (1 - f) * diffuse;
         vec3 fSpecular = max(f * vis * d, 0.0);
-        color = max(dot(n, l), 0.0) * (fDiffuse + fSpecular);
+        color = max(dot(n, l), 0.0) * (fDiffuse + fSpecular) * lightColor * lightIntensity;
     }
     return color;
+}
+
+vec3 computeDirectionalLight(Light light, vec3 baseColor, float metallic, float roughness, vec3 n, vec3 v) {
+    vec3 l = -normalize(light.direction.xyz);
+    vec3 h = normalize(l + v);
+    return computeColor(baseColor.rgb, metallic, roughness, n, l, v, h, light.color.rgb, light.intensity);
+}
+
+vec3 computePointLight(Light light, vec3 baseColor, float metallic, float roughness, vec3 n, vec3 v) {
+    vec3 toLight = light.position.xyz - oPositions;
+    float distance = length(toLight);
+    vec3 l = normalize(toLight);
+    vec3 h = normalize(l + v);
+
+    float attenuation = computeAttenuation(distance, light.range);
+
+    return computeColor(baseColor.rgb, metallic, roughness, n, l, v, h, light.color.rgb, light.intensity * attenuation);
+}
+
+vec3 computeSpotLight(Light light, vec3 baseColor, float metallic, float roughness, vec3 n, vec3 v) {
+    vec3 invLightDir = -normalize(light.direction.xyz);
+
+    vec3 toLight = light.position.xyz - oPositions;
+    float distance = length(toLight);
+    vec3 l = normalize(toLight);
+    vec3 h = normalize(l + v);
+
+    float attenuation = computeAttenuation(distance, light.range);
+
+    float cd = dot(invLightDir, l);
+    float angularAttenuation = max(0.0, cd * light.angleScale + light.angleOffset);
+    angularAttenuation *= angularAttenuation;
+
+    return computeColor(baseColor.rgb, metallic, roughness, n, l, v, h, light.color.rgb, light.intensity * attenuation * angularAttenuation);
 }
 
 vec3 prefilteredReflectionLinear(vec3 R, float roughness) {
@@ -229,6 +299,20 @@ void main() {
     vec3 v = normalize(cameraUBO.eye - oPositions);
 
     vec3 color = vec3(0.0);
+
+    for (int i = 0; i < LIGHT_COUNT; i++) {
+
+        Light light = lights.lights[i];
+        uint lightType = light.type;
+
+        if (lightType == DIRECTIONAL_LIGHT_TYPE) {
+            color += computeDirectionalLight(light, baseColor.rgb, metallic, roughness, n, v);
+        } else if (lightType == POINT_LIGHT_TYPE) {
+            color += computePointLight(light, baseColor.rgb, metallic, roughness, n, v);
+        } else if (lightType == SPOT_LIGHT_TYPE) {
+            color += computeSpotLight(light, baseColor.rgb, metallic, roughness, n, v);
+        }
+    }
 
     vec3 ambient = computeIBL(baseColor.rgb, v, n, metallic, roughness);
 

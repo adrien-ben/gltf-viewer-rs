@@ -29,7 +29,7 @@ using [Ash][2]. It runs on Window, Linux and MacOS.
     - [x] Linear
     - [x] Cubicspline
 - [ ] Support some extensions
-  - [ ] KHR_lights_punctual
+  - [x] KHR_lights_punctual
   - [ ] KHR_draco_mesh_compression
   - [ ] KHR_materials_unlit
 - [ ] Camera controls
