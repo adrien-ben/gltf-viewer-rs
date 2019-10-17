@@ -15,11 +15,11 @@ layout(binding = 0, set = 0) uniform CameraUBO {
      vec3 eye;
 } cameraUBO;
 
-layout(binding = 2, set = 0) uniform TransformUBO {
+layout(binding = 3, set = 0) uniform TransformUBO {
     mat4 matrix;
 } transform;
 
-layout(binding = 3, set = 0) uniform SkinUBO {
+layout(binding = 4, set = 0) uniform SkinUBO {
     mat4 jointMatrices[128];
 } skin;
 

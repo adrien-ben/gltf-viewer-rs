@@ -13,16 +13,17 @@ const PER_PRIMITIVE_DATA_SET_INDEX: u32 = 2;
 
 const CAMERA_UBO_BINDING: u32 = 0;
 const DIRECTIONAL_LIGHT_UBO_BINDING: u32 = 1;
-const TRANSFORMS_UBO_BINDING: u32 = 2;
-const SKINS_UBO_BINDING: u32 = 3;
-const IRRADIANCE_SAMPLER_BINDING: u32 = 4;
-const PRE_FILTERED_SAMPLER_BINDING: u32 = 5;
-const BRDF_SAMPLER_BINDING: u32 = 6;
-const COLOR_SAMPLER_BINDING: u32 = 7;
-const NORMALS_SAMPLER_BINDING: u32 = 8;
-const METALLIC_ROUGHNESS_SAMPLER_BINDING: u32 = 9;
-const OCCLUSION_SAMPLER_BINDING: u32 = 10;
-const EMISSIVE_SAMPLER_BINDING: u32 = 11;
+const POINT_LIGHT_UBO_BINDING: u32 = 2;
+const TRANSFORMS_UBO_BINDING: u32 = 3;
+const SKINS_UBO_BINDING: u32 = 4;
+const IRRADIANCE_SAMPLER_BINDING: u32 = 5;
+const PRE_FILTERED_SAMPLER_BINDING: u32 = 6;
+const BRDF_SAMPLER_BINDING: u32 = 7;
+const COLOR_SAMPLER_BINDING: u32 = 8;
+const NORMALS_SAMPLER_BINDING: u32 = 9;
+const METALLIC_ROUGHNESS_SAMPLER_BINDING: u32 = 10;
+const OCCLUSION_SAMPLER_BINDING: u32 = 11;
+const EMISSIVE_SAMPLER_BINDING: u32 = 12;
 
 const DEFAULT_LIGHT_DIRECTION: [f32; 4] = [0.0, 0.0, -1.0, 0.0];
 
@@ -36,6 +37,7 @@ pub struct ModelRenderer {
     skin_ubos: Vec<Buffer>,
     skin_matrices: Vec<Vec<JointsBuffer>>,
     directional_light_buffers: Vec<Buffer>,
+    point_light_buffers: Vec<Buffer>,
     descriptors: Descriptors,
     pipeline_layout: vk::PipelineLayout,
     opaque_pipeline: vk::Pipeline,
@@ -58,8 +60,18 @@ impl ModelRenderer {
         let transform_ubos = create_transform_ubos(&context, &model, swapchain_props.image_count);
         let (skin_ubos, skin_matrices) =
             create_skin_ubos(&context, &model, swapchain_props.image_count);
-        let directional_light_buffers =
-            create_directional_lights_ubos(&context, &model, swapchain_props.image_count);
+        let directional_light_buffers = create_lights_ubos::<DirectionalLightUniform>(
+            &context,
+            &model,
+            Type::Directional,
+            swapchain_props.image_count,
+        );
+        let point_light_buffers = create_lights_ubos::<PointLightUniform>(
+            &context,
+            &model,
+            Type::Point,
+            swapchain_props.image_count,
+        );
 
         let descriptors = create_descriptors(
             &context,
@@ -68,6 +80,7 @@ impl ModelRenderer {
                 model_transform_buffers: &transform_ubos,
                 model_skin_buffers: &skin_ubos,
                 directional_light_buffers: &directional_light_buffers,
+                point_light_buffers: &point_light_buffers,
                 dummy_texture: &dummy_texture,
                 environment,
                 model: &model,
@@ -100,6 +113,7 @@ impl ModelRenderer {
             skin_ubos,
             skin_matrices,
             directional_light_buffers,
+            point_light_buffers,
             descriptors,
             pipeline_layout,
             opaque_pipeline,
@@ -185,7 +199,7 @@ impl ModelRenderer {
             }
         }
 
-        // Update light buffers
+        // Update directional light buffers
         {
             let model = &self.model;
 
@@ -215,6 +229,41 @@ impl ModelRenderer {
 
             if !uniforms.is_empty() {
                 let buffer = &mut self.directional_light_buffers[frame_index];
+                let data_ptr = buffer.map_memory();
+                unsafe { mem_copy(data_ptr, &uniforms) };
+            }
+        }
+
+        // Update point light buffers
+        {
+            let model = &self.model;
+
+            let uniforms = model
+                .nodes()
+                .nodes()
+                .iter()
+                .filter(|n| match n.light_index() {
+                    Some(i) if model.lights()[i].light_type() == Type::Point => true,
+                    _ => false,
+                })
+                .map(|n| (n.transform(), n.light_index().unwrap()))
+                .map(|(t, i)| (t, model.lights()[i]))
+                .map(|(t, l)| {
+                    let position = [t.w.x, t.w.y, t.w.z, 0.0];
+                    let color = l.color();
+
+                    PointLightUniform {
+                        position,
+                        color: [color[0], color[1], color[2], 0.0],
+                        intensity: l.intensity(),
+                        range: l.range().unwrap_or(-1.0),
+                        pad: [0.0, 0.0],
+                    }
+                })
+                .collect::<Vec<_>>();
+
+            if !uniforms.is_empty() {
+                let buffer = &mut self.point_light_buffers[frame_index];
                 let data_ptr = buffer.map_memory();
                 unsafe { mem_copy(data_ptr, &uniforms) };
             }
@@ -345,25 +394,25 @@ fn create_skin_ubos(
     (buffers, matrices)
 }
 
-fn create_directional_lights_ubos(
+fn create_lights_ubos<T>(
     context: &Arc<Context>,
     model: &Model,
+    light_type: Type,
     count: u32,
 ) -> Vec<Buffer> {
-    let directional_light_count = model
+    let light_count = model
         .nodes()
         .nodes()
         .iter()
         .filter(|n| match n.light_index() {
-            Some(i) if model.lights()[i].light_type() == Type::Directional => true,
+            Some(i) if model.lights()[i].light_type() == light_type => true,
             _ => false,
         })
         .count();
 
     // Buffer size cannot be 0 so we allocate at least anough space for one light
     // Probably a bad idea but I'd rather avoid creating a specific shader
-    let buffer_size =
-        std::cmp::max(1, directional_light_count) * size_of::<DirectionalLightUniform>();
+    let buffer_size = std::cmp::max(1, light_count) * size_of::<T>();
 
     (0..count)
         .map(|_| {
@@ -383,6 +432,7 @@ struct DescriptorsResources<'a> {
     model_transform_buffers: &'a [Buffer],
     model_skin_buffers: &'a [Buffer],
     directional_light_buffers: &'a [Buffer],
+    point_light_buffers: &'a [Buffer],
     dummy_texture: &'a Texture,
     environment: &'a Environment,
     model: &'a Model,
@@ -473,7 +523,7 @@ fn create_descriptor_pool(
     let pool_sizes = [
         vk::DescriptorPoolSize {
             ty: vk::DescriptorType::UNIFORM_BUFFER,
-            descriptor_count: descriptor_count * 2,
+            descriptor_count: descriptor_count * 3,
         },
         vk::DescriptorPoolSize {
             ty: vk::DescriptorType::UNIFORM_BUFFER_DYNAMIC,
@@ -502,6 +552,12 @@ fn create_dynamic_data_descriptor_set_layout(device: &Device) -> vk::DescriptorS
             .build(),
         vk::DescriptorSetLayoutBinding::builder()
             .binding(DIRECTIONAL_LIGHT_UBO_BINDING)
+            .descriptor_type(vk::DescriptorType::UNIFORM_BUFFER)
+            .descriptor_count(1)
+            .stage_flags(vk::ShaderStageFlags::FRAGMENT)
+            .build(),
+        vk::DescriptorSetLayoutBinding::builder()
+            .binding(POINT_LIGHT_UBO_BINDING)
             .descriptor_type(vk::DescriptorType::UNIFORM_BUFFER)
             .descriptor_count(1)
             .stage_flags(vk::ShaderStageFlags::FRAGMENT)
@@ -552,6 +608,7 @@ fn create_dynamic_data_descriptor_sets(
     sets.iter().enumerate().for_each(|(i, set)| {
         let camera_ubo = &resources.camera_buffers[i];
         let directional_light_buffer = &resources.directional_light_buffers[i];
+        let point_light_buffer = &resources.point_light_buffers[i];
         let model_transform_ubo = &resources.model_transform_buffers[i];
         let model_skin_ubo = &resources.model_skin_buffers[i];
 
@@ -563,6 +620,12 @@ fn create_dynamic_data_descriptor_sets(
 
         let directional_light_buffer_info = [vk::DescriptorBufferInfo::builder()
             .buffer(directional_light_buffer.buffer)
+            .offset(0)
+            .range(vk::WHOLE_SIZE)
+            .build()];
+
+        let point_light_buffer_info = [vk::DescriptorBufferInfo::builder()
+            .buffer(point_light_buffer.buffer)
             .offset(0)
             .range(vk::WHOLE_SIZE)
             .build()];
@@ -591,6 +654,12 @@ fn create_dynamic_data_descriptor_sets(
                 .dst_binding(DIRECTIONAL_LIGHT_UBO_BINDING)
                 .descriptor_type(vk::DescriptorType::UNIFORM_BUFFER)
                 .buffer_info(&directional_light_buffer_info)
+                .build(),
+            vk::WriteDescriptorSet::builder()
+                .dst_set(*set)
+                .dst_binding(POINT_LIGHT_UBO_BINDING)
+                .descriptor_type(vk::DescriptorType::UNIFORM_BUFFER)
+                .buffer_info(&point_light_buffer_info)
                 .build(),
             vk::WriteDescriptorSet::builder()
                 .dst_set(*set)
@@ -993,11 +1062,18 @@ fn create_model_frag_shader_specialization(
     Vec<vk::SpecializationMapEntry>,
     Vec<u8>,
 ) {
-    let map_entries = vec![vk::SpecializationMapEntry {
-        constant_id: 0,
-        offset: 0,
-        size: size_of::<u32>(),
-    }];
+    let map_entries = vec![
+        vk::SpecializationMapEntry {
+            constant_id: 0,
+            offset: 0,
+            size: size_of::<u32>(),
+        },
+        vk::SpecializationMapEntry {
+            constant_id: 1,
+            offset: size_of::<u32>() as _,
+            size: size_of::<u32>(),
+        },
+    ];
 
     let directional_light_count = model
         .nodes()
@@ -1009,7 +1085,19 @@ fn create_model_frag_shader_specialization(
         })
         .count() as u32;
 
-    let data = Vec::from(unsafe { any_as_u8_slice(&[directional_light_count]) });
+    let point_light_count = model
+        .nodes()
+        .nodes()
+        .iter()
+        .filter(|n| match n.light_index() {
+            Some(i) if model.lights()[i].light_type() == Type::Directional => true,
+            _ => false,
+        })
+        .count() as u32;
+
+    let mut data = Vec::new();
+    data.extend_from_slice(unsafe { any_as_u8_slice(&[directional_light_count]) });
+    data.extend_from_slice(unsafe { any_as_u8_slice(&[point_light_count]) });
 
     let specialization_info = vk::SpecializationInfo::builder()
         .map_entries(&map_entries)
@@ -1143,4 +1231,14 @@ struct DirectionalLightUniform {
     color: [f32; 4],
     intensity: f32,
     pad: [f32; 3],
+}
+
+#[derive(Copy, Clone, Debug)]
+#[repr(C)]
+struct PointLightUniform {
+    position: [f32; 4],
+    color: [f32; 4],
+    intensity: f32,
+    range: f32,
+    pad: [f32; 2],
 }

@@ -11,6 +11,7 @@
 // # define DEBUG_UVS 8
 
 layout(constant_id = 0) const uint MAX_DIRECTIONAL_LIGHTS = 1;
+layout(constant_id = 1) const uint MAX_POINT_LIGHTS = 1;
 const vec3 DIELECTRIC_SPECULAR = vec3(0.04);
 const vec3 BLACK = vec3(0.0);
 const float PI = 3.14159;
@@ -31,6 +32,13 @@ struct DirectionalLight {
     vec4 direction;
     vec4 color;
     float intensity;
+};
+
+struct PointLight {
+    vec4 position;
+    vec4 color;
+    float intensity;
+    float range;
 };
 
 layout(location = 0) in vec3 oNormals;
@@ -60,14 +68,17 @@ layout(binding = 0, set = 0) uniform Camera {
 layout(binding = 1, set = 0) uniform DirectionalLights {
     DirectionalLight lights[MAX_DIRECTIONAL_LIGHTS];
 } directionalLights;
-layout(binding = 4, set = 1) uniform samplerCube irradianceMapSampler;
-layout(binding = 5, set = 1) uniform samplerCube preFilteredSampler;
-layout(binding = 6, set = 1) uniform sampler2D brdfLookupSampler;
-layout(binding = 7, set = 2) uniform sampler2D colorSampler;
-layout(binding = 8, set = 2) uniform sampler2D normalsSampler;
-layout(binding = 9, set = 2) uniform sampler2D metallicRoughnessSampler;
-layout(binding = 10, set = 2) uniform sampler2D occlusionSampler;
-layout(binding = 11, set = 2) uniform sampler2D emissiveSampler;
+layout(binding = 2, set = 0) uniform PointLights {
+    PointLight lights[MAX_POINT_LIGHTS];
+} pointLights;
+layout(binding = 5, set = 1) uniform samplerCube irradianceMapSampler;
+layout(binding = 6, set = 1) uniform samplerCube preFilteredSampler;
+layout(binding = 7, set = 1) uniform sampler2D brdfLookupSampler;
+layout(binding = 8, set = 2) uniform sampler2D colorSampler;
+layout(binding = 9, set = 2) uniform sampler2D normalsSampler;
+layout(binding = 10, set = 2) uniform sampler2D metallicRoughnessSampler;
+layout(binding = 11, set = 2) uniform sampler2D occlusionSampler;
+layout(binding = 12, set = 2) uniform sampler2D emissiveSampler;
 
 // Output
 layout(location = 0) out vec4 outColor;
@@ -249,6 +260,26 @@ void main() {
         vec3 l = -normalize(directionalLights.lights[i].direction.xyz);
         vec3 h = normalize(l + v);
         color += computeColor(baseColor.rgb, metallic, roughness, n, l, v, h, lightColor, lightIntensity);
+    }
+
+    // Point lights
+    for (int i = 0; i < MAX_POINT_LIGHTS; i++) {
+        float lightIntensity = pointLights.lights[i].intensity;
+        vec3 lightColor = pointLights.lights[i].color.rgb;
+        vec3 lightPosition = pointLights.lights[i].position.xyz;
+        float lightRange = pointLights.lights[i].range;
+
+        vec3 toLight = lightPosition - oPositions;
+        float distance = length(toLight);
+        vec3 l = normalize(toLight);
+        vec3 h = normalize(l + v);
+
+        float attenuation = 1.0;
+        if (lightRange >= 0.0) {
+            attenuation = max(min(1.0 - pow(distance / lightRange, 4.0), 1.0), 0.0) / pow(distance, 2.0);
+        }
+
+        color += computeColor(baseColor.rgb, metallic, roughness, n, l, v, h, lightColor, lightIntensity * attenuation);
     }
 
     vec3 ambient = computeIBL(baseColor.rgb, v, n, metallic, roughness);
