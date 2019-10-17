@@ -379,30 +379,6 @@ pub struct Descriptors {
     per_primitive_sets: Vec<vk::DescriptorSet>,
 }
 
-impl Descriptors {
-    pub fn new(
-        context: Arc<Context>,
-        pool: vk::DescriptorPool,
-        dynamic_data_layout: vk::DescriptorSetLayout,
-        dynamic_data_sets: Vec<vk::DescriptorSet>,
-        static_data_layout: vk::DescriptorSetLayout,
-        static_data_set: vk::DescriptorSet,
-        per_primitive_layout: vk::DescriptorSetLayout,
-        per_primitive_sets: Vec<vk::DescriptorSet>,
-    ) -> Self {
-        Self {
-            context,
-            pool,
-            dynamic_data_layout,
-            dynamic_data_sets,
-            static_data_layout,
-            static_data_set,
-            per_primitive_layout,
-            per_primitive_sets,
-        }
-    }
-}
-
 impl Drop for Descriptors {
     fn drop(&mut self) {
         let device = self.context.device();
@@ -423,23 +399,23 @@ fn create_descriptors(context: &Arc<Context>, resources: DescriptorsResources) -
         create_dynamic_data_descriptor_sets(context, pool, dynamic_data_layout, resources);
 
     let static_data_layout = create_static_data_descriptor_set_layout(context.device());
-    let static_data_sets =
+    let static_data_set =
         create_static_data_descriptor_sets(context, pool, static_data_layout, resources);
 
     let per_primitive_layout = create_per_primitive_descriptor_set_layout(context.device());
     let per_primitive_sets =
         create_per_primitive_descriptor_sets(context, pool, per_primitive_layout, resources);
 
-    Descriptors::new(
-        Arc::clone(context),
+    Descriptors {
+        context: Arc::clone(context),
         pool,
         dynamic_data_layout,
         dynamic_data_sets,
         static_data_layout,
-        static_data_sets,
+        static_data_set,
         per_primitive_layout,
         per_primitive_sets,
-    )
+    }
 }
 
 fn create_descriptor_pool(

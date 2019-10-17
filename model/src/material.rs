@@ -158,11 +158,10 @@ impl<'a> From<Material> for MaterialUniform {
         let normal_texture_id = material
             .normals_texture_id
             .map_or(NO_TEXTURE_ID, |i| i as u32);
-        let color_metallicroughness_emissive_normal_texture_ids = (u32::from(color_texture_id)
-            << 24)
-            | (u32::from(metallic_roughness_texture_id) << 16)
-            | (u32::from(emissive_texture_id) << 8)
-            | u32::from(normal_texture_id);
+        let color_metallicroughness_emissive_normal_texture_ids = (color_texture_id << 24)
+            | (metallic_roughness_texture_id << 16)
+            | (emissive_texture_id << 8)
+            | normal_texture_id;
 
         let occlusion = material.occlusion;
         let occlusion_texture_id = material
