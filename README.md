@@ -28,7 +28,7 @@ using [Ash][2]. It runs on Window, Linux and MacOS.
     - [x] Step
     - [x] Linear
     - [x] Cubicspline
-- [ ] Support some extensions
+- [ ] Extensions
   - [x] KHR_lights_punctual
   - [ ] KHR_draco_mesh_compression
   - [ ] KHR_materials_unlit
@@ -96,7 +96,10 @@ HDRi textures have been downloaded from [hdriheaven][5].
 
 ## Screenshots
 
+![Cesium](images/cesium.gif "Cesium")
+
 |![Woods](images/helmet_woods.png "Woods")|![Sand](images/helmet_sand.png "Sand")|![Night](images/helmet_night.png "Night")|
 |---|---|---|
 |![Indoor](images/helmet_indoor.png "Indoor")|![Env](images/env.png "Env")|![Corset](images/corset.png "Corset")|
 |![MG08](images/mg08.png "MG08")|![Flight](images/flight_helmet.png "Flight Helmet")|![Junkrat](images/junkrat.png "Junkrat")|
+
