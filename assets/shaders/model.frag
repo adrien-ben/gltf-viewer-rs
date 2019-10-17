@@ -10,17 +10,25 @@
 // #define DEBUG_ALPHA 7
 // # define DEBUG_UVS 8
 
-layout(constant_id = 0) const uint MAX_DIRECTIONAL_LIGHTS = 1;
-layout(constant_id = 1) const uint MAX_POINT_LIGHTS = 1;
-layout(constant_id = 2) const uint MAX_SPOT_LIGHTS = 1;
+// -- Constants --
+layout(constant_id = 0) const uint LIGHT_COUNT = 1;
+
 const vec3 DIELECTRIC_SPECULAR = vec3(0.04);
 const vec3 BLACK = vec3(0.0);
 const float PI = 3.14159;
+
 const uint NO_TEXTURE_ID = 255;
+
 const uint ALPHA_MODE_MASK = 1;
 const uint ALPHA_MODE_BLEND = 2;
+
 const float MAX_REFLECTION_LOD = 9.0; // last mip mips for 512 px res TODO: specializations ?
 
+const uint DIRECTIONAL_LIGHT_TYPE = 0;
+const uint POINT_LIGHT_TYPE = 1;
+const uint SPOT_LIGHT_TYPE = 2;
+
+// -- Structures --
 struct TextureIds {
     uint color;
     uint metallicRoughness;
@@ -29,20 +37,7 @@ struct TextureIds {
     uint occlusion;
 };
 
-struct DirectionalLight {
-    vec4 direction;
-    vec4 color;
-    float intensity;
-};
-
-struct PointLight {
-    vec4 position;
-    vec4 color;
-    float intensity;
-    float range;
-};
-
-struct SpotLight {
+struct Light {
     vec4 position;
     vec4 direction;
     vec4 color;
@@ -50,14 +45,17 @@ struct SpotLight {
     float range;
     float angleScale;
     float angleOffset;
+    uint type;
 };
 
+// -- Inputs --
 layout(location = 0) in vec3 oNormals;
 layout(location = 1) in vec2 oTexcoords;
 layout(location = 2) in vec3 oPositions;
 layout(location = 3) in vec4 oColors;
 layout(location = 4) in mat3 oTBN;
 
+// -- Push constants
 layout(push_constant) uniform Material {
     vec4 color;
     vec4 emissiveAndRoughness;
@@ -76,23 +74,17 @@ layout(binding = 0, set = 0) uniform Camera {
     mat4 proj;
     vec3 eye;    
 } cameraUBO;
-layout(binding = 1, set = 0) uniform DirectionalLights {
-    DirectionalLight lights[MAX_DIRECTIONAL_LIGHTS];
-} directionalLights;
-layout(binding = 2, set = 0) uniform PointLights {
-    PointLight lights[MAX_POINT_LIGHTS];
-} pointLights;
-layout(binding = 3, set = 0) uniform SpotLights {
-    SpotLight lights[MAX_SPOT_LIGHTS];
-} spotLights;
-layout(binding = 6, set = 1) uniform samplerCube irradianceMapSampler;
-layout(binding = 7, set = 1) uniform samplerCube preFilteredSampler;
-layout(binding = 8, set = 1) uniform sampler2D brdfLookupSampler;
-layout(binding = 9, set = 2) uniform sampler2D colorSampler;
-layout(binding = 10, set = 2) uniform sampler2D normalsSampler;
-layout(binding = 11, set = 2) uniform sampler2D metallicRoughnessSampler;
-layout(binding = 12, set = 2) uniform sampler2D occlusionSampler;
-layout(binding = 13, set = 2) uniform sampler2D emissiveSampler;
+layout(binding = 1, set = 0) uniform Lights {
+    Light lights[LIGHT_COUNT];
+} lights;
+layout(binding = 4, set = 1) uniform samplerCube irradianceMapSampler;
+layout(binding = 5, set = 1) uniform samplerCube preFilteredSampler;
+layout(binding = 6, set = 1) uniform sampler2D brdfLookupSampler;
+layout(binding = 7, set = 2) uniform sampler2D colorSampler;
+layout(binding = 8, set = 2) uniform sampler2D normalsSampler;
+layout(binding = 9, set = 2) uniform sampler2D metallicRoughnessSampler;
+layout(binding = 10, set = 2) uniform sampler2D occlusionSampler;
+layout(binding = 11, set = 2) uniform sampler2D emissiveSampler;
 
 // Output
 layout(location = 0) out vec4 outColor;
@@ -199,6 +191,13 @@ float d(float a, vec3 n, vec3 h) {
     return aa / (PI * denom * denom);
 }
 
+float computeAttenuation(float distance, float range) {
+    if (range < 0.0) {
+        return 1.0;
+    }
+    return max(min(1.0 - pow(distance / range, 4.0), 1.0), 0.0) / pow(distance, 2.0);
+}
+
 vec3 computeColor(vec3 baseColor, float metallic, float roughness, vec3 n, vec3 l, vec3 v, vec3 h, vec3 lightColor, float lightIntensity) {
     vec3 color = vec3(0.0);
     if (dot(n, l) > 0.0 || dot(n, v) > 0.0) {
@@ -216,6 +215,40 @@ vec3 computeColor(vec3 baseColor, float metallic, float roughness, vec3 n, vec3 
         color = max(dot(n, l), 0.0) * (fDiffuse + fSpecular) * lightColor * lightIntensity;
     }
     return color;
+}
+
+vec3 computeDirectionalLight(Light light, vec3 baseColor, float metallic, float roughness, vec3 n, vec3 v) {
+    vec3 l = -normalize(light.direction.xyz);
+    vec3 h = normalize(l + v);
+    return computeColor(baseColor.rgb, metallic, roughness, n, l, v, h, light.color.rgb, light.intensity);
+}
+
+vec3 computePointLight(Light light, vec3 baseColor, float metallic, float roughness, vec3 n, vec3 v) {
+    vec3 toLight = light.position.xyz - oPositions;
+    float distance = length(toLight);
+    vec3 l = normalize(toLight);
+    vec3 h = normalize(l + v);
+
+    float attenuation = computeAttenuation(distance, light.range);
+
+    return computeColor(baseColor.rgb, metallic, roughness, n, l, v, h, light.color.rgb, light.intensity * attenuation);
+}
+
+vec3 computeSpotLight(Light light, vec3 baseColor, float metallic, float roughness, vec3 n, vec3 v) {
+    vec3 invLightDir = -normalize(light.direction.xyz);
+
+    vec3 toLight = light.position.xyz - oPositions;
+    float distance = length(toLight);
+    vec3 l = normalize(toLight);
+    vec3 h = normalize(l + v);
+
+    float attenuation = computeAttenuation(distance, light.range);
+
+    float cd = dot(invLightDir, l);
+    float angularAttenuation = max(0.0, cd * light.angleScale + light.angleOffset);
+    angularAttenuation *= angularAttenuation;
+
+    return computeColor(baseColor.rgb, metallic, roughness, n, l, v, h, light.color.rgb, light.intensity * attenuation * angularAttenuation);
 }
 
 vec3 prefilteredReflectionLinear(vec3 R, float roughness) {
@@ -249,13 +282,6 @@ vec3 computeIBL(vec3 baseColor, vec3 v, vec3 n, float metallic, float roughness)
     return kD * diffuse + specular;
 }
 
-float computeAttenuation(float distance, float range) {
-    if (range < 0.0) {
-        return 1.0;
-    }
-    return max(min(1.0 - pow(distance / range, 4.0), 1.0), 0.0) / pow(distance, 2.0);
-}
-
 void main() {
     TextureIds textureIds = getTextureIds();
 
@@ -274,54 +300,18 @@ void main() {
 
     vec3 color = vec3(0.0);
 
-    // Directional lights
-    for (int i = 0; i < MAX_DIRECTIONAL_LIGHTS; i++) {
-        float lightIntensity = directionalLights.lights[i].intensity;
-        vec3 lightColor = directionalLights.lights[i].color.rgb;
-        vec3 l = -normalize(directionalLights.lights[i].direction.xyz);
-        vec3 h = normalize(l + v);
-        color += computeColor(baseColor.rgb, metallic, roughness, n, l, v, h, lightColor, lightIntensity);
-    }
+    for (int i = 0; i < LIGHT_COUNT; i++) {
 
-    // Point lights
-    for (int i = 0; i < MAX_POINT_LIGHTS; i++) {
-        float lightIntensity = pointLights.lights[i].intensity;
-        vec3 lightColor = pointLights.lights[i].color.rgb;
-        vec3 lightPosition = pointLights.lights[i].position.xyz;
-        float lightRange = pointLights.lights[i].range;
+        Light light = lights.lights[i];
+        uint lightType = light.type;
 
-        vec3 toLight = lightPosition - oPositions;
-        float distance = length(toLight);
-        vec3 l = normalize(toLight);
-        vec3 h = normalize(l + v);
-
-        float attenuation = computeAttenuation(distance, lightRange);
-
-        color += computeColor(baseColor.rgb, metallic, roughness, n, l, v, h, lightColor, lightIntensity * attenuation);
-    }
-
-    // Spot lights
-    for (int i = 0; i < MAX_SPOT_LIGHTS; i++) {
-        float lightIntensity = spotLights.lights[i].intensity;
-        vec3 lightColor = spotLights.lights[i].color.rgb;
-        vec3 lightPosition = spotLights.lights[i].position.xyz;
-        float lightRange = spotLights.lights[i].range;
-        vec3 invLightDir = -normalize(spotLights.lights[i].direction.xyz);
-        float lightAngleScale = spotLights.lights[i].angleScale;
-        float lightAngleOffset = spotLights.lights[i].angleOffset;
-
-        vec3 toLight = lightPosition - oPositions;
-        float distance = length(toLight);
-        vec3 l = normalize(toLight);
-        vec3 h = normalize(l + v);
-
-        float attenuation = computeAttenuation(distance, lightRange);
-
-        float cd = dot(invLightDir, l);
-        float angularAttenuation = max(0.0, cd * lightAngleScale + lightAngleOffset);
-        angularAttenuation *= angularAttenuation;
-
-        color += computeColor(baseColor.rgb, metallic, roughness, n, l, v, h, lightColor, lightIntensity * attenuation * angularAttenuation);
+        if (lightType == DIRECTIONAL_LIGHT_TYPE) {
+            color += computeDirectionalLight(light, baseColor.rgb, metallic, roughness, n, v);
+        } else if (lightType == POINT_LIGHT_TYPE) {
+            color += computePointLight(light, baseColor.rgb, metallic, roughness, n, v);
+        } else if (lightType == SPOT_LIGHT_TYPE) {
+            color += computeSpotLight(light, baseColor.rgb, metallic, roughness, n, v);
+        }
     }
 
     vec3 ambient = computeIBL(baseColor.rgb, v, n, metallic, roughness);
