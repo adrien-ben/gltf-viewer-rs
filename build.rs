@@ -60,7 +60,7 @@ fn get_default_shader_source_dir_path() -> PathBuf {
 }
 
 fn get_root_path() -> &'static Path {
-    Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap()
+    Path::new(env!("CARGO_MANIFEST_DIR"))
 }
 
 fn handle_program_result(result: Result<Output>) {

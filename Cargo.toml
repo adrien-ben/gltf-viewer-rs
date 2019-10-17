@@ -1,2 +1,22 @@
+[package]
+name = "gltf-viewer-rs"
+version = "0.1.0"
+authors = ["Adrien Bennadji <adrien.bennadji@live.fr>"]
+edition = "2018"
+build = "build.rs"
+
 [workspace]
-members = ["gltf-viewer-rs", "vulkan", "model", "math", "util", "environment"]
+members = ["vulkan", "model", "math", "util", "environment"]
+
+[dependencies]
+vulkan = { path = "vulkan" }
+model = { path = "model" }
+math = { path = "math" }
+util = { path = "util" }
+environment = {path = "environment" }
+
+log = "0.4"
+env_logger = "0.7.1"
+serde = { version = "1.0", features = ["derive"] }
+serde_yaml = "0.8"
+clap = "2.33"
