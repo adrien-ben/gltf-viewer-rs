@@ -110,7 +110,8 @@ pub fn create_meshes_from_gltf(
                 let aabb = get_aabb(&primitive.bounding_box());
                 let positions = read_positions(&reader);
                 let normals = read_normals(&reader);
-                let tex_coords = read_tex_coords(&reader);
+                let tex_coords_0 = read_tex_coords(&reader, 0);
+                let tex_coords_1 = read_tex_coords(&reader, 1);
                 let tangents = read_tangents(&reader);
                 let weights = read_weights(&reader);
                 let joints = read_joints(&reader);
@@ -122,7 +123,8 @@ pub fn create_meshes_from_gltf(
                     .map(|(index, position)| {
                         let position = *position;
                         let normal = *normals.get(index).unwrap_or(&[1.0, 1.0, 1.0]);
-                        let tex_coords = *tex_coords.get(index).unwrap_or(&[0.0, 0.0]);
+                        let tex_coords_0 = *tex_coords_0.get(index).unwrap_or(&[0.0, 0.0]);
+                        let tex_coords_1 = *tex_coords_1.get(index).unwrap_or(&[0.0, 0.0]);
                         let tangent = *tangents.get(index).unwrap_or(&[1.0, 1.0, 1.0, 1.0]);
                         let weights = *weights.get(index).unwrap_or(&[0.0, 0.0, 0.0, 0.0]);
                         let joints = *joints.get(index).unwrap_or(&[0, 0, 0, 0]);
@@ -131,7 +133,8 @@ pub fn create_meshes_from_gltf(
                         ModelVertex {
                             position,
                             normal,
-                            tex_coords,
+                            tex_coords_0,
+                            tex_coords_1,
                             tangent,
                             weights,
                             joints,
@@ -144,7 +147,7 @@ pub fn create_meshes_from_gltf(
 
                 if !positions.is_empty()
                     && !normals.is_empty()
-                    && !tex_coords.is_empty()
+                    && !tex_coords_0.is_empty()
                     && tangents.is_empty()
                 {
                     generate_tangents(
@@ -283,12 +286,12 @@ where
         .map_or(vec![], |normals| normals.collect())
 }
 
-fn read_tex_coords<'a, 's, F>(reader: &Reader<'a, 's, F>) -> Vec<[f32; 2]>
+fn read_tex_coords<'a, 's, F>(reader: &Reader<'a, 's, F>, channel: u32) -> Vec<[f32; 2]>
 where
     F: Clone + Fn(GltfBuffer<'a>) -> Option<&'s [u8]>,
 {
     reader
-        .read_tex_coords(0)
+        .read_tex_coords(channel)
         .map_or(vec![], |coords| coords.into_f32().collect())
 }
 

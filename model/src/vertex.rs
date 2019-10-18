@@ -2,11 +2,30 @@ use ash::vk;
 use std::{mem::size_of, sync::Arc};
 use vulkan::*;
 
+const POSITION_LOCATION: u32 = 0;
+const NORMAL_LOCATION: u32 = 1;
+const TEX_COORDS_0_LOCATION: u32 = 2;
+const TEX_COORDS_1_LOCATION: u32 = 3;
+const TANGENT_LOCATION: u32 = 4;
+const WEIGHTS_LOCATION: u32 = 5;
+const JOINTS_LOCATION: u32 = 6;
+const COLOR_LOCATION: u32 = 7;
+
+const POSITION_OFFSET: u32 = 0;
+const NORMAL_OFFSET: u32 = 12;
+const TEX_COORDS_0_OFFSET: u32 = 24;
+const TEX_COORDS_1_OFFSET: u32 = 32;
+const TANGENT_OFFSET: u32 = 40;
+const WEIGHTS_OFFSET: u32 = 56;
+const JOINTS_OFFSET: u32 = 72;
+const COLOR_OFFSET: u32 = 88;
+
 #[derive(Clone, Copy, Debug)]
 pub struct ModelVertex {
     pub position: [f32; 3],
     pub normal: [f32; 3],
-    pub tex_coords: [f32; 2],
+    pub tex_coords_0: [f32; 2],
+    pub tex_coords_1: [f32; 2],
     pub tangent: [f32; 4],
     pub weights: [f32; 4],
     pub joints: [u32; 4],
@@ -25,46 +44,52 @@ impl Vertex for ModelVertex {
     fn get_attributes_descriptions() -> Vec<vk::VertexInputAttributeDescription> {
         vec![
             vk::VertexInputAttributeDescription {
-                location: 0,
+                location: POSITION_LOCATION,
                 binding: 0,
                 format: vk::Format::R32G32B32_SFLOAT,
-                offset: 0,
+                offset: POSITION_OFFSET,
             },
             vk::VertexInputAttributeDescription {
-                location: 1,
+                location: NORMAL_LOCATION,
                 binding: 0,
                 format: vk::Format::R32G32B32_SFLOAT,
-                offset: 12,
+                offset: NORMAL_OFFSET,
             },
             vk::VertexInputAttributeDescription {
-                location: 2,
+                location: TEX_COORDS_0_LOCATION,
                 binding: 0,
                 format: vk::Format::R32G32_SFLOAT,
-                offset: 24,
+                offset: TEX_COORDS_0_OFFSET,
             },
             vk::VertexInputAttributeDescription {
-                location: 3,
+                location: TEX_COORDS_1_LOCATION,
+                binding: 0,
+                format: vk::Format::R32G32_SFLOAT,
+                offset: TEX_COORDS_1_OFFSET,
+            },
+            vk::VertexInputAttributeDescription {
+                location: TANGENT_LOCATION,
                 binding: 0,
                 format: vk::Format::R32G32B32A32_SFLOAT,
-                offset: 32,
+                offset: TANGENT_OFFSET,
             },
             vk::VertexInputAttributeDescription {
-                location: 4,
+                location: WEIGHTS_LOCATION,
                 binding: 0,
                 format: vk::Format::R32G32B32A32_SFLOAT,
-                offset: 48,
+                offset: WEIGHTS_OFFSET,
             },
             vk::VertexInputAttributeDescription {
-                location: 5,
+                location: JOINTS_LOCATION,
                 binding: 0,
                 format: vk::Format::R32G32B32A32_UINT,
-                offset: 64,
+                offset: JOINTS_OFFSET,
             },
             vk::VertexInputAttributeDescription {
-                location: 6,
+                location: COLOR_LOCATION,
                 binding: 0,
                 format: vk::Format::R32G32B32A32_SFLOAT,
-                offset: 80,
+                offset: COLOR_OFFSET,
             },
         ]
     }

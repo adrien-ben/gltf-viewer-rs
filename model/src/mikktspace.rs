@@ -28,7 +28,7 @@ impl<'a> Geometry for Mesh<'a> {
     }
 
     fn tex_coord(&self, face: usize, vert: usize) -> [f32; 2] {
-        get_vertex(self, face, vert).tex_coords
+        get_vertex(self, face, vert).tex_coords_0
     }
 
     fn set_tangent(

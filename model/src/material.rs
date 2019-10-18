@@ -17,13 +17,19 @@ pub struct Material {
     roughness: f32,
     metallic: f32,
     occlusion: f32,
-    color_texture_id: Option<usize>,
-    metallic_roughness_texture_id: Option<usize>,
-    emissive_texture_id: Option<usize>,
-    normals_texture_id: Option<usize>,
-    occlusion_texture_id: Option<usize>,
+    color_texture: Option<TextureInfo>,
+    metallic_roughness_texture: Option<TextureInfo>,
+    emissive_texture: Option<TextureInfo>,
+    normals_texture: Option<TextureInfo>,
+    occlusion_texture: Option<TextureInfo>,
     alpha_mode: u32,
     alpha_cutoff: f32,
+}
+
+#[derive(Clone, Copy, Debug)]
+struct TextureInfo {
+    index: usize,
+    channel: u32,
 }
 
 impl Material {
@@ -32,23 +38,23 @@ impl Material {
     }
 
     pub fn get_color_texture_index(&self) -> Option<usize> {
-        self.color_texture_id
+        self.color_texture.map(|info| info.index)
     }
 
     pub fn get_metallic_roughness_texture_index(&self) -> Option<usize> {
-        self.metallic_roughness_texture_id
+        self.metallic_roughness_texture.map(|info| info.index)
     }
 
     pub fn get_emissive_texture_index(&self) -> Option<usize> {
-        self.emissive_texture_id
+        self.emissive_texture.map(|info| info.index)
     }
 
     pub fn get_normals_texture_index(&self) -> Option<usize> {
-        self.normals_texture_id
+        self.normals_texture.map(|info| info.index)
     }
 
     pub fn get_occlusion_texture_index(&self) -> Option<usize> {
-        self.occlusion_texture_id
+        self.occlusion_texture.map(|info| info.index)
     }
 }
 
@@ -62,11 +68,11 @@ impl<'a> From<GltfMaterial<'a>> for Material {
         let roughness = pbr.roughness_factor();
         let metallic = pbr.metallic_factor();
 
-        let color_texture_id = get_texture_index(pbr.base_color_texture());
-        let metallic_roughness_texture_id = get_texture_index(pbr.metallic_roughness_texture());
-        let emissive_texture_id = get_texture_index(material.emissive_texture());
-        let normals_texture_id = get_normals_texture_index(material.normal_texture());
-        let (occlusion, occlusion_texture_id) = get_occlusion(material.occlusion_texture());
+        let color_texture = get_texture(pbr.base_color_texture());
+        let metallic_roughness_texture = get_texture(pbr.metallic_roughness_texture());
+        let emissive_texture = get_texture(material.emissive_texture());
+        let normals_texture = get_normals_texture(material.normal_texture());
+        let (occlusion, occlusion_texture) = get_occlusion(material.occlusion_texture());
         let alpha_mode = get_alpha_mode_index(material.alpha_mode());
 
         let alpha_cutoff = material.alpha_cutoff();
@@ -77,38 +83,42 @@ impl<'a> From<GltfMaterial<'a>> for Material {
             roughness,
             metallic,
             occlusion,
-            color_texture_id,
-            metallic_roughness_texture_id,
-            emissive_texture_id,
-            normals_texture_id,
-            occlusion_texture_id,
+            color_texture,
+            metallic_roughness_texture,
+            emissive_texture,
+            normals_texture,
+            occlusion_texture,
             alpha_mode,
             alpha_cutoff,
         }
     }
 }
 
-fn get_texture_index(texture_info: Option<Info>) -> Option<usize> {
-    texture_info
-        .map(|tex_info| tex_info.texture())
-        .map(|texture| texture.index())
+fn get_texture(texture_info: Option<Info>) -> Option<TextureInfo> {
+    texture_info.map(|tex_info| TextureInfo {
+        index: tex_info.texture().index(),
+        channel: tex_info.tex_coord(),
+    })
 }
 
-fn get_normals_texture_index(texture_info: Option<NormalTexture>) -> Option<usize> {
-    texture_info
-        .map(|tex_info| tex_info.texture())
-        .map(|texture| texture.index())
+fn get_normals_texture(texture_info: Option<NormalTexture>) -> Option<TextureInfo> {
+    texture_info.map(|tex_info| TextureInfo {
+        index: tex_info.texture().index(),
+        channel: tex_info.tex_coord(),
+    })
 }
 
-fn get_occlusion(texture_info: Option<OcclusionTexture>) -> (f32, Option<usize>) {
-    (
-        texture_info
-            .as_ref()
-            .map_or(0.0, |tex_info| tex_info.strength()),
-        texture_info
-            .map(|tex_info| tex_info.texture())
-            .map(|texture| texture.index()),
-    )
+fn get_occlusion(texture_info: Option<OcclusionTexture>) -> (f32, Option<TextureInfo>) {
+    let strength = texture_info
+        .as_ref()
+        .map_or(0.0, |tex_info| tex_info.strength());
+
+    let texture = texture_info.map(|tex_info| TextureInfo {
+        index: tex_info.texture().index(),
+        channel: tex_info.tex_coord(),
+    });
+
+    (strength, texture)
 }
 
 fn get_alpha_mode_index(alpha_mode: AlphaMode) -> u32 {
@@ -126,9 +136,9 @@ pub struct MaterialUniform {
     emissive_and_roughness: [f32; 4],
     metallic: f32,
     occlusion: f32,
-    // Contains the texture ids for color metallic/roughness emissive and normal (each taking 8 bytes)
-    color_metallicroughness_emissive_normal_texture_ids: u32,
-    occlusion_texture_id_and_alpha_mode: u32,
+    // Contains the texture channels for color metallic/roughness emissive and normal (each taking 8 bytes)
+    color_metallicroughness_emissive_normal_texture_channels: u32,
+    occlusion_texture_channel_and_alpha_mode: u32,
     alpha_cutoff: f32,
 }
 
@@ -147,28 +157,28 @@ impl<'a> From<Material> for MaterialUniform {
         let metallic = material.metallic;
 
         let color_texture_id = material
-            .color_texture_id
-            .map_or(NO_TEXTURE_ID, |i| i as u32);
+            .color_texture
+            .map_or(NO_TEXTURE_ID, |info| info.channel);
         let metallic_roughness_texture_id = material
-            .metallic_roughness_texture_id
-            .map_or(NO_TEXTURE_ID, |i| i as u32);
+            .metallic_roughness_texture
+            .map_or(NO_TEXTURE_ID, |info| info.channel);
         let emissive_texture_id = material
-            .emissive_texture_id
-            .map_or(NO_TEXTURE_ID, |i| i as u32);
+            .emissive_texture
+            .map_or(NO_TEXTURE_ID, |info| info.channel);
         let normal_texture_id = material
-            .normals_texture_id
-            .map_or(NO_TEXTURE_ID, |i| i as u32);
-        let color_metallicroughness_emissive_normal_texture_ids = (color_texture_id << 24)
+            .normals_texture
+            .map_or(NO_TEXTURE_ID, |info| info.channel);
+        let color_metallicroughness_emissive_normal_texture_channels = (color_texture_id << 24)
             | (metallic_roughness_texture_id << 16)
             | (emissive_texture_id << 8)
             | normal_texture_id;
 
         let occlusion = material.occlusion;
         let occlusion_texture_id = material
-            .occlusion_texture_id
-            .map_or(NO_TEXTURE_ID, |i| i as u32);
+            .occlusion_texture
+            .map_or(NO_TEXTURE_ID, |info| info.channel);
         let alpha_mode = material.alpha_mode;
-        let occlusion_texture_id_and_alpha_mode =
+        let occlusion_texture_channel_and_alpha_mode =
             ((occlusion_texture_id as u32) << 24) | (alpha_mode << 16);
 
         let alpha_cutoff = material.alpha_cutoff;
@@ -178,8 +188,8 @@ impl<'a> From<Material> for MaterialUniform {
             emissive_and_roughness,
             metallic,
             occlusion,
-            color_metallicroughness_emissive_normal_texture_ids,
-            occlusion_texture_id_and_alpha_mode,
+            color_metallicroughness_emissive_normal_texture_channels,
+            occlusion_texture_channel_and_alpha_mode,
             alpha_cutoff,
         }
     }

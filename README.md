@@ -7,7 +7,7 @@ using [Ash][2]. It runs on Window, Linux and MacOS.
 
 ## Features
 
-- [x] Mesh vertices, normals and colors
+- [x] Mesh vertices, normals, colors and two uv channels
 - [x] Tangents generation
 - [ ] Material
   - [x] Base color factor and texture
@@ -102,4 +102,3 @@ HDRi textures have been downloaded from [hdriheaven][5].
 |---|---|---|
 |![Indoor](images/helmet_indoor.png "Indoor")|![Env](images/env.png "Env")|![Corset](images/corset.png "Corset")|
 |![MG08](images/mg08.png "MG08")|![Flight](images/flight_helmet.png "Flight Helmet")|![Junkrat](images/junkrat.png "Junkrat")|
-
