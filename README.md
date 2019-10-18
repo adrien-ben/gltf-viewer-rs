@@ -30,8 +30,8 @@ using [Ash][2]. It runs on Window, Linux and MacOS.
     - [x] Cubicspline
 - [ ] Extensions
   - [x] KHR_lights_punctual
+  - [x] KHR_materials_unlit
   - [ ] KHR_draco_mesh_compression
-  - [ ] KHR_materials_unlit
 - [ ] Camera controls
   - [x] Orbital
   - [ ] First Person

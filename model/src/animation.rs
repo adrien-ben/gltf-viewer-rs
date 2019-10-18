@@ -360,7 +360,6 @@ fn map_interpolation(gltf_interpolation: GltfInterpolation) -> Option<Interpolat
         GltfInterpolation::Linear => Some(Interpolation::Linear),
         GltfInterpolation::Step => Some(Interpolation::Step),
         GltfInterpolation::CubicSpline => Some(Interpolation::CubicSpline),
-        _ => None,
     }
 }
 

@@ -22,6 +22,7 @@ pub struct Material {
     alpha_mode: u32,
     alpha_cutoff: f32,
     double_sided: bool,
+    is_unlit: bool,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -106,6 +107,10 @@ impl Material {
     pub fn get_occlusion_texture_index(&self) -> Option<usize> {
         self.occlusion_texture.map(|info| info.index)
     }
+
+    pub fn is_unlit(&self) -> bool {
+        self.is_unlit
+    }
 }
 
 impl TextureInfo {
@@ -138,6 +143,8 @@ impl<'a> From<GltfMaterial<'a>> for Material {
         let alpha_cutoff = material.alpha_cutoff();
 
         let double_sided = material.double_sided();
+        
+        let is_unlit = material.unlit();
 
         Material {
             color,
@@ -153,6 +160,7 @@ impl<'a> From<GltfMaterial<'a>> for Material {
             alpha_mode,
             alpha_cutoff,
             double_sided,
+            is_unlit,
         }
     }
 }
