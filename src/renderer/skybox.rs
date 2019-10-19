@@ -279,6 +279,7 @@ fn create_skybox_pipeline(
             layout,
             depth_stencil_info: &depth_stencil_info,
             color_blend_attachment: &color_blend_attachment,
+            enable_face_culling: true,
             parent: None,
         },
     )

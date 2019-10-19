@@ -804,6 +804,7 @@ fn create_opaque_pipeline(
             layout,
             depth_stencil_info: &depth_stencil_info,
             color_blend_attachment: &color_blend_attachment,
+            enable_face_culling: true,
             parent: None,
         },
     )
@@ -853,6 +854,7 @@ fn create_transparent_pipeline(
             layout,
             depth_stencil_info: &depth_stencil_info,
             color_blend_attachment: &color_blend_attachment,
+            enable_face_culling: false,
             parent: Some(parent),
         },
     )

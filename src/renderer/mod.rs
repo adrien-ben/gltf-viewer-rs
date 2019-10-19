@@ -17,6 +17,7 @@ struct RendererPipelineParameters<'a> {
     layout: vk::PipelineLayout,
     depth_stencil_info: &'a vk::PipelineDepthStencilStateCreateInfo,
     color_blend_attachment: &'a vk::PipelineColorBlendAttachmentState,
+    enable_face_culling: bool,
     parent: Option<vk::Pipeline>,
 }
 
@@ -58,12 +59,18 @@ fn create_renderer_pipeline<V: Vertex>(
         .viewports(&viewports)
         .scissors(&scissors);
 
+    let cull_mode = if params.enable_face_culling {
+        vk::CullModeFlags::BACK
+    } else {
+        vk::CullModeFlags::NONE
+    };
+
     let rasterizer_info = vk::PipelineRasterizationStateCreateInfo::builder()
         .depth_clamp_enable(false)
         .rasterizer_discard_enable(false)
         .polygon_mode(vk::PolygonMode::FILL)
         .line_width(1.0)
-        .cull_mode(vk::CullModeFlags::BACK)
+        .cull_mode(cull_mode)
         .front_face(vk::FrontFace::COUNTER_CLOCKWISE)
         .depth_bias_enable(false)
         .depth_bias_constant_factor(0.0)

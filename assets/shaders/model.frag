@@ -145,12 +145,18 @@ vec3 getEmissiveColor(TextureChannels textureChannels) {
 }
 
 vec3 getNormal(TextureChannels textureChannels) {
+    vec3 normal = normalize(oNormals);
     if (textureChannels.normal != NO_TEXTURE_ID) {
         vec2 uv = getUV(textureChannels.normal);
-        vec3 normal = texture(normalsSampler, uv).rgb * 2.0 - 1.0;
-        return normalize(oTBN * normal);
+        vec3 normalMap = texture(normalsSampler, uv).rgb * 2.0 - 1.0;
+        normal = normalize(oTBN * normalMap);
     }
-    return normalize(oNormals);
+    
+    if (!gl_FrontFacing) {
+        normal *= -1.0;
+    }
+
+    return normal;
 }
 
 vec3 occludeAmbientColor(vec3 ambientColor, TextureChannels textureChannels) {
