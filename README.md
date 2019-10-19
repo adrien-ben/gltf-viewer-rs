@@ -58,7 +58,7 @@ the same location as the shader source, with the same name suffixed by `.spv`.
 
 Building the project with the debug profile will activate Vulkan validation layers. Activated layers are:
 
-- VK_LAYER_LUNARG_standard_validation
+- VK_LAYER_KHRONOS_validation
 
 ## Run it
 
