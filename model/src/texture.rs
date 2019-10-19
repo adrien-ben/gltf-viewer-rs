@@ -1,4 +1,3 @@
-use super::material::MAX_TEXTURE_COUNT;
 use ash::vk;
 use gltf::image::{Data, Format};
 use std::sync::Arc;
@@ -10,12 +9,6 @@ pub fn create_textures_from_gltf(
     command_buffer: vk::CommandBuffer,
     images: &[Data],
 ) -> (Vec<Texture>, Vec<Buffer>) {
-    if images.len() > MAX_TEXTURE_COUNT as _ {
-        log::warn!(
-            "The model contains more than {} textures ({}). Some textures might not display properly", MAX_TEXTURE_COUNT, images.len()
-        );
-    }
-
     images
         .iter()
         .map(|image| (image.width, image.height, build_rgba_buffer(image)))
