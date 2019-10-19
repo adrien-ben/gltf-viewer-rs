@@ -10,6 +10,18 @@ struct Mesh<'a> {
     vertices: &'a mut [ModelVertex],
 }
 
+impl<'a> Mesh<'a> {
+    fn get_vertex(&self, face: usize, vert: usize) -> ModelVertex {
+        let face = self.faces[face];
+        self.vertices[face[vert] as usize]
+    }
+
+    fn get_vertex_mut(&mut self, face: usize, vert: usize) -> &mut ModelVertex {
+        let face = self.faces[face];
+        &mut self.vertices[face[vert] as usize]
+    }
+}
+
 impl<'a> Geometry for Mesh<'a> {
     fn num_faces(&self) -> usize {
         self.faces.len()
@@ -20,15 +32,15 @@ impl<'a> Geometry for Mesh<'a> {
     }
 
     fn position(&self, face: usize, vert: usize) -> [f32; 3] {
-        get_vertex(self, face, vert).position
+        self.get_vertex(face, vert).position
     }
 
     fn normal(&self, face: usize, vert: usize) -> [f32; 3] {
-        get_vertex(self, face, vert).normal
+        self.get_vertex(face, vert).normal
     }
 
     fn tex_coord(&self, face: usize, vert: usize) -> [f32; 2] {
-        get_vertex(self, face, vert).tex_coords_0
+        self.get_vertex(face, vert).tex_coords_0
     }
 
     fn set_tangent(
@@ -46,19 +58,9 @@ impl<'a> Geometry for Mesh<'a> {
         } else {
             1.0
         };
-        let vertex = get_vertex_mut(self, face, vert);
+        let vertex = self.get_vertex_mut(face, vert);
         vertex.tangent = [tangent[0], tangent[1], tangent[2], sign];
     }
-}
-
-fn get_vertex(mesh: &Mesh, face: usize, vert: usize) -> ModelVertex {
-    let face = mesh.faces[face];
-    mesh.vertices[face[vert] as usize]
-}
-
-fn get_vertex_mut<'a>(mesh: &'a mut Mesh, face: usize, vert: usize) -> &'a mut ModelVertex {
-    let face = mesh.faces[face];
-    &mut mesh.vertices[face[vert] as usize]
 }
 
 pub fn generate_tangents(indices: Option<&[u32]>, vertices: &mut [ModelVertex]) {
