@@ -21,6 +21,7 @@ pub struct Material {
     occlusion_texture: Option<TextureInfo>,
     alpha_mode: u32,
     alpha_cutoff: f32,
+    double_sided: bool,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -56,6 +57,10 @@ impl Material {
 
     pub fn get_alpha_cutoff(&self) -> f32 {
         self.alpha_cutoff
+    }
+
+    pub fn is_double_sided(&self) -> bool {
+        self.double_sided
     }
 
     pub fn get_color_texture(&self) -> Option<TextureInfo> {
@@ -132,6 +137,8 @@ impl<'a> From<GltfMaterial<'a>> for Material {
 
         let alpha_cutoff = material.alpha_cutoff();
 
+        let double_sided = material.double_sided();
+
         Material {
             color,
             emissive,
@@ -145,6 +152,7 @@ impl<'a> From<GltfMaterial<'a>> for Material {
             occlusion_texture,
             alpha_mode,
             alpha_cutoff,
+            double_sided,
         }
     }
 }

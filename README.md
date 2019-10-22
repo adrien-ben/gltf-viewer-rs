@@ -9,7 +9,7 @@ using [Ash][2]. It runs on Window, Linux and MacOS.
 
 - [x] Mesh vertices, normals, colors and two uv channels
 - [x] Tangents generation
-- [ ] Material
+- [x] Material
   - [x] Base color factor and texture
   - [x] Metallic/Roughness factors and textures
   - [x] Emissive factor and texture
@@ -19,7 +19,7 @@ using [Ash][2]. It runs on Window, Linux and MacOS.
     - [x] Opaque
     - [x] Mask
     - [x] Blend
-  - [ ] Double sided surfaces
+  - [x] Double sided surfaces
 - [x] IBL
 - [x] Animations
   - [x] Node animation

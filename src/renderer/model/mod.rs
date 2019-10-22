@@ -40,6 +40,7 @@ pub struct ModelRenderer {
     descriptors: Descriptors,
     pipeline_layout: vk::PipelineLayout,
     opaque_pipeline: vk::Pipeline,
+    opaque_unculled_pipeline: vk::Pipeline,
     transparent_pipeline: vk::Pipeline,
 }
 
@@ -78,10 +79,22 @@ impl ModelRenderer {
             &context,
             swapchain_props,
             msaa_samples,
+            true,
             render_pass.get_render_pass(),
             pipeline_layout,
             &model,
         );
+
+        let opaque_unculled_pipeline = create_opaque_pipeline(
+            &context,
+            swapchain_props,
+            msaa_samples,
+            false,
+            render_pass.get_render_pass(),
+            pipeline_layout,
+            &model,
+        );
+
         let transparent_pipeline = create_transparent_pipeline(
             &context,
             swapchain_props,
@@ -103,6 +116,7 @@ impl ModelRenderer {
             descriptors,
             pipeline_layout,
             opaque_pipeline,
+            opaque_unculled_pipeline,
             transparent_pipeline,
         }
     }
@@ -116,6 +130,7 @@ impl ModelRenderer {
         let device = self.context.device();
         unsafe {
             device.destroy_pipeline(self.opaque_pipeline, None);
+            device.destroy_pipeline(self.opaque_unculled_pipeline, None);
             device.destroy_pipeline(self.transparent_pipeline, None);
         }
 
@@ -123,10 +138,22 @@ impl ModelRenderer {
             &self.context,
             swapchain_props,
             msaa_samples,
+            true,
             render_pass.get_render_pass(),
             self.pipeline_layout,
             &self.model,
         );
+
+        self.opaque_unculled_pipeline = create_opaque_pipeline(
+            &self.context,
+            swapchain_props,
+            msaa_samples,
+            false,
+            render_pass.get_render_pass(),
+            self.pipeline_layout,
+            &self.model,
+        );
+
         self.transparent_pipeline = create_transparent_pipeline(
             &self.context,
             swapchain_props,
@@ -237,7 +264,27 @@ impl ModelRenderer {
             &self.model,
             &self.descriptors.dynamic_data_sets[frame_index..=frame_index],
             &self.descriptors.per_primitive_sets,
-            |p| !p.material().is_transparent(),
+            |p| !p.material().is_transparent() && !p.material().is_double_sided(),
+        );
+
+        // Bind opaque without culling pipeline
+        unsafe {
+            device.cmd_bind_pipeline(
+                command_buffer,
+                vk::PipelineBindPoint::GRAPHICS,
+                self.opaque_unculled_pipeline,
+            )
+        };
+
+        // Draw opaque, double sided primitives
+        register_model_draw_commands(
+            &self.context,
+            self.pipeline_layout,
+            command_buffer,
+            &self.model,
+            &self.descriptors.dynamic_data_sets[frame_index..=frame_index],
+            &self.descriptors.per_primitive_sets,
+            |p| !p.material().is_transparent() && p.material().is_double_sided(),
         );
 
         // Bind transparent pipeline
@@ -267,6 +314,7 @@ impl Drop for ModelRenderer {
         let device = self.context.device();
         unsafe {
             device.destroy_pipeline(self.opaque_pipeline, None);
+            device.destroy_pipeline(self.opaque_unculled_pipeline, None);
             device.destroy_pipeline(self.transparent_pipeline, None);
             device.destroy_pipeline_layout(self.pipeline_layout, None);
         }
@@ -765,6 +813,7 @@ fn create_opaque_pipeline(
     context: &Arc<Context>,
     swapchain_properties: SwapchainProperties,
     msaa_samples: vk::SampleCountFlags,
+    enable_face_culling: bool,
     render_pass: vk::RenderPass,
     layout: vk::PipelineLayout,
     model: &Model,
@@ -804,7 +853,7 @@ fn create_opaque_pipeline(
             layout,
             depth_stencil_info: &depth_stencil_info,
             color_blend_attachment: &color_blend_attachment,
-            enable_face_culling: true,
+            enable_face_culling,
             parent: None,
         },
     )
