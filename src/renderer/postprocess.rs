@@ -1,33 +1,33 @@
-use super::{create_renderer_pipeline, RenderPass, RendererPipelineParameters};
-use ash::{version::DeviceV1_0, vk, Device};
-use environment::*;
+use super::{create_renderer_pipeline, RendererPipelineParameters};
+use std::mem::size_of;
 use std::sync::Arc;
-use vulkan::*;
+use vulkan::ash::{version::DeviceV1_0, vk, Device};
+use vulkan::{
+    create_device_local_buffer_with_data, Buffer, Context, Descriptors, SimpleRenderPass,
+    SwapchainProperties, Texture, Vertex,
+};
 
-pub struct SkyboxRenderer {
+pub struct PostProcessRenderer {
     context: Arc<Context>,
-    model: SkyboxModel,
+    model: QuadModel,
     descriptors: Descriptors,
     pipeline_layout: vk::PipelineLayout,
     pipeline: vk::Pipeline,
 }
 
-impl SkyboxRenderer {
+impl PostProcessRenderer {
     pub fn create(
         context: Arc<Context>,
-        camera_buffers: &[Buffer],
         swapchain_props: SwapchainProperties,
-        environment: &Environment,
-        msaa_samples: vk::SampleCountFlags,
-        render_pass: &RenderPass,
+        render_pass: &SimpleRenderPass,
+        input_image: &Texture,
     ) -> Self {
-        let model = SkyboxModel::new(&context);
-        let descriptors = create_descriptors(&context, camera_buffers, &environment);
+        let model = QuadModel::new(&context);
+        let descriptors = create_descriptors(&context, input_image);
         let pipeline_layout = create_pipeline_layout(context.device(), descriptors.layout());
-        let pipeline = create_skybox_pipeline(
+        let pipeline = create_pipeline(
             &context,
             swapchain_props,
-            msaa_samples,
             render_pass.get_render_pass(),
             pipeline_layout,
         );
@@ -40,32 +40,12 @@ impl SkyboxRenderer {
             pipeline,
         }
     }
-
-    pub fn rebuild_pipeline(
-        &mut self,
-        swapchain_props: SwapchainProperties,
-        msaa_samples: vk::SampleCountFlags,
-        render_pass: &RenderPass,
-    ) {
-        let device = self.context.device();
-        unsafe {
-            device.destroy_pipeline(self.pipeline, None);
-        }
-
-        self.pipeline = create_skybox_pipeline(
-            &self.context,
-            swapchain_props,
-            msaa_samples,
-            render_pass.get_render_pass(),
-            self.pipeline_layout,
-        );
-    }
 }
 
-impl SkyboxRenderer {
-    pub fn cmd_draw(&self, command_buffer: vk::CommandBuffer, frame_index: usize) {
+impl PostProcessRenderer {
+    pub fn cmd_draw(&self, command_buffer: vk::CommandBuffer) {
         let device = self.context.device();
-        // Bind skybox pipeline
+        // Bind pipeline
         unsafe {
             device.cmd_bind_pipeline(
                 command_buffer,
@@ -74,42 +54,37 @@ impl SkyboxRenderer {
             )
         };
 
-        // Bind skybox descriptor sets
+        // Bind descriptor sets
         unsafe {
             device.cmd_bind_descriptor_sets(
                 command_buffer,
                 vk::PipelineBindPoint::GRAPHICS,
                 self.pipeline_layout,
                 0,
-                &self.descriptors.sets()[frame_index..=frame_index],
+                &self.descriptors.sets(),
                 &[],
             )
         };
 
         unsafe {
-            device.cmd_bind_vertex_buffers(
-                command_buffer,
-                0,
-                &[self.model.vertices().buffer],
-                &[0],
-            );
+            device.cmd_bind_vertex_buffers(command_buffer, 0, &[self.model.vertices.buffer], &[0]);
         }
 
         unsafe {
             device.cmd_bind_index_buffer(
                 command_buffer,
-                self.model.indices().buffer,
+                self.model.indices.buffer,
                 0,
                 vk::IndexType::UINT32,
             );
         }
 
-        // Draw skybox
-        unsafe { device.cmd_draw_indexed(command_buffer, 36, 1, 0, 0, 0) };
+        // Draw
+        unsafe { device.cmd_draw_indexed(command_buffer, 6, 1, 0, 0, 0) };
     }
 }
 
-impl Drop for SkyboxRenderer {
+impl Drop for PostProcessRenderer {
     fn drop(&mut self) {
         let device = self.context.device();
         unsafe {
@@ -119,32 +94,20 @@ impl Drop for SkyboxRenderer {
     }
 }
 
-fn create_descriptors(
-    context: &Arc<Context>,
-    uniform_buffers: &[Buffer],
-    environment: &Environment,
-) -> Descriptors {
+fn create_descriptors(context: &Arc<Context>, input_image: &Texture) -> Descriptors {
     let layout = create_descriptor_set_layout(context.device());
-    let pool = create_descriptor_pool(context.device(), uniform_buffers.len() as _);
-    let sets = create_descriptor_sets(context, pool, layout, uniform_buffers, environment.skybox());
+    let pool = create_descriptor_pool(context.device());
+    let sets = create_descriptor_sets(context, pool, layout, input_image);
     Descriptors::new(Arc::clone(context), layout, pool, sets)
 }
 
 fn create_descriptor_set_layout(device: &Device) -> vk::DescriptorSetLayout {
-    let bindings = [
-        vk::DescriptorSetLayoutBinding::builder()
-            .binding(0)
-            .descriptor_type(vk::DescriptorType::UNIFORM_BUFFER)
-            .descriptor_count(1)
-            .stage_flags(vk::ShaderStageFlags::VERTEX | vk::ShaderStageFlags::FRAGMENT)
-            .build(),
-        vk::DescriptorSetLayoutBinding::builder()
-            .binding(1)
-            .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
-            .descriptor_count(1)
-            .stage_flags(vk::ShaderStageFlags::FRAGMENT)
-            .build(),
-    ];
+    let bindings = [vk::DescriptorSetLayoutBinding::builder()
+        .binding(0)
+        .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
+        .descriptor_count(1)
+        .stage_flags(vk::ShaderStageFlags::FRAGMENT)
+        .build()];
 
     let layout_info = vk::DescriptorSetLayoutCreateInfo::builder().bindings(&bindings);
 
@@ -154,17 +117,12 @@ fn create_descriptor_set_layout(device: &Device) -> vk::DescriptorSetLayout {
             .unwrap()
     }
 }
-fn create_descriptor_pool(device: &Device, descriptor_count: u32) -> vk::DescriptorPool {
-    let pool_sizes = [
-        vk::DescriptorPoolSize {
-            ty: vk::DescriptorType::UNIFORM_BUFFER,
-            descriptor_count,
-        },
-        vk::DescriptorPoolSize {
-            ty: vk::DescriptorType::COMBINED_IMAGE_SAMPLER,
-            descriptor_count,
-        },
-    ];
+fn create_descriptor_pool(device: &Device) -> vk::DescriptorPool {
+    let descriptor_count = 1;
+    let pool_sizes = [vk::DescriptorPoolSize {
+        ty: vk::DescriptorType::COMBINED_IMAGE_SAMPLER,
+        descriptor_count,
+    }];
 
     let create_info = vk::DescriptorPoolCreateInfo::builder()
         .pool_sizes(&pool_sizes)
@@ -177,11 +135,9 @@ fn create_descriptor_sets(
     context: &Arc<Context>,
     pool: vk::DescriptorPool,
     layout: vk::DescriptorSetLayout,
-    buffers: &[Buffer],
-    cubemap: &Texture,
+    input_image: &Texture,
 ) -> Vec<vk::DescriptorSet> {
-    let layouts = (0..buffers.len()).map(|_| layout).collect::<Vec<_>>();
-
+    let layouts = [layout];
     let allocate_info = vk::DescriptorSetAllocateInfo::builder()
         .descriptor_pool(pool)
         .set_layouts(&layouts);
@@ -192,40 +148,28 @@ fn create_descriptor_sets(
             .unwrap()
     };
 
-    sets.iter().zip(buffers.iter()).for_each(|(set, buffer)| {
-        let buffer_info = [vk::DescriptorBufferInfo::builder()
-            .buffer(buffer.buffer)
-            .offset(0)
-            .range(vk::WHOLE_SIZE)
-            .build()];
+    let input_image_info = [vk::DescriptorImageInfo::builder()
+        .image_layout(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL)
+        .image_view(input_image.view)
+        .sampler(
+            input_image
+                .sampler
+                .expect("Post process input image must have a sampler"),
+        )
+        .build()];
 
-        let cubemap_info = [vk::DescriptorImageInfo::builder()
-            .image_layout(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL)
-            .image_view(cubemap.view)
-            .sampler(cubemap.sampler.unwrap())
-            .build()];
+    let descriptor_writes = [vk::WriteDescriptorSet::builder()
+        .dst_set(sets[0])
+        .dst_binding(0)
+        .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
+        .image_info(&input_image_info)
+        .build()];
 
-        let descriptor_writes = [
-            vk::WriteDescriptorSet::builder()
-                .dst_set(*set)
-                .dst_binding(0)
-                .descriptor_type(vk::DescriptorType::UNIFORM_BUFFER)
-                .buffer_info(&buffer_info)
-                .build(),
-            vk::WriteDescriptorSet::builder()
-                .dst_set(*set)
-                .dst_binding(1)
-                .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
-                .image_info(&cubemap_info)
-                .build(),
-        ];
-
-        unsafe {
-            context
-                .device()
-                .update_descriptor_sets(&descriptor_writes, &[])
-        }
-    });
+    unsafe {
+        context
+            .device()
+            .update_descriptor_sets(&descriptor_writes, &[])
+    }
 
     sets
 }
@@ -239,10 +183,9 @@ fn create_pipeline_layout(
     unsafe { device.create_pipeline_layout(&layout_info, None).unwrap() }
 }
 
-fn create_skybox_pipeline(
+fn create_pipeline(
     context: &Arc<Context>,
     swapchain_properties: SwapchainProperties,
-    msaa_samples: vk::SampleCountFlags,
     render_pass: vk::RenderPass,
     layout: vk::PipelineLayout,
 ) -> vk::Pipeline {
@@ -268,14 +211,14 @@ fn create_skybox_pipeline(
         .alpha_blend_op(vk::BlendOp::ADD)
         .build()];
 
-    create_renderer_pipeline::<SkyboxVertex>(
+    create_renderer_pipeline::<QuadVertex>(
         context,
         RendererPipelineParameters {
-            shader_name: "skybox",
+            shader_name: "postprocess",
             vertex_shader_specialization: None,
             fragment_shader_specialization: None,
             swapchain_properties,
-            msaa_samples,
+            msaa_samples: vk::SampleCountFlags::TYPE_1,
             render_pass,
             subpass: 0,
             layout,
@@ -285,4 +228,64 @@ fn create_skybox_pipeline(
             parent: None,
         },
     )
+}
+
+#[derive(Clone, Copy)]
+#[allow(dead_code)]
+struct QuadVertex {
+    position: [f32; 2],
+    coords: [f32; 2],
+}
+
+impl Vertex for QuadVertex {
+    fn get_bindings_descriptions() -> Vec<vk::VertexInputBindingDescription> {
+        vec![vk::VertexInputBindingDescription {
+            binding: 0,
+            stride: size_of::<QuadVertex>() as _,
+            input_rate: vk::VertexInputRate::VERTEX,
+        }]
+    }
+
+    fn get_attributes_descriptions() -> Vec<vk::VertexInputAttributeDescription> {
+        vec![
+            vk::VertexInputAttributeDescription {
+                location: 0,
+                binding: 0,
+                format: vk::Format::R32G32_SFLOAT,
+                offset: 0,
+            },
+            vk::VertexInputAttributeDescription {
+                location: 1,
+                binding: 0,
+                format: vk::Format::R32G32_SFLOAT,
+                offset: 8,
+            },
+        ]
+    }
+}
+
+struct QuadModel {
+    vertices: Buffer,
+    indices: Buffer,
+}
+
+impl QuadModel {
+    fn new(context: &Arc<Context>) -> Self {
+        let indices: [u32; 6] = [0, 1, 2, 2, 3, 0];
+        let indices = create_device_local_buffer_with_data::<u8, _>(
+            context,
+            vk::BufferUsageFlags::INDEX_BUFFER,
+            &indices,
+        );
+        let vertices: [f32; 16] = [
+            -1.0, 1.0, 0.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, -1.0, 1.0, 0.0, -1.0, -1.0, 0.0, 0.0,
+        ];
+        let vertices = create_device_local_buffer_with_data::<u8, _>(
+            context,
+            vk::BufferUsageFlags::VERTEX_BUFFER,
+            &vertices,
+        );
+
+        Self { vertices, indices }
+    }
 }

@@ -1,6 +1,6 @@
 mod uniform;
 
-use super::{create_renderer_pipeline, RendererPipelineParameters};
+use super::{create_renderer_pipeline, RenderPass, RendererPipelineParameters};
 use ash::{version::DeviceV1_0, vk, Device};
 use environment::*;
 use math::cgmath::Matrix4;
