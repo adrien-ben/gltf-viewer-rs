@@ -257,7 +257,7 @@ fn create_skybox_pipeline(
         .front(Default::default())
         .back(Default::default());
 
-    let color_blend_attachment = vk::PipelineColorBlendAttachmentState::builder()
+    let color_blend_attachments = [vk::PipelineColorBlendAttachmentState::builder()
         .color_write_mask(vk::ColorComponentFlags::all())
         .blend_enable(false)
         .src_color_blend_factor(vk::BlendFactor::ONE)
@@ -265,7 +265,8 @@ fn create_skybox_pipeline(
         .color_blend_op(vk::BlendOp::ADD)
         .src_alpha_blend_factor(vk::BlendFactor::ONE)
         .dst_alpha_blend_factor(vk::BlendFactor::ZERO)
-        .alpha_blend_op(vk::BlendOp::ADD);
+        .alpha_blend_op(vk::BlendOp::ADD)
+        .build()];
 
     create_renderer_pipeline::<SkyboxVertex>(
         context,
@@ -276,9 +277,10 @@ fn create_skybox_pipeline(
             swapchain_properties,
             msaa_samples,
             render_pass,
+            subpass: 0,
             layout,
             depth_stencil_info: &depth_stencil_info,
-            color_blend_attachment: &color_blend_attachment,
+            color_blend_attachments: &color_blend_attachments,
             enable_face_culling: true,
             parent: None,
         },

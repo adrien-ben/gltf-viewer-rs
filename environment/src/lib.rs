@@ -296,7 +296,7 @@ fn create_env_pipeline<V: Vertex>(
         .alpha_to_coverage_enable(false)
         .alpha_to_one_enable(false);
 
-    let color_blend_attachment = vk::PipelineColorBlendAttachmentState::builder()
+    let color_blend_attachments = [vk::PipelineColorBlendAttachmentState::builder()
         .color_write_mask(vk::ColorComponentFlags::all())
         .blend_enable(false)
         .src_color_blend_factor(vk::BlendFactor::ONE)
@@ -305,7 +305,7 @@ fn create_env_pipeline<V: Vertex>(
         .src_alpha_blend_factor(vk::BlendFactor::ONE)
         .dst_alpha_blend_factor(vk::BlendFactor::ZERO)
         .alpha_blend_op(vk::BlendOp::ADD)
-        .build();
+        .build()];
 
     create_pipeline::<V>(
         context,
@@ -317,8 +317,9 @@ fn create_env_pipeline<V: Vertex>(
             rasterizer_info: params.rasterizer_info,
             dynamic_state_info: params.dynamic_state_info,
             depth_stencil_info: None,
-            color_blend_attachment: &color_blend_attachment,
+            color_blend_attachments: &color_blend_attachments,
             render_pass: params.render_pass,
+            subpass: 0,
             layout: params.layout,
             parent: None,
             allow_derivatives: false,

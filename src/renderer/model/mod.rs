@@ -831,7 +831,7 @@ fn create_opaque_pipeline(
         .front(Default::default())
         .back(Default::default());
 
-    let color_blend_attachment = vk::PipelineColorBlendAttachmentState::builder()
+    let color_blend_attachments = [vk::PipelineColorBlendAttachmentState::builder()
         .color_write_mask(vk::ColorComponentFlags::all())
         .blend_enable(false)
         .src_color_blend_factor(vk::BlendFactor::ONE)
@@ -839,7 +839,8 @@ fn create_opaque_pipeline(
         .color_blend_op(vk::BlendOp::ADD)
         .src_alpha_blend_factor(vk::BlendFactor::ONE)
         .dst_alpha_blend_factor(vk::BlendFactor::ZERO)
-        .alpha_blend_op(vk::BlendOp::ADD);
+        .alpha_blend_op(vk::BlendOp::ADD)
+        .build()];
 
     create_renderer_pipeline::<ModelVertex>(
         context,
@@ -850,9 +851,10 @@ fn create_opaque_pipeline(
             swapchain_properties,
             msaa_samples,
             render_pass,
+            subpass: 0,
             layout,
             depth_stencil_info: &depth_stencil_info,
-            color_blend_attachment: &color_blend_attachment,
+            color_blend_attachments: &color_blend_attachments,
             enable_face_culling,
             parent: None,
         },
@@ -881,7 +883,7 @@ fn create_transparent_pipeline(
         .front(Default::default())
         .back(Default::default());
 
-    let color_blend_attachment = vk::PipelineColorBlendAttachmentState::builder()
+    let color_blend_attachments = [vk::PipelineColorBlendAttachmentState::builder()
         .color_write_mask(vk::ColorComponentFlags::all())
         .blend_enable(true)
         .src_color_blend_factor(vk::BlendFactor::SRC_ALPHA)
@@ -889,7 +891,8 @@ fn create_transparent_pipeline(
         .color_blend_op(vk::BlendOp::ADD)
         .src_alpha_blend_factor(vk::BlendFactor::ONE)
         .dst_alpha_blend_factor(vk::BlendFactor::ZERO)
-        .alpha_blend_op(vk::BlendOp::ADD);
+        .alpha_blend_op(vk::BlendOp::ADD)
+        .build()];
 
     create_renderer_pipeline::<ModelVertex>(
         context,
@@ -900,9 +903,10 @@ fn create_transparent_pipeline(
             swapchain_properties,
             msaa_samples,
             render_pass,
+            subpass: 0,
             layout,
             depth_stencil_info: &depth_stencil_info,
-            color_blend_attachment: &color_blend_attachment,
+            color_blend_attachments: &color_blend_attachments,
             enable_face_culling: false,
             parent: Some(parent),
         },
