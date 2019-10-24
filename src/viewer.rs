@@ -5,7 +5,7 @@ use math;
 use math::cgmath::{Deg, Matrix4, Point3, Vector3};
 use std::{
     mem::size_of,
-    path::{Path, PathBuf},
+    path::Path,
     sync::Arc,
     time::Instant,
 };
@@ -19,7 +19,6 @@ pub struct Viewer {
     events_loop: EventsLoop,
     _window: Window,
     resize_dimensions: Option<[u32; 2]>,
-    path_to_load: Option<PathBuf>,
 
     camera: Camera,
     input_state: InputState,
@@ -111,13 +110,15 @@ impl Viewer {
         let in_flight_frames = Self::create_sync_objects(context.device());
 
         let loader = Loader::new(Arc::new(context.new_thread()));
+        if let Some(p) = path {
+            loader.load(p.as_ref().to_path_buf());
+        }
 
         Self {
             events_loop,
             _window: window,
             config,
             resize_dimensions: None,
-            path_to_load: path.map(|p| p.as_ref().to_path_buf()),
             camera: Default::default(),
             input_state: Default::default(),
             context,
@@ -327,7 +328,6 @@ impl Viewer {
         self.resize_dimensions = resize_dimensions;
         if path_to_load.is_some() {
             self.loader.load(path_to_load.as_ref().cloned().unwrap());
-            self.path_to_load = path_to_load;
         }
         self.input_state = input_state;
         should_stop
