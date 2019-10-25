@@ -1,5 +1,6 @@
 use ash::vk;
 use gltf::image::{Data, Format};
+use gltf::iter::Textures;
 use std::sync::Arc;
 use vulkan::*;
 
@@ -7,10 +8,12 @@ use vulkan::*;
 pub fn create_textures_from_gltf(
     context: &Arc<Context>,
     command_buffer: vk::CommandBuffer,
+    textures: Textures,
     images: &[Data],
 ) -> (Vec<Texture>, Vec<Buffer>) {
-    images
-        .iter()
+    textures
+        .map(|texture| texture.source().index())
+        .map(|texture_index| &images[texture_index])
         .map(|image| (image.width, image.height, build_rgba_buffer(image)))
         .map(|(width, height, pixels)| {
             Texture::cmd_from_rgba(&context, command_buffer, width, height, &pixels)

@@ -86,8 +86,12 @@ impl Model {
             transform
         };
 
-        let (textures, staged_textures) =
-            texture::create_textures_from_gltf(&context, command_buffer, &images);
+        let (textures, staged_textures) = texture::create_textures_from_gltf(
+            &context,
+            command_buffer,
+            document.textures(),
+            &images,
+        );
 
         let lights = create_lights_from_gltf(&document);
 
