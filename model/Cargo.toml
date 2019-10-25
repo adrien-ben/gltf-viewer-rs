@@ -17,6 +17,7 @@ git = "https://github.com/gltf-rs/mikktspace"
 rev = "abbae9b486f280ce6e331821e2454c2cfd746d5b"
 
 [dependencies.gltf]
-git = "https://github.com/gltf-rs/gltf"
-rev = "b64904b5e9e0f9c956d78986b8ccc723b4276f63"
+# git = "https://github.com/gltf-rs/gltf"
+# rev = "b64904b5e9e0f9c956d78986b8ccc723b4276f63"
+path = "../../gltf"
 features = ["KHR_lights_punctual", "KHR_materials_unlit"]
