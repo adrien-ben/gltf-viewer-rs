@@ -4,6 +4,7 @@ use vulkan::ash::{version::DeviceV1_0, vk, Device};
 
 pub struct RenderPass {
     context: Arc<Context>,
+    extent: vk::Extent2D,
     color_attachment: Texture,
     depth_attachment: Texture,
     resolve_attachment: Option<Texture>,
@@ -36,6 +37,7 @@ impl RenderPass {
 
         Self {
             context,
+            extent,
             color_attachment,
             depth_attachment,
             resolve_attachment,
@@ -46,19 +48,39 @@ impl RenderPass {
 
 impl RenderPass {
     pub fn get_color_attachment(&self) -> &Texture {
-        &self.color_attachment
-    }
-
-    pub fn get_depth_attachment(&self) -> &Texture {
-        &self.depth_attachment
-    }
-
-    pub fn get_resolve_attachment(&self) -> Option<&Texture> {
-        self.resolve_attachment.as_ref()
+        self.resolve_attachment
+            .as_ref()
+            .unwrap_or(&self.color_attachment)
     }
 
     pub fn get_render_pass(&self) -> vk::RenderPass {
         self.render_pass
+    }
+}
+
+impl RenderPass {
+    pub fn create_framebuffer(&self) -> vk::Framebuffer {
+        let attachments = {
+            let color = self.color_attachment.view;
+            let depth = self.depth_attachment.view;
+            match self.resolve_attachment.as_ref() {
+                Some(resolve) => vec![color, depth, resolve.view],
+                _ => vec![color, depth],
+            }
+        };
+
+        let framebuffer_info = vk::FramebufferCreateInfo::builder()
+            .render_pass(self.render_pass)
+            .attachments(&attachments)
+            .width(self.extent.width)
+            .height(self.extent.height)
+            .layers(1);
+        unsafe {
+            self.context
+                .device()
+                .create_framebuffer(&framebuffer_info, None)
+                .expect("Failed to create framebuffer")
+        }
     }
 }
 
@@ -213,33 +235,7 @@ fn create_color_texture(
     let view = image.create_view(vk::ImageViewType::TYPE_2D, vk::ImageAspectFlags::COLOR);
 
     let sampler = match msaa_samples {
-        vk::SampleCountFlags::TYPE_1 => {
-            let sampler_info = vk::SamplerCreateInfo::builder()
-                .mag_filter(vk::Filter::LINEAR)
-                .min_filter(vk::Filter::LINEAR)
-                .address_mode_u(vk::SamplerAddressMode::CLAMP_TO_EDGE)
-                .address_mode_v(vk::SamplerAddressMode::CLAMP_TO_EDGE)
-                .address_mode_w(vk::SamplerAddressMode::CLAMP_TO_EDGE)
-                .anisotropy_enable(false)
-                .max_anisotropy(0.0)
-                .border_color(vk::BorderColor::FLOAT_OPAQUE_WHITE)
-                .unnormalized_coordinates(false)
-                .compare_enable(false)
-                .compare_op(vk::CompareOp::ALWAYS)
-                .mipmap_mode(vk::SamplerMipmapMode::LINEAR)
-                .mip_lod_bias(0.0)
-                .min_lod(0.0)
-                .max_lod(1.0);
-
-            unsafe {
-                Some(
-                    context
-                        .device()
-                        .create_sampler(&sampler_info, None)
-                        .expect("Failed to create sampler"),
-                )
-            }
-        }
+        vk::SampleCountFlags::TYPE_1 => Some(create_color_sampler(context)),
         _ => None,
     };
 
@@ -301,31 +297,33 @@ fn create_resolve_texture(
 
     let view = image.create_view(vk::ImageViewType::TYPE_2D, vk::ImageAspectFlags::COLOR);
 
-    let sampler = {
-        let sampler_info = vk::SamplerCreateInfo::builder()
-            .mag_filter(vk::Filter::LINEAR)
-            .min_filter(vk::Filter::LINEAR)
-            .address_mode_u(vk::SamplerAddressMode::CLAMP_TO_EDGE)
-            .address_mode_v(vk::SamplerAddressMode::CLAMP_TO_EDGE)
-            .address_mode_w(vk::SamplerAddressMode::CLAMP_TO_EDGE)
-            .anisotropy_enable(false)
-            .max_anisotropy(0.0)
-            .border_color(vk::BorderColor::FLOAT_OPAQUE_WHITE)
-            .unnormalized_coordinates(false)
-            .compare_enable(false)
-            .compare_op(vk::CompareOp::ALWAYS)
-            .mipmap_mode(vk::SamplerMipmapMode::LINEAR)
-            .mip_lod_bias(0.0)
-            .min_lod(0.0)
-            .max_lod(1.0);
-
-        unsafe {
-            context
-                .device()
-                .create_sampler(&sampler_info, None)
-                .expect("Failed to create sampler")
-        }
-    };
+    let sampler = create_color_sampler(context);
 
     Texture::new(Arc::clone(context), image, view, Some(sampler))
+}
+
+fn create_color_sampler(context: &Arc<Context>) -> vk::Sampler {
+    let sampler_info = vk::SamplerCreateInfo::builder()
+        .mag_filter(vk::Filter::LINEAR)
+        .min_filter(vk::Filter::LINEAR)
+        .address_mode_u(vk::SamplerAddressMode::CLAMP_TO_EDGE)
+        .address_mode_v(vk::SamplerAddressMode::CLAMP_TO_EDGE)
+        .address_mode_w(vk::SamplerAddressMode::CLAMP_TO_EDGE)
+        .anisotropy_enable(false)
+        .max_anisotropy(0.0)
+        .border_color(vk::BorderColor::FLOAT_OPAQUE_WHITE)
+        .unnormalized_coordinates(false)
+        .compare_enable(false)
+        .compare_op(vk::CompareOp::ALWAYS)
+        .mipmap_mode(vk::SamplerMipmapMode::LINEAR)
+        .mip_lod_bias(0.0)
+        .min_lod(0.0)
+        .max_lod(1.0);
+
+    unsafe {
+        context
+            .device()
+            .create_sampler(&sampler_info, None)
+            .expect("Failed to create sampler")
+    }
 }

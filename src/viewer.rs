@@ -3,12 +3,7 @@ use ash::{version::DeviceV1_0, vk, Device};
 use environment::*;
 use math;
 use math::cgmath::{Deg, Matrix4, Point3, Vector3};
-use std::{
-    mem::size_of,
-    path::Path,
-    sync::Arc,
-    time::Instant,
-};
+use std::{mem::size_of, path::Path, sync::Arc, time::Instant};
 use vulkan::*;
 use winit::{dpi::LogicalSize, Event, EventsLoop, Window, WindowBuilder, WindowEvent};
 
@@ -94,29 +89,7 @@ impl Viewer {
             msaa_samples,
         );
 
-        let offscreen_framebuffer = {
-            let attachments = {
-                let color = renderer_render_pass.get_color_attachment().view;
-                let depth = renderer_render_pass.get_depth_attachment().view;
-                match renderer_render_pass.get_resolve_attachment() {
-                    Some(resolve) => vec![color, depth, resolve.view],
-                    _ => vec![color, depth],
-                }
-            };
-
-            let framebuffer_info = vk::FramebufferCreateInfo::builder()
-                .render_pass(renderer_render_pass.get_render_pass())
-                .attachments(&attachments)
-                .width(swapchain_properties.extent.width)
-                .height(swapchain_properties.extent.height)
-                .layers(1);
-            unsafe {
-                context
-                    .device()
-                    .create_framebuffer(&framebuffer_info, None)
-                    .expect("Failed to create framebuffer")
-            }
-        };
+        let offscreen_framebuffer = renderer_render_pass.create_framebuffer();
 
         let skybox_renderer = SkyboxRenderer::create(
             Arc::clone(&context),
@@ -131,10 +104,7 @@ impl Viewer {
             Arc::clone(&context),
             swapchain_properties,
             &simple_render_pass,
-            match renderer_render_pass.get_resolve_attachment() {
-                Some(attachment) => attachment,
-                _ => renderer_render_pass.get_color_attachment(),
-            },
+            renderer_render_pass.get_color_attachment(),
         );
 
         let command_buffers = Self::create_and_register_command_buffers(
@@ -583,29 +553,7 @@ impl Viewer {
             self.msaa_samples,
         );
 
-        let offscreen_framebuffer = {
-            let attachments = {
-                let color = renderer_render_pass.get_color_attachment().view;
-                let depth = renderer_render_pass.get_depth_attachment().view;
-                match renderer_render_pass.get_resolve_attachment() {
-                    Some(resolve) => vec![color, depth, resolve.view],
-                    _ => vec![color, depth],
-                }
-            };
-
-            let framebuffer_info = vk::FramebufferCreateInfo::builder()
-                .render_pass(renderer_render_pass.get_render_pass())
-                .attachments(&attachments)
-                .width(swapchain_properties.extent.width)
-                .height(swapchain_properties.extent.height)
-                .layers(1);
-            unsafe {
-                self.context
-                    .device()
-                    .create_framebuffer(&framebuffer_info, None)
-                    .expect("Failed to create framebuffer")
-            }
-        };
+        let offscreen_framebuffer = renderer_render_pass.create_framebuffer();
 
         self.skybox_renderer.rebuild_pipeline(
             swapchain_properties,
@@ -625,10 +573,7 @@ impl Viewer {
             Arc::clone(&self.context),
             swapchain_properties,
             &self.simple_render_pass,
-            match renderer_render_pass.get_resolve_attachment() {
-                Some(attachment) => attachment,
-                _ => renderer_render_pass.get_color_attachment(),
-            },
+            renderer_render_pass.get_color_attachment(),
         );
 
         let swapchain = Swapchain::create(
