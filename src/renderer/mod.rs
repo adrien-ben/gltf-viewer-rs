@@ -1,7 +1,9 @@
 mod model;
+mod postprocess;
+mod renderpass;
 mod skybox;
 
-pub use self::{model::*, skybox::*};
+pub use self::{model::*, postprocess::*, renderpass::*, skybox::*};
 use ash::vk;
 use std::sync::Arc;
 use vulkan::*;
@@ -14,9 +16,10 @@ struct RendererPipelineParameters<'a> {
     swapchain_properties: SwapchainProperties,
     msaa_samples: vk::SampleCountFlags,
     render_pass: vk::RenderPass,
+    subpass: u32,
     layout: vk::PipelineLayout,
     depth_stencil_info: &'a vk::PipelineDepthStencilStateCreateInfo,
-    color_blend_attachment: &'a vk::PipelineColorBlendAttachmentState,
+    color_blend_attachments: &'a [vk::PipelineColorBlendAttachmentState],
     enable_face_culling: bool,
     parent: Option<vk::Pipeline>,
 }
@@ -87,8 +90,9 @@ fn create_renderer_pipeline<V: Vertex>(
             rasterizer_info: &rasterizer_info,
             dynamic_state_info: None,
             depth_stencil_info: Some(params.depth_stencil_info),
-            color_blend_attachment: params.color_blend_attachment,
+            color_blend_attachments: params.color_blend_attachments,
             render_pass: params.render_pass,
+            subpass: params.subpass,
             layout: params.layout,
             parent: params.parent,
             allow_derivatives: params.parent.is_none(),

@@ -1,7 +1,7 @@
 use super::{
     context::Context,
     image::{create_image_view, Image},
-    renderpass::RenderPass,
+    renderpass::SimpleRenderPass,
 };
 use ash::{
     extensions::khr::{Surface, Swapchain as SwapchainLoader},
@@ -33,7 +33,7 @@ impl Swapchain {
         swapchain_support_details: SwapchainSupportDetails,
         dimensions: [u32; 2],
         preferred_vsync: bool,
-        render_pass: &RenderPass,
+        render_pass: &SimpleRenderPass,
     ) -> Self {
         let properties =
             swapchain_support_details.get_ideal_swapchain_properties(dimensions, preferred_vsync);
@@ -179,14 +179,11 @@ impl Swapchain {
 }
 
 impl Swapchain {
-    fn create_framebuffers(&mut self, render_pass: &RenderPass) {
+    fn create_framebuffers(&mut self, render_pass: &SimpleRenderPass) {
         self.framebuffers = self
             .image_views
             .iter()
-            .map(|view| match render_pass.get_color_attachment() {
-                Some(texture) => vec![texture.view, render_pass.get_depth_attachment().view, *view],
-                _ => vec![*view, render_pass.get_depth_attachment().view],
-            })
+            .map(|view| [*view])
             .map(|attachments| {
                 let framebuffer_info = vk::FramebufferCreateInfo::builder()
                     .render_pass(render_pass.get_render_pass())

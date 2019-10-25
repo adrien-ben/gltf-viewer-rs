@@ -37,6 +37,12 @@ using [Ash][2]. It runs on Window, Linux and MacOS.
   - [ ] First Person
 - [x] Drag and drop
 - [x] Background loading
+- [ ] Post processing
+  - [x] Gamma correction
+  - [x] Tone mapping
+  - [ ] Bloom
+  - [ ] Ambient occlusion
+  - [ ] Depth of field
 
 ## Controls
 

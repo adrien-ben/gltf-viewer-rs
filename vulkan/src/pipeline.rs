@@ -11,8 +11,9 @@ pub struct PipelineParameters<'a> {
     pub rasterizer_info: &'a vk::PipelineRasterizationStateCreateInfo,
     pub dynamic_state_info: Option<&'a vk::PipelineDynamicStateCreateInfo>,
     pub depth_stencil_info: Option<&'a vk::PipelineDepthStencilStateCreateInfo>,
-    pub color_blend_attachment: &'a vk::PipelineColorBlendAttachmentState,
+    pub color_blend_attachments: &'a [vk::PipelineColorBlendAttachmentState],
     pub render_pass: vk::RenderPass,
+    pub subpass: u32,
     pub layout: vk::PipelineLayout,
     pub parent: Option<vk::Pipeline>,
     pub allow_derivatives: bool,
@@ -50,12 +51,10 @@ pub fn create_pipeline<V: Vertex>(
         .topology(vk::PrimitiveTopology::TRIANGLE_LIST)
         .primitive_restart_enable(false);
 
-    let color_blend_attachments = [*params.color_blend_attachment];
-
     let color_blending_info = vk::PipelineColorBlendStateCreateInfo::builder()
         .logic_op_enable(false)
         .logic_op(vk::LogicOp::COPY)
-        .attachments(&color_blend_attachments)
+        .attachments(params.color_blend_attachments)
         .blend_constants([0.0, 0.0, 0.0, 0.0]);
 
     let mut pipeline_info = vk::GraphicsPipelineCreateInfo::builder()
@@ -68,7 +67,7 @@ pub fn create_pipeline<V: Vertex>(
         .color_blend_state(&color_blending_info)
         .layout(params.layout)
         .render_pass(params.render_pass)
-        .subpass(0);
+        .subpass(params.subpass);
 
     if let Some(depth_stencil_info) = params.depth_stencil_info {
         pipeline_info = pipeline_info.depth_stencil_state(depth_stencil_info)

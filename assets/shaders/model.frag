@@ -338,8 +338,6 @@ void main() {
 
     color += emissive + occludeAmbientColor(ambient, textureChannels);
 
-    color = color/(color + 1.0);
-    color = pow(color, vec3(1.0/2.2));
     outColor = vec4(color, alpha);
 
 #ifdef DEBUG_COLOR

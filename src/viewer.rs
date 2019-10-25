@@ -3,12 +3,7 @@ use ash::{version::DeviceV1_0, vk, Device};
 use environment::*;
 use math;
 use math::cgmath::{Deg, Matrix4, Point3, Vector3};
-use std::{
-    mem::size_of,
-    path::Path,
-    sync::Arc,
-    time::Instant,
-};
+use std::{mem::size_of, path::Path, sync::Arc, time::Instant};
 use vulkan::*;
 use winit::{dpi::LogicalSize, Event, EventsLoop, Window, WindowBuilder, WindowEvent};
 
@@ -27,14 +22,16 @@ pub struct Viewer {
     swapchain_properties: SwapchainProperties,
     depth_format: vk::Format,
     msaa_samples: vk::SampleCountFlags,
-    render_pass: RenderPass,
+    simple_render_pass: SimpleRenderPass,
     swapchain: Swapchain,
 
     camera_uniform_buffers: Vec<Buffer>,
     environment: Environment,
+    renderer_render_pass: RenderPass,
+    offscreen_framebuffer: vk::Framebuffer,
     skybox_renderer: SkyboxRenderer,
     model_renderer: Option<ModelRenderer>,
-
+    post_process_renderer: PostProcessRenderer,
     command_buffers: Vec<vk::CommandBuffer>,
     in_flight_frames: InFlightFrames,
 
@@ -70,25 +67,29 @@ impl Viewer {
         let msaa_samples = context.get_max_usable_sample_count(config.msaa());
         log::debug!("msaa: {:?} - preferred was {}", msaa_samples, config.msaa());
 
-        let render_pass = RenderPass::create(
-            Arc::clone(&context),
-            swapchain_properties.extent,
-            swapchain_properties.format.format,
-            depth_format,
-            msaa_samples,
-        );
+        let simple_render_pass =
+            SimpleRenderPass::create(Arc::clone(&context), swapchain_properties.format.format);
 
         let swapchain = Swapchain::create(
             Arc::clone(&context),
             swapchain_support_details,
             resolution,
             config.vsync(),
-            &render_pass,
+            &simple_render_pass,
         );
 
         let camera_uniform_buffers =
             Self::create_camera_uniform_buffers(&context, swapchain_properties.image_count);
         let environment = Environment::new(&context, config.env());
+
+        let renderer_render_pass = RenderPass::create(
+            Arc::clone(&context),
+            swapchain_properties.extent,
+            depth_format,
+            msaa_samples,
+        );
+
+        let offscreen_framebuffer = renderer_render_pass.create_framebuffer();
 
         let skybox_renderer = SkyboxRenderer::create(
             Arc::clone(&context),
@@ -96,15 +97,25 @@ impl Viewer {
             swapchain_properties,
             &environment,
             msaa_samples,
-            &render_pass,
+            &renderer_render_pass,
+        );
+
+        let post_process_renderer = PostProcessRenderer::create(
+            Arc::clone(&context),
+            swapchain_properties,
+            &simple_render_pass,
+            renderer_render_pass.get_color_attachment(),
         );
 
         let command_buffers = Self::create_and_register_command_buffers(
             &context,
             &swapchain,
-            render_pass.get_render_pass(),
+            &simple_render_pass,
+            &renderer_render_pass,
+            offscreen_framebuffer,
             &skybox_renderer,
             None,
+            &post_process_renderer,
         );
 
         let in_flight_frames = Self::create_sync_objects(context.device());
@@ -123,14 +134,17 @@ impl Viewer {
             input_state: Default::default(),
             context,
             swapchain_properties,
-            render_pass,
+            simple_render_pass,
             swapchain,
             depth_format,
             msaa_samples,
             camera_uniform_buffers,
             environment,
+            renderer_render_pass,
+            offscreen_framebuffer,
             skybox_renderer,
             model_renderer: None,
+            post_process_renderer,
             command_buffers,
             in_flight_frames,
             loader,
@@ -170,9 +184,12 @@ impl Viewer {
     fn create_and_register_command_buffers(
         context: &Context,
         swapchain: &Swapchain,
-        render_pass: vk::RenderPass,
+        simple_render_pass: &SimpleRenderPass,
+        renderer_render_pass: &RenderPass,
+        offscreen_framebuffer: vk::Framebuffer,
         skybox_renderer: &SkyboxRenderer,
         model_renderer: Option<&ModelRenderer>,
+        post_process_renderer: &PostProcessRenderer,
     ) -> Vec<vk::CommandBuffer> {
         let device = context.device();
 
@@ -205,7 +222,7 @@ impl Viewer {
                 let clear_values = [
                     vk::ClearValue {
                         color: vk::ClearColorValue {
-                            float32: [0.7, 0.7, 0.7, 1.0],
+                            float32: [1.0, 0.0, 0.0, 1.0],
                         },
                     },
                     vk::ClearValue {
@@ -216,8 +233,8 @@ impl Viewer {
                     },
                 ];
                 let render_pass_begin_info = vk::RenderPassBeginInfo::builder()
-                    .render_pass(render_pass)
-                    .framebuffer(framebuffer)
+                    .render_pass(renderer_render_pass.get_render_pass())
+                    .framebuffer(offscreen_framebuffer)
                     .render_area(vk::Rect2D {
                         offset: vk::Offset2D { x: 0, y: 0 },
                         extent: swapchain.properties().extent,
@@ -238,6 +255,37 @@ impl Viewer {
             if let Some(model_renderer) = model_renderer {
                 model_renderer.cmd_draw(buffer, i);
             }
+
+            // End render pass
+            unsafe { device.cmd_end_render_pass(buffer) };
+
+            // begin render pass
+            {
+                let clear_values = [vk::ClearValue {
+                    color: vk::ClearColorValue {
+                        float32: [0.0, 0.0, 1.0, 1.0],
+                    },
+                }];
+                let render_pass_begin_info = vk::RenderPassBeginInfo::builder()
+                    .render_pass(simple_render_pass.get_render_pass())
+                    .framebuffer(framebuffer)
+                    .render_area(vk::Rect2D {
+                        offset: vk::Offset2D { x: 0, y: 0 },
+                        extent: swapchain.properties().extent,
+                    })
+                    .clear_values(&clear_values);
+
+                unsafe {
+                    device.cmd_begin_render_pass(
+                        buffer,
+                        &render_pass_begin_info,
+                        vk::SubpassContents::INLINE,
+                    )
+                };
+            }
+
+            // Apply post process
+            post_process_renderer.cmd_draw(buffer);
 
             // End render pass
             unsafe { device.cmd_end_render_pass(buffer) };
@@ -352,15 +400,18 @@ impl Viewer {
                 self.swapchain_properties,
                 &self.environment,
                 self.msaa_samples,
-                &self.render_pass,
+                &self.renderer_render_pass,
             );
 
             let command_buffers = Self::create_and_register_command_buffers(
                 &self.context,
                 &self.swapchain,
-                self.render_pass.get_render_pass(),
+                &self.simple_render_pass,
+                &self.renderer_render_pass,
+                self.offscreen_framebuffer,
                 &self.skybox_renderer,
                 Some(&model_renderer),
+                &self.post_process_renderer,
             );
 
             self.model_renderer = Some(model_renderer);
@@ -495,42 +546,60 @@ impl Viewer {
         let swapchain_properties = swapchain_support_details
             .get_ideal_swapchain_properties(dimensions, self.config.vsync());
 
-        let render_pass = RenderPass::create(
+        let renderer_render_pass = RenderPass::create(
             Arc::clone(&self.context),
             swapchain_properties.extent,
-            swapchain_properties.format.format,
             self.depth_format,
             self.msaa_samples,
         );
 
+        let offscreen_framebuffer = renderer_render_pass.create_framebuffer();
+
         self.skybox_renderer.rebuild_pipeline(
             swapchain_properties,
             self.msaa_samples,
-            &render_pass,
+            &renderer_render_pass,
         );
+
         if let Some(model_renderer) = self.model_renderer.as_mut() {
-            model_renderer.rebuild_pipelines(swapchain_properties, self.msaa_samples, &render_pass);
+            model_renderer.rebuild_pipelines(
+                swapchain_properties,
+                self.msaa_samples,
+                &renderer_render_pass,
+            );
         }
+
+        let post_process_renderer = PostProcessRenderer::create(
+            Arc::clone(&self.context),
+            swapchain_properties,
+            &self.simple_render_pass,
+            renderer_render_pass.get_color_attachment(),
+        );
 
         let swapchain = Swapchain::create(
             Arc::clone(&self.context),
             swapchain_support_details,
             dimensions,
             self.config.vsync(),
-            &render_pass,
+            &self.simple_render_pass,
         );
 
         let command_buffers = Self::create_and_register_command_buffers(
             &self.context,
             &swapchain,
-            render_pass.get_render_pass(),
+            &self.simple_render_pass,
+            &renderer_render_pass,
+            offscreen_framebuffer,
             &self.skybox_renderer,
             self.model_renderer.as_ref(),
+            &post_process_renderer,
         );
 
         self.swapchain = swapchain;
         self.swapchain_properties = swapchain_properties;
-        self.render_pass = render_pass;
+        self.renderer_render_pass = renderer_render_pass;
+        self.offscreen_framebuffer = offscreen_framebuffer;
+        self.post_process_renderer = post_process_renderer;
         self.command_buffers = command_buffers;
     }
 
@@ -553,6 +622,7 @@ impl Viewer {
         let device = self.context.device();
         unsafe {
             device.free_command_buffers(self.context.general_command_pool(), &self.command_buffers);
+            device.destroy_framebuffer(self.offscreen_framebuffer, None);
         }
         self.swapchain.destroy();
     }
