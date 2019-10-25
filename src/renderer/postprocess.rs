@@ -1,15 +1,10 @@
 use super::{create_renderer_pipeline, RendererPipelineParameters};
-use std::mem::size_of;
 use std::sync::Arc;
 use vulkan::ash::{version::DeviceV1_0, vk, Device};
-use vulkan::{
-    create_device_local_buffer_with_data, Buffer, Context, Descriptors, SimpleRenderPass,
-    SwapchainProperties, Texture, Vertex,
-};
+use vulkan::{Context, Descriptors, SimpleRenderPass, SwapchainProperties, Texture};
 
 pub struct PostProcessRenderer {
     context: Arc<Context>,
-    model: QuadModel,
     descriptors: Descriptors,
     pipeline_layout: vk::PipelineLayout,
     pipeline: vk::Pipeline,
@@ -22,7 +17,6 @@ impl PostProcessRenderer {
         render_pass: &SimpleRenderPass,
         input_image: &Texture,
     ) -> Self {
-        let model = QuadModel::new(&context);
         let descriptors = create_descriptors(&context, input_image);
         let pipeline_layout = create_pipeline_layout(context.device(), descriptors.layout());
         let pipeline = create_pipeline(
@@ -34,7 +28,6 @@ impl PostProcessRenderer {
 
         Self {
             context,
-            model,
             descriptors,
             pipeline_layout,
             pipeline,
@@ -66,21 +59,8 @@ impl PostProcessRenderer {
             )
         };
 
-        unsafe {
-            device.cmd_bind_vertex_buffers(command_buffer, 0, &[self.model.vertices.buffer], &[0]);
-        }
-
-        unsafe {
-            device.cmd_bind_index_buffer(
-                command_buffer,
-                self.model.indices.buffer,
-                0,
-                vk::IndexType::UINT32,
-            );
-        }
-
         // Draw
-        unsafe { device.cmd_draw_indexed(command_buffer, 6, 1, 0, 0, 0) };
+        unsafe { device.cmd_draw(command_buffer, 6, 1, 0, 0) };
     }
 }
 
@@ -211,7 +191,7 @@ fn create_pipeline(
         .alpha_blend_op(vk::BlendOp::ADD)
         .build()];
 
-    create_renderer_pipeline::<QuadVertex>(
+    create_renderer_pipeline::<()>(
         context,
         RendererPipelineParameters {
             shader_name: "postprocess",
@@ -228,64 +208,4 @@ fn create_pipeline(
             parent: None,
         },
     )
-}
-
-#[derive(Clone, Copy)]
-#[allow(dead_code)]
-struct QuadVertex {
-    position: [f32; 2],
-    coords: [f32; 2],
-}
-
-impl Vertex for QuadVertex {
-    fn get_bindings_descriptions() -> Vec<vk::VertexInputBindingDescription> {
-        vec![vk::VertexInputBindingDescription {
-            binding: 0,
-            stride: size_of::<QuadVertex>() as _,
-            input_rate: vk::VertexInputRate::VERTEX,
-        }]
-    }
-
-    fn get_attributes_descriptions() -> Vec<vk::VertexInputAttributeDescription> {
-        vec![
-            vk::VertexInputAttributeDescription {
-                location: 0,
-                binding: 0,
-                format: vk::Format::R32G32_SFLOAT,
-                offset: 0,
-            },
-            vk::VertexInputAttributeDescription {
-                location: 1,
-                binding: 0,
-                format: vk::Format::R32G32_SFLOAT,
-                offset: 8,
-            },
-        ]
-    }
-}
-
-struct QuadModel {
-    vertices: Buffer,
-    indices: Buffer,
-}
-
-impl QuadModel {
-    fn new(context: &Arc<Context>) -> Self {
-        let indices: [u32; 6] = [0, 1, 2, 2, 3, 0];
-        let indices = create_device_local_buffer_with_data::<u8, _>(
-            context,
-            vk::BufferUsageFlags::INDEX_BUFFER,
-            &indices,
-        );
-        let vertices: [f32; 16] = [
-            -1.0, 1.0, 0.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, -1.0, 1.0, 0.0, -1.0, -1.0, 0.0, 0.0,
-        ];
-        let vertices = create_device_local_buffer_with_data::<u8, _>(
-            context,
-            vk::BufferUsageFlags::VERTEX_BUFFER,
-            &vertices,
-        );
-
-        Self { vertices, indices }
-    }
 }
