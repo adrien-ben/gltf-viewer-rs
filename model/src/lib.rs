@@ -13,11 +13,11 @@ use self::mikktspace::generate_tangents;
 pub use self::{
     animation::*, error::*, light::*, material::*, mesh::*, node::*, skin::*, texture::*, vertex::*,
 };
-use ash::vk;
 use cgmath::Matrix4;
 use math::*;
 use std::{error::Error, path::Path, result::Result, sync::Arc};
-use vulkan::*;
+use vulkan::ash::vk;
+use vulkan::{Buffer, Context, PreLoadedResource};
 
 pub struct ModelStagingResources {
     _staged_vertices: Buffer,
@@ -31,7 +31,7 @@ pub struct Model {
     global_transform: Matrix4<f32>,
     animations: Vec<Animation>,
     skins: Vec<Skin>,
-    textures: Vec<Texture>,
+    textures: Textures,
     lights: Vec<Light>,
 }
 
@@ -165,7 +165,7 @@ impl Model {
     }
 
     pub fn textures(&self) -> &[Texture] {
-        &self.textures
+        &self.textures.textures
     }
 
     pub fn lights(&self) -> &[Light] {

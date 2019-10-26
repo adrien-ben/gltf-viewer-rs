@@ -1,14 +1,16 @@
 mod uniform;
 
 use super::{create_renderer_pipeline, RenderPass, RendererPipelineParameters};
-use ash::{version::DeviceV1_0, vk, Device};
 use environment::*;
 use math::cgmath::Matrix4;
-use model::*;
+use model::{Material, Model, ModelVertex, Primitive, Texture, MAX_JOINTS_PER_MESH};
 use std::{mem::size_of, sync::Arc};
 use uniform::*;
 use util::*;
-use vulkan::*;
+use vulkan::ash::{version::DeviceV1_0, vk, Device};
+use vulkan::{
+    mem_copy, mem_copy_aligned, Buffer, Context, SwapchainProperties, Texture as VulkanTexture,
+};
 
 const DYNAMIC_DATA_SET_INDEX: u32 = 0;
 const STATIC_DATA_SET_INDEX: u32 = 1;
@@ -32,7 +34,7 @@ type JointsBuffer = [Matrix4<f32>; MAX_JOINTS_PER_MESH];
 pub struct ModelRenderer {
     context: Arc<Context>,
     model: Model,
-    _dummy_texture: Texture,
+    _dummy_texture: VulkanTexture,
     transform_ubos: Vec<Buffer>,
     skin_ubos: Vec<Buffer>,
     skin_matrices: Vec<Vec<JointsBuffer>>,
@@ -54,7 +56,7 @@ impl ModelRenderer {
         msaa_samples: vk::SampleCountFlags,
         render_pass: &RenderPass,
     ) -> Self {
-        let dummy_texture = Texture::from_rgba(&context, 1, 1, &[0, 0, 0, 0]);
+        let dummy_texture = VulkanTexture::from_rgba(&context, 1, 1, &[0, 0, 0, 0]);
 
         // UBOS
         let transform_ubos = create_transform_ubos(&context, &model, swapchain_props.image_count);
@@ -327,7 +329,7 @@ struct DescriptorsResources<'a> {
     model_transform_buffers: &'a [Buffer],
     model_skin_buffers: &'a [Buffer],
     light_buffers: &'a [Buffer],
-    dummy_texture: &'a Texture,
+    dummy_texture: &'a VulkanTexture,
     environment: &'a Environment,
     model: &'a Model,
 }
@@ -701,48 +703,31 @@ fn create_per_primitive_descriptor_sets(
     for mesh in model.meshes() {
         for primitive in mesh.primitives() {
             let material = primitive.material();
-
-            let albedo = material
-                .get_color_texture_index()
-                .map_or(resources.dummy_texture, |i| &textures[i]);
-            let normals = material
-                .get_normals_texture_index()
-                .map_or(resources.dummy_texture, |i| &textures[i]);
-            let metallic_roughness = material
-                .get_metallic_roughness_texture_index()
-                .map_or(resources.dummy_texture, |i| &textures[i]);
-            let occlusion = material
-                .get_occlusion_texture_index()
-                .map_or(resources.dummy_texture, |i| &textures[i]);
-            let emissive = material
-                .get_emissive_texture_index()
-                .map_or(resources.dummy_texture, |i| &textures[i]);
-
-            let albedo_info = [vk::DescriptorImageInfo::builder()
-                .image_layout(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL)
-                .image_view(albedo.view)
-                .sampler(albedo.sampler.unwrap())
-                .build()];
-            let normals_info = [vk::DescriptorImageInfo::builder()
-                .image_layout(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL)
-                .image_view(normals.view)
-                .sampler(normals.sampler.unwrap())
-                .build()];
-            let metallic_roughness_info = [vk::DescriptorImageInfo::builder()
-                .image_layout(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL)
-                .image_view(metallic_roughness.view)
-                .sampler(metallic_roughness.sampler.unwrap())
-                .build()];
-            let occlusion_info = [vk::DescriptorImageInfo::builder()
-                .image_layout(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL)
-                .image_view(occlusion.view)
-                .sampler(occlusion.sampler.unwrap())
-                .build()];
-            let emissive_info = [vk::DescriptorImageInfo::builder()
-                .image_layout(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL)
-                .image_view(emissive.view)
-                .sampler(emissive.sampler.unwrap())
-                .build()];
+            let albedo_info = create_descriptor_image_info(
+                material.get_color_texture_index(),
+                textures,
+                resources.dummy_texture,
+            );
+            let normals_info = create_descriptor_image_info(
+                material.get_normals_texture_index(),
+                textures,
+                resources.dummy_texture,
+            );
+            let metallic_roughness_info = create_descriptor_image_info(
+                material.get_metallic_roughness_texture_index(),
+                textures,
+                resources.dummy_texture,
+            );
+            let occlusion_info = create_descriptor_image_info(
+                material.get_occlusion_texture_index(),
+                textures,
+                resources.dummy_texture,
+            );
+            let emissive_info = create_descriptor_image_info(
+                material.get_emissive_texture_index(),
+                textures,
+                resources.dummy_texture,
+            );
 
             let set = sets[primitive_index];
             primitive_index += 1;
@@ -789,6 +774,24 @@ fn create_per_primitive_descriptor_sets(
     }
 
     sets
+}
+
+fn create_descriptor_image_info(
+    index: Option<usize>,
+    textures: &[Texture],
+    dummy_texture: &VulkanTexture,
+) -> [vk::DescriptorImageInfo; 1] {
+    let (view, sampler) = index
+        .map(|i| &textures[i])
+        .map_or((dummy_texture.view, dummy_texture.sampler.unwrap()), |t| {
+            (t.get_view(), t.get_sampler())
+        });
+
+    [vk::DescriptorImageInfo::builder()
+        .image_layout(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL)
+        .image_view(view)
+        .sampler(sampler)
+        .build()]
 }
 
 fn create_pipeline_layout(device: &Device, descriptors: &Descriptors) -> vk::PipelineLayout {

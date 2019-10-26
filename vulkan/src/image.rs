@@ -527,6 +527,13 @@ impl Image {
     }
 }
 
+// Getters
+impl Image {
+    pub fn get_mip_levels(&self) -> u32 {
+        self.mip_levels
+    }
+}
+
 impl Drop for Image {
     fn drop(&mut self) {
         unsafe {
