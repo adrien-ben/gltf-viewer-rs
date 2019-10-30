@@ -4,7 +4,7 @@ use super::{create_renderer_pipeline, RenderPass, RendererPipelineParameters};
 use environment::*;
 use math::cgmath::Matrix4;
 use model::{Material, Model, ModelVertex, Primitive, Texture, MAX_JOINTS_PER_MESH};
-use std::{mem::size_of, sync::Arc};
+use std::{cell::RefCell, mem::size_of, rc::Weak, sync::Arc};
 use uniform::*;
 use util::*;
 use vulkan::ash::{version::DeviceV1_0, vk, Device};
@@ -33,7 +33,7 @@ type JointsBuffer = [Matrix4<f32>; MAX_JOINTS_PER_MESH];
 
 pub struct ModelRenderer {
     context: Arc<Context>,
-    model: Model,
+    model: Weak<RefCell<Model>>,
     _dummy_texture: VulkanTexture,
     transform_ubos: Vec<Buffer>,
     skin_ubos: Vec<Buffer>,
@@ -49,7 +49,7 @@ pub struct ModelRenderer {
 impl ModelRenderer {
     pub fn create(
         context: Arc<Context>,
-        model: Model,
+        model: Weak<RefCell<Model>>,
         camera_buffers: &[Buffer],
         swapchain_props: SwapchainProperties,
         environment: &Environment,
@@ -58,11 +58,17 @@ impl ModelRenderer {
     ) -> Self {
         let dummy_texture = VulkanTexture::from_rgba(&context, 1, 1, &[0, 0, 0, 0]);
 
+        let model_rc = model
+            .upgrade()
+            .expect("Cannot create model renderer because model was dropped");
+
         // UBOS
-        let transform_ubos = create_transform_ubos(&context, &model, swapchain_props.image_count);
+        let transform_ubos =
+            create_transform_ubos(&context, &model_rc.borrow(), swapchain_props.image_count);
         let (skin_ubos, skin_matrices) =
-            create_skin_ubos(&context, &model, swapchain_props.image_count);
-        let light_buffers = create_lights_ubos(&context, &model, swapchain_props.image_count);
+            create_skin_ubos(&context, &model_rc.borrow(), swapchain_props.image_count);
+        let light_buffers =
+            create_lights_ubos(&context, &model_rc.borrow(), swapchain_props.image_count);
 
         let descriptors = create_descriptors(
             &context,
@@ -73,7 +79,7 @@ impl ModelRenderer {
                 light_buffers: &light_buffers,
                 dummy_texture: &dummy_texture,
                 environment,
-                model: &model,
+                model: &model_rc.borrow(),
             },
         );
         let pipeline_layout = create_pipeline_layout(context.device(), &descriptors);
@@ -84,7 +90,7 @@ impl ModelRenderer {
             true,
             render_pass.get_render_pass(),
             pipeline_layout,
-            &model,
+            &model_rc.borrow(),
         );
 
         let opaque_unculled_pipeline = create_opaque_pipeline(
@@ -94,7 +100,7 @@ impl ModelRenderer {
             false,
             render_pass.get_render_pass(),
             pipeline_layout,
-            &model,
+            &model_rc.borrow(),
         );
 
         let transparent_pipeline = create_transparent_pipeline(
@@ -104,7 +110,7 @@ impl ModelRenderer {
             render_pass.get_render_pass(),
             pipeline_layout,
             opaque_pipeline,
-            &model,
+            &model_rc.borrow(),
         );
 
         Self {
@@ -130,6 +136,11 @@ impl ModelRenderer {
         render_pass: &RenderPass,
     ) {
         let device = self.context.device();
+        let model = self
+            .model
+            .upgrade()
+            .expect("Cannot rebuild renderer's pipeline because model was dropped");
+
         unsafe {
             device.destroy_pipeline(self.opaque_pipeline, None);
             device.destroy_pipeline(self.opaque_unculled_pipeline, None);
@@ -143,7 +154,7 @@ impl ModelRenderer {
             true,
             render_pass.get_render_pass(),
             self.pipeline_layout,
-            &self.model,
+            &model.borrow(),
         );
 
         self.opaque_unculled_pipeline = create_opaque_pipeline(
@@ -153,7 +164,7 @@ impl ModelRenderer {
             false,
             render_pass.get_render_pass(),
             self.pipeline_layout,
-            &self.model,
+            &model.borrow(),
         );
 
         self.transparent_pipeline = create_transparent_pipeline(
@@ -163,21 +174,22 @@ impl ModelRenderer {
             render_pass.get_render_pass(),
             self.pipeline_layout,
             self.opaque_pipeline,
-            &self.model,
+            &model.borrow(),
         );
     }
 }
 
 impl ModelRenderer {
-    pub fn update_model(&mut self, delta_s: f32) {
-        self.model.update(delta_s);
-    }
-
     pub fn update_buffers(&mut self, frame_index: usize) {
+        let model = &self
+            .model
+            .upgrade()
+            .expect("Cannot update buffers because model was dropped");
+        let model = model.borrow();
+
         // Update transform buffers
         {
-            let mesh_nodes = self
-                .model
+            let mesh_nodes = model
                 .nodes()
                 .nodes()
                 .iter()
@@ -195,7 +207,7 @@ impl ModelRenderer {
 
         // Update skin buffers
         {
-            let skins = self.model.skins();
+            let skins = model.skins();
             let skin_matrices = &mut self.skin_matrices[frame_index];
 
             for (index, skin) in skins.iter().enumerate() {
@@ -216,8 +228,6 @@ impl ModelRenderer {
 
         // Update light buffers
         {
-            let model = &self.model;
-
             let uniforms = model
                 .nodes()
                 .nodes()
@@ -237,6 +247,12 @@ impl ModelRenderer {
 
     pub fn cmd_draw(&self, command_buffer: vk::CommandBuffer, frame_index: usize) {
         let device = self.context.device();
+        let model = &self
+            .model
+            .upgrade()
+            .expect("Cannot register draw commands because model was dropped");
+        let model = model.borrow();
+
         // Bind opaque pipeline
         unsafe {
             device.cmd_bind_pipeline(
@@ -263,7 +279,7 @@ impl ModelRenderer {
             &self.context,
             self.pipeline_layout,
             command_buffer,
-            &self.model,
+            &model,
             &self.descriptors.dynamic_data_sets[frame_index..=frame_index],
             &self.descriptors.per_primitive_sets,
             |p| !p.material().is_transparent() && !p.material().is_double_sided(),
@@ -283,7 +299,7 @@ impl ModelRenderer {
             &self.context,
             self.pipeline_layout,
             command_buffer,
-            &self.model,
+            &model,
             &self.descriptors.dynamic_data_sets[frame_index..=frame_index],
             &self.descriptors.per_primitive_sets,
             |p| !p.material().is_transparent() && p.material().is_double_sided(),
@@ -302,7 +318,7 @@ impl ModelRenderer {
             &self.context,
             self.pipeline_layout,
             command_buffer,
-            &self.model,
+            &model,
             &self.descriptors.dynamic_data_sets[frame_index..=frame_index],
             &self.descriptors.per_primitive_sets,
             |p| p.material().is_transparent(),

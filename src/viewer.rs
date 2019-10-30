@@ -1,9 +1,8 @@
 use crate::{camera::*, config::*, controls::*, loader::*, renderer::*};
 use ash::{version::DeviceV1_0, vk, Device};
 use environment::*;
-use math;
-use math::cgmath::{Deg, Matrix4, Point3, Vector3};
-use std::{mem::size_of, path::Path, sync::Arc, time::Instant};
+use model::Model;
+use std::{cell::RefCell, path::Path, rc::Rc, sync::Arc, time::Instant};
 use vulkan::*;
 use winit::{dpi::LogicalSize, Event, EventsLoop, Window, WindowBuilder, WindowEvent};
 
@@ -17,21 +16,14 @@ pub struct Viewer {
 
     camera: Camera,
     input_state: InputState,
+    model: Option<Rc<RefCell<Model>>>,
 
     context: Arc<Context>,
     swapchain_properties: SwapchainProperties,
-    depth_format: vk::Format,
-    msaa_samples: vk::SampleCountFlags,
     simple_render_pass: SimpleRenderPass,
     swapchain: Swapchain,
 
-    camera_uniform_buffers: Vec<Buffer>,
-    environment: Environment,
-    renderer_render_pass: RenderPass,
-    offscreen_framebuffer: vk::Framebuffer,
-    skybox_renderer: SkyboxRenderer,
-    model_renderer: Option<ModelRenderer>,
-    post_process_renderer: PostProcessRenderer,
+    renderer: Renderer,
     command_buffers: Vec<vk::CommandBuffer>,
     in_flight_frames: InFlightFrames,
 
@@ -78,44 +70,22 @@ impl Viewer {
             &simple_render_pass,
         );
 
-        let camera_uniform_buffers =
-            Self::create_camera_uniform_buffers(&context, swapchain_properties.image_count);
         let environment = Environment::new(&context, config.env());
 
-        let renderer_render_pass = RenderPass::create(
+        let renderer = Renderer::create(
             Arc::clone(&context),
-            swapchain_properties.extent,
             depth_format,
             msaa_samples,
-        );
-
-        let offscreen_framebuffer = renderer_render_pass.create_framebuffer();
-
-        let skybox_renderer = SkyboxRenderer::create(
-            Arc::clone(&context),
-            &camera_uniform_buffers,
-            swapchain_properties,
-            &environment,
-            msaa_samples,
-            &renderer_render_pass,
-        );
-
-        let post_process_renderer = PostProcessRenderer::create(
-            Arc::clone(&context),
             swapchain_properties,
             &simple_render_pass,
-            renderer_render_pass.get_color_attachment(),
+            environment,
         );
 
         let command_buffers = Self::create_and_register_command_buffers(
             &context,
             &swapchain,
             &simple_render_pass,
-            &renderer_render_pass,
-            offscreen_framebuffer,
-            &skybox_renderer,
-            None,
-            &post_process_renderer,
+            &renderer,
         );
 
         let in_flight_frames = Self::create_sync_objects(context.device());
@@ -132,38 +102,16 @@ impl Viewer {
             resize_dimensions: None,
             camera: Default::default(),
             input_state: Default::default(),
+            model: None,
             context,
             swapchain_properties,
             simple_render_pass,
             swapchain,
-            depth_format,
-            msaa_samples,
-            camera_uniform_buffers,
-            environment,
-            renderer_render_pass,
-            offscreen_framebuffer,
-            skybox_renderer,
-            model_renderer: None,
-            post_process_renderer,
+            renderer,
             command_buffers,
             in_flight_frames,
             loader,
         }
-    }
-
-    fn create_camera_uniform_buffers(context: &Arc<Context>, count: u32) -> Vec<Buffer> {
-        (0..count)
-            .map(|_| {
-                let mut buffer = Buffer::create(
-                    Arc::clone(context),
-                    size_of::<CameraUBO>() as _,
-                    vk::BufferUsageFlags::UNIFORM_BUFFER,
-                    vk::MemoryPropertyFlags::HOST_VISIBLE | vk::MemoryPropertyFlags::HOST_COHERENT,
-                );
-                buffer.map_memory();
-                buffer
-            })
-            .collect::<Vec<_>>()
     }
 
     fn find_depth_format(context: &Context) -> vk::Format {
@@ -185,11 +133,7 @@ impl Viewer {
         context: &Context,
         swapchain: &Swapchain,
         simple_render_pass: &SimpleRenderPass,
-        renderer_render_pass: &RenderPass,
-        offscreen_framebuffer: vk::Framebuffer,
-        skybox_renderer: &SkyboxRenderer,
-        model_renderer: Option<&ModelRenderer>,
-        post_process_renderer: &PostProcessRenderer,
+        renderer: &Renderer,
     ) -> Vec<vk::CommandBuffer> {
         let device = context.device();
 
@@ -217,78 +161,13 @@ impl Viewer {
                 };
             }
 
-            // begin render pass
-            {
-                let clear_values = [
-                    vk::ClearValue {
-                        color: vk::ClearColorValue {
-                            float32: [1.0, 0.0, 0.0, 1.0],
-                        },
-                    },
-                    vk::ClearValue {
-                        depth_stencil: vk::ClearDepthStencilValue {
-                            depth: 1.0,
-                            stencil: 0,
-                        },
-                    },
-                ];
-                let render_pass_begin_info = vk::RenderPassBeginInfo::builder()
-                    .render_pass(renderer_render_pass.get_render_pass())
-                    .framebuffer(offscreen_framebuffer)
-                    .render_area(vk::Rect2D {
-                        offset: vk::Offset2D { x: 0, y: 0 },
-                        extent: swapchain.properties().extent,
-                    })
-                    .clear_values(&clear_values);
-
-                unsafe {
-                    device.cmd_begin_render_pass(
-                        buffer,
-                        &render_pass_begin_info,
-                        vk::SubpassContents::INLINE,
-                    )
-                };
-            }
-
-            skybox_renderer.cmd_draw(buffer, i);
-
-            if let Some(model_renderer) = model_renderer {
-                model_renderer.cmd_draw(buffer, i);
-            }
-
-            // End render pass
-            unsafe { device.cmd_end_render_pass(buffer) };
-
-            // begin render pass
-            {
-                let clear_values = [vk::ClearValue {
-                    color: vk::ClearColorValue {
-                        float32: [0.0, 0.0, 1.0, 1.0],
-                    },
-                }];
-                let render_pass_begin_info = vk::RenderPassBeginInfo::builder()
-                    .render_pass(simple_render_pass.get_render_pass())
-                    .framebuffer(framebuffer)
-                    .render_area(vk::Rect2D {
-                        offset: vk::Offset2D { x: 0, y: 0 },
-                        extent: swapchain.properties().extent,
-                    })
-                    .clear_values(&clear_values);
-
-                unsafe {
-                    device.cmd_begin_render_pass(
-                        buffer,
-                        &render_pass_begin_info,
-                        vk::SubpassContents::INLINE,
-                    )
-                };
-            }
-
-            // Apply post process
-            post_process_renderer.cmd_draw(buffer);
-
-            // End render pass
-            unsafe { device.cmd_end_render_pass(buffer) };
+            renderer.cmd_draw(
+                buffer,
+                i,
+                swapchain.properties(),
+                simple_render_pass,
+                framebuffer,
+            );
 
             // End command buffer
             unsafe { device.end_command_buffer(buffer).unwrap() };
@@ -340,7 +219,7 @@ impl Viewer {
             }
 
             self.load_new_model();
-            self.update_model(delta_s as _);
+            self.update_model(delta_s as f32);
             self.camera.update(&self.input_state);
             self.draw_frame();
         }
@@ -383,7 +262,7 @@ impl Viewer {
 
     fn load_new_model(&mut self) {
         if let Some(model) = self.loader.get_model() {
-            self.model_renderer.take();
+            self.model.take();
 
             self.context.graphics_queue_wait_idle();
             unsafe {
@@ -393,35 +272,24 @@ impl Viewer {
                 );
             }
 
-            let model_renderer = ModelRenderer::create(
-                Arc::clone(&self.context),
-                model,
-                &self.camera_uniform_buffers,
-                self.swapchain_properties,
-                &self.environment,
-                self.msaa_samples,
-                &self.renderer_render_pass,
-            );
+            let model = Rc::new(RefCell::new(model));
+            self.renderer.set_model(Rc::downgrade(&model));
 
             let command_buffers = Self::create_and_register_command_buffers(
                 &self.context,
                 &self.swapchain,
                 &self.simple_render_pass,
-                &self.renderer_render_pass,
-                self.offscreen_framebuffer,
-                &self.skybox_renderer,
-                Some(&model_renderer),
-                &self.post_process_renderer,
+                &self.renderer,
             );
 
-            self.model_renderer = Some(model_renderer);
+            self.model = Some(model);
             self.command_buffers = command_buffers;
         }
     }
 
     fn update_model(&mut self, delta_s: f32) {
-        if let Some(model_renderer) = self.model_renderer.as_mut() {
-            model_renderer.update_model(delta_s);
+        if let Some(model) = self.model.as_ref() {
+            model.borrow_mut().update(delta_s as _);
         }
     }
 
@@ -454,11 +322,7 @@ impl Viewer {
 
         unsafe { self.context.device().reset_fences(&wait_fences).unwrap() };
 
-        self.update_uniform_buffers(image_index);
-
-        if let Some(model_renderer) = self.model_renderer.as_mut() {
-            model_renderer.update_buffers(image_index as _);
-        }
+        self.renderer.update_ubos(image_index as _, self.camera);
 
         let device = self.context.device();
         let wait_semaphores = [image_available_semaphore];
@@ -546,35 +410,8 @@ impl Viewer {
         let swapchain_properties = swapchain_support_details
             .get_ideal_swapchain_properties(dimensions, self.config.vsync());
 
-        let renderer_render_pass = RenderPass::create(
-            Arc::clone(&self.context),
-            swapchain_properties.extent,
-            self.depth_format,
-            self.msaa_samples,
-        );
-
-        let offscreen_framebuffer = renderer_render_pass.create_framebuffer();
-
-        self.skybox_renderer.rebuild_pipeline(
-            swapchain_properties,
-            self.msaa_samples,
-            &renderer_render_pass,
-        );
-
-        if let Some(model_renderer) = self.model_renderer.as_mut() {
-            model_renderer.rebuild_pipelines(
-                swapchain_properties,
-                self.msaa_samples,
-                &renderer_render_pass,
-            );
-        }
-
-        let post_process_renderer = PostProcessRenderer::create(
-            Arc::clone(&self.context),
-            swapchain_properties,
-            &self.simple_render_pass,
-            renderer_render_pass.get_color_attachment(),
-        );
+        self.renderer
+            .on_new_swapchain(swapchain_properties, &self.simple_render_pass);
 
         let swapchain = Swapchain::create(
             Arc::clone(&self.context),
@@ -588,18 +425,11 @@ impl Viewer {
             &self.context,
             &swapchain,
             &self.simple_render_pass,
-            &renderer_render_pass,
-            offscreen_framebuffer,
-            &self.skybox_renderer,
-            self.model_renderer.as_ref(),
-            &post_process_renderer,
+            &self.renderer,
         );
 
         self.swapchain = swapchain;
         self.swapchain_properties = swapchain_properties;
-        self.renderer_render_pass = renderer_render_pass;
-        self.offscreen_framebuffer = offscreen_framebuffer;
-        self.post_process_renderer = post_process_renderer;
         self.command_buffers = command_buffers;
     }
 
@@ -622,31 +452,8 @@ impl Viewer {
         let device = self.context.device();
         unsafe {
             device.free_command_buffers(self.context.general_command_pool(), &self.command_buffers);
-            device.destroy_framebuffer(self.offscreen_framebuffer, None);
         }
         self.swapchain.destroy();
-    }
-
-    fn update_uniform_buffers(&mut self, current_image: u32) {
-        // camera ubo
-        {
-            let aspect = self.swapchain.properties().extent.width as f32
-                / self.swapchain.properties().extent.height as f32;
-
-            let view = Matrix4::look_at(
-                self.camera.position(),
-                Point3::new(0.0, 0.0, 0.0),
-                Vector3::new(0.0, 1.0, 0.0),
-            );
-            let proj = math::perspective(Deg(45.0), aspect, 0.01, 10.0);
-
-            let ubos = [CameraUBO::new(view, proj, self.camera.position())];
-            let buffer = &mut self.camera_uniform_buffers[current_image as usize];
-            unsafe {
-                let data_ptr = buffer.map_memory();
-                mem_copy(data_ptr, &ubos);
-            }
-        }
     }
 }
 

@@ -3,10 +3,287 @@ mod postprocess;
 mod renderpass;
 mod skybox;
 
+extern crate model as model_crate;
+
 pub use self::{model::*, postprocess::*, renderpass::*, skybox::*};
-use ash::vk;
+use super::camera::{Camera, CameraUBO};
+use ash::{version::DeviceV1_0, vk};
+use environment::Environment;
+use math::cgmath::{Deg, Matrix4, Point3, Vector3};
+use model_crate::Model;
+use std::cell::RefCell;
+use std::mem::size_of;
+use std::rc::Weak;
 use std::sync::Arc;
 use vulkan::*;
+
+pub struct Renderer {
+    context: Arc<Context>,
+    depth_format: vk::Format,
+    msaa_samples: vk::SampleCountFlags,
+    swapchain_properties: SwapchainProperties,
+    environment: Environment,
+    camera_uniform_buffers: Vec<Buffer>,
+    renderer_render_pass: RenderPass,
+    offscreen_framebuffer: vk::Framebuffer,
+    skybox_renderer: SkyboxRenderer,
+    model_renderer: Option<ModelRenderer>,
+    post_process_renderer: PostProcessRenderer,
+}
+
+impl Renderer {
+    pub fn create(
+        context: Arc<Context>,
+        depth_format: vk::Format,
+        msaa_samples: vk::SampleCountFlags,
+        swapchain_properties: SwapchainProperties,
+        simple_render_pass: &SimpleRenderPass,
+        environment: Environment,
+    ) -> Self {
+        let camera_uniform_buffers =
+            create_camera_uniform_buffers(&context, swapchain_properties.image_count);
+
+        let renderer_render_pass = RenderPass::create(
+            Arc::clone(&context),
+            swapchain_properties.extent,
+            depth_format,
+            msaa_samples,
+        );
+
+        let offscreen_framebuffer = renderer_render_pass.create_framebuffer();
+
+        let skybox_renderer = SkyboxRenderer::create(
+            Arc::clone(&context),
+            &camera_uniform_buffers,
+            swapchain_properties,
+            &environment,
+            msaa_samples,
+            &renderer_render_pass,
+        );
+
+        let post_process_renderer = PostProcessRenderer::create(
+            Arc::clone(&context),
+            swapchain_properties,
+            &simple_render_pass,
+            renderer_render_pass.get_color_attachment(),
+        );
+
+        Self {
+            context,
+            depth_format,
+            msaa_samples,
+            swapchain_properties,
+            environment,
+            camera_uniform_buffers,
+            renderer_render_pass,
+            offscreen_framebuffer,
+            skybox_renderer,
+            model_renderer: None,
+            post_process_renderer,
+        }
+    }
+}
+
+fn create_camera_uniform_buffers(context: &Arc<Context>, count: u32) -> Vec<Buffer> {
+    (0..count)
+        .map(|_| {
+            let mut buffer = Buffer::create(
+                Arc::clone(context),
+                size_of::<CameraUBO>() as _,
+                vk::BufferUsageFlags::UNIFORM_BUFFER,
+                vk::MemoryPropertyFlags::HOST_VISIBLE | vk::MemoryPropertyFlags::HOST_COHERENT,
+            );
+            buffer.map_memory();
+            buffer
+        })
+        .collect::<Vec<_>>()
+}
+
+impl Renderer {
+    pub fn cmd_draw(
+        &self,
+        command_buffer: vk::CommandBuffer,
+        frame_index: usize,
+        swapchain_properties: SwapchainProperties,
+        simple_render_pass: &SimpleRenderPass,
+        final_framebuffer: vk::Framebuffer,
+    ) {
+        let device = self.context.device();
+
+        // begin render pass
+        {
+            let clear_values = [
+                vk::ClearValue {
+                    color: vk::ClearColorValue {
+                        float32: [1.0, 0.0, 0.0, 1.0],
+                    },
+                },
+                vk::ClearValue {
+                    depth_stencil: vk::ClearDepthStencilValue {
+                        depth: 1.0,
+                        stencil: 0,
+                    },
+                },
+            ];
+            let render_pass_begin_info = vk::RenderPassBeginInfo::builder()
+                .render_pass(self.renderer_render_pass.get_render_pass())
+                .framebuffer(self.offscreen_framebuffer)
+                .render_area(vk::Rect2D {
+                    offset: vk::Offset2D { x: 0, y: 0 },
+                    extent: swapchain_properties.extent,
+                })
+                .clear_values(&clear_values);
+
+            unsafe {
+                device.cmd_begin_render_pass(
+                    command_buffer,
+                    &render_pass_begin_info,
+                    vk::SubpassContents::INLINE,
+                )
+            };
+        }
+
+        self.skybox_renderer.cmd_draw(command_buffer, frame_index);
+
+        if let Some(model_renderer) = self.model_renderer.as_ref() {
+            model_renderer.cmd_draw(command_buffer, frame_index);
+        }
+
+        // End render pass
+        unsafe { device.cmd_end_render_pass(command_buffer) };
+
+        // begin render pass
+        {
+            let clear_values = [vk::ClearValue {
+                color: vk::ClearColorValue {
+                    float32: [0.0, 0.0, 1.0, 1.0],
+                },
+            }];
+            let render_pass_begin_info = vk::RenderPassBeginInfo::builder()
+                .render_pass(simple_render_pass.get_render_pass())
+                .framebuffer(final_framebuffer)
+                .render_area(vk::Rect2D {
+                    offset: vk::Offset2D { x: 0, y: 0 },
+                    extent: swapchain_properties.extent,
+                })
+                .clear_values(&clear_values);
+
+            unsafe {
+                device.cmd_begin_render_pass(
+                    command_buffer,
+                    &render_pass_begin_info,
+                    vk::SubpassContents::INLINE,
+                )
+            };
+        }
+
+        // Apply post process
+        self.post_process_renderer.cmd_draw(command_buffer);
+
+        // End render pass
+        unsafe { device.cmd_end_render_pass(command_buffer) };
+    }
+
+    pub fn set_model(&mut self, model: Weak<RefCell<Model>>) {
+        self.model_renderer.take();
+
+        let model_renderer = ModelRenderer::create(
+            Arc::clone(&self.context),
+            model,
+            &self.camera_uniform_buffers,
+            self.swapchain_properties,
+            &self.environment,
+            self.msaa_samples,
+            &self.renderer_render_pass,
+        );
+
+        self.model_renderer = Some(model_renderer);
+    }
+
+    pub fn on_new_swapchain(
+        &mut self,
+        swapchain_properties: SwapchainProperties,
+        simple_render_pass: &SimpleRenderPass,
+    ) {
+        unsafe {
+            self.context
+                .device()
+                .destroy_framebuffer(self.offscreen_framebuffer, None)
+        };
+
+        let renderer_render_pass = RenderPass::create(
+            Arc::clone(&self.context),
+            swapchain_properties.extent,
+            self.depth_format,
+            self.msaa_samples,
+        );
+
+        let offscreen_framebuffer = renderer_render_pass.create_framebuffer();
+
+        self.skybox_renderer.rebuild_pipeline(
+            swapchain_properties,
+            self.msaa_samples,
+            &renderer_render_pass,
+        );
+
+        if let Some(model_renderer) = self.model_renderer.as_mut() {
+            model_renderer.rebuild_pipelines(
+                swapchain_properties,
+                self.msaa_samples,
+                &renderer_render_pass,
+            );
+        }
+
+        let post_process_renderer = PostProcessRenderer::create(
+            Arc::clone(&self.context),
+            swapchain_properties,
+            simple_render_pass,
+            renderer_render_pass.get_color_attachment(),
+        );
+
+        self.swapchain_properties = swapchain_properties;
+        self.renderer_render_pass = renderer_render_pass;
+        self.offscreen_framebuffer = offscreen_framebuffer;
+        self.post_process_renderer = post_process_renderer;
+    }
+
+    pub fn update_ubos(&mut self, frame_index: usize, camera: Camera) {
+        // Camera
+        {
+            let aspect = self.swapchain_properties.extent.width as f32
+                / self.swapchain_properties.extent.height as f32;
+
+            let view = Matrix4::look_at(
+                camera.position(),
+                Point3::new(0.0, 0.0, 0.0),
+                Vector3::new(0.0, 1.0, 0.0),
+            );
+            let proj = math::perspective(Deg(45.0), aspect, 0.01, 10.0);
+
+            let ubos = [CameraUBO::new(view, proj, camera.position())];
+            let buffer = &mut self.camera_uniform_buffers[frame_index];
+            unsafe {
+                let data_ptr = buffer.map_memory();
+                mem_copy(data_ptr, &ubos);
+            }
+        }
+
+        // model
+        if let Some(renderer) = self.model_renderer.as_mut() {
+            renderer.update_buffers(frame_index)
+        }
+    }
+}
+
+impl Drop for Renderer {
+    fn drop(&mut self) {
+        unsafe {
+            self.context
+                .device()
+                .destroy_framebuffer(self.offscreen_framebuffer, None)
+        };
+    }
+}
 
 #[derive(Copy, Clone)]
 struct RendererPipelineParameters<'a> {
