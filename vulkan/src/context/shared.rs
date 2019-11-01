@@ -264,8 +264,7 @@ fn create_logical_device_with_graphics_queue(
         .collect::<Vec<_>>();
 
     let device_features = vk::PhysicalDeviceFeatures::builder()
-        .sampler_anisotropy(true)
-        .shader_sampled_image_array_dynamic_indexing(true);
+        .sampler_anisotropy(true);
 
     let (_layer_names, layer_names_ptrs) = get_layer_names_and_pointers();
 
