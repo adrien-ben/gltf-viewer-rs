@@ -293,15 +293,22 @@ fn create_cubemap_from_equirectangular_texture<P: AsRef<Path>>(
         }
     });
 
-    cubemap.image.transition_image_layout(
-        vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
-        vk::ImageLayout::TRANSFER_DST_OPTIMAL,
-    );
+    if mip_levels > 1 {
+        cubemap.image.transition_image_layout(
+            vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
+            vk::ImageLayout::TRANSFER_DST_OPTIMAL,
+        );
 
-    cubemap.image.generate_mipmaps(vk::Extent2D {
-        width: size,
-        height: size,
-    });
+        cubemap.image.generate_mipmaps(vk::Extent2D {
+            width: size,
+            height: size,
+        });
+    } else {
+        cubemap.image.transition_image_layout(
+            vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
+            vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
+        );
+    }
 
     // Cleanup
     unsafe {

@@ -11,7 +11,7 @@ use clap::{App, Arg};
 use std::{error::Error, path::Path, result::Result};
 
 fn main() -> Result<(), Box<dyn Error>> {
-    env_logger::init();
+    init_logger();
     log::info!("Welcome to gltf-viewer-rs");
 
     let matches = create_app().get_matches();
@@ -25,6 +25,17 @@ fn main() -> Result<(), Box<dyn Error>> {
     Viewer::new(config, file_path).run();
 
     Ok(())
+}
+
+#[cfg(not(target_os = "android"))]
+fn init_logger() {
+    env_logger::init();
+}
+
+#[cfg(target_os = "android")]
+fn init_logger() {
+    std::env::set_var("RUST_LOG", "debug");
+    env_logger::init();
 }
 
 fn create_app<'a, 'b>() -> App<'a, 'b> {

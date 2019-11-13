@@ -93,6 +93,8 @@ impl Viewer {
         let loader = Loader::new(Arc::new(context.new_thread()));
         if let Some(p) = path {
             loader.load(p.as_ref().to_path_buf());
+        } else {
+            loader.load("assets/models/cesium_man_with_light.glb".into());
         }
 
         Self {

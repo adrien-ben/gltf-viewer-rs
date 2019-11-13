@@ -42,7 +42,20 @@ impl Model {
         path: P,
     ) -> Result<PreLoadedResource<Model, ModelStagingResources>, Box<dyn Error>> {
         log::debug!("Importing gltf file");
-        let (document, buffers, images) = gltf::import(path)?;
+
+        let (document, buffers, images) = {
+            #[cfg(target_os = "android")]
+            {
+                use util::fs;
+                let cursor = fs::load(path);
+                gltf::import_slice(cursor.get_ref())?
+            }
+
+            #[cfg(not(target_os = "android"))]
+            {
+                gltf::import(path)?
+            }
+        };
 
         log::debug!("Creating the model");
         if document.scenes().len() == 0 {

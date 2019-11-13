@@ -1,9 +1,13 @@
-use vulkan::winit::{DeviceEvent, ElementState, Event, MouseButton, MouseScrollDelta, WindowEvent};
+use vulkan::winit::{
+    dpi::LogicalPosition, DeviceEvent, ElementState, Event, MouseButton, MouseScrollDelta, Touch,
+    TouchPhase, WindowEvent,
+};
 
 #[derive(Copy, Clone, Debug)]
 pub struct InputState {
     is_left_clicked: bool,
     cursor_delta: [f32; 2],
+    last_touch_position: [f32; 2],
     wheel_delta: Option<f32>,
 }
 
@@ -12,6 +16,7 @@ impl InputState {
         let mut is_left_clicked = None;
         let mut wheel_delta = None;
         let mut cursor_delta = self.cursor_delta;
+        let mut last_touch_position = self.last_touch_position;
 
         if let Event::WindowEvent { event, .. } = event {
             match event {
@@ -32,6 +37,25 @@ impl InputState {
                 } => {
                     wheel_delta = Some(*v_lines);
                 }
+                WindowEvent::Touch(Touch {
+                    location: LogicalPosition { x, y },
+                    phase,
+                    ..
+                }) => {
+                    let x = *x as f32;
+                    let y = *y as f32;
+
+                    if *phase == TouchPhase::Started {
+                        is_left_clicked = Some(true);
+                        last_touch_position = [x, y];
+                    } else if *phase == TouchPhase::Ended {
+                        is_left_clicked = Some(false);
+                    }
+
+                    cursor_delta[0] += x - last_touch_position[0];
+                    cursor_delta[1] += y - last_touch_position[1];
+                    last_touch_position = [x, y];
+                }
                 _ => {}
             }
         }
@@ -46,6 +70,7 @@ impl InputState {
         Self {
             is_left_clicked: is_left_clicked.unwrap_or(self.is_left_clicked),
             cursor_delta,
+            last_touch_position,
             wheel_delta,
         }
     }
@@ -75,6 +100,7 @@ impl Default for InputState {
         Self {
             is_left_clicked: false,
             cursor_delta: [0.0, 0.0],
+            last_touch_position: [0.0, 0.0],
             wheel_delta: None,
         }
     }

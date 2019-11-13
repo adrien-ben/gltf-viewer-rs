@@ -238,7 +238,14 @@ impl Texture {
 
             image.copy_buffer(&buffer, extent);
 
-            image.generate_mipmaps(extent);
+            if max_mip_levels > 1 {
+                image.generate_mipmaps(extent);
+            } else {
+                image.transition_image_layout(
+                    vk::ImageLayout::TRANSFER_DST_OPTIMAL,
+                    vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
+                );
+            }
         }
 
         let image_view = image.create_view(vk::ImageViewType::CUBE, vk::ImageAspectFlags::COLOR);

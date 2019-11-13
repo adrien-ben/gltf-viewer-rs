@@ -5,6 +5,7 @@ authors = ["Adrien Bennadji <adrien.bennadji@live.fr>"]
 edition = "2018"
 
 [dependencies]
+util = { path = "../util" }
 vulkan = { path = "../vulkan" }
 math = { path = "../math" }
 

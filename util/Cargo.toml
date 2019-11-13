@@ -8,3 +8,6 @@ edition = "2018"
 log = "0.4"
 env_logger = "0.7.1"
 image = "0.22.3"
+
+[target.'cfg(target_os = "android")'.dependencies.android_glue]
+git = "https://github.com/rust-windowing/android-rs-glue"

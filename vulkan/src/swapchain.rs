@@ -44,7 +44,7 @@ impl Swapchain {
         let image_count = properties.image_count;
 
         log::debug!(
-            "Creating swapchain.\n\tFormat: {:?}\n\tColorSpace: {:?}\n\tPresentMode: {:?}\n\tExtent: {:?}\n\tImageCount: {:?}",
+            "Creating swapchain. Format: {:?} - ColorSpace: {:?} - PresentMode: {:?} - Extent: {:?} - ImageCount: {:?}",
             format.format,
             format.color_space,
             present_mode,
@@ -315,6 +315,7 @@ impl SwapchainSupportDetails {
     ///
     /// Will favor MAILBOX if present otherwise FIFO.
     /// If none is present it will fallback to IMMEDIATE.
+    #[cfg(not(target_os = "android"))]
     fn choose_swapchain_surface_present_mode(
         available_present_modes: &[vk::PresentModeKHR],
         preferred_vsync: bool,
@@ -330,6 +331,14 @@ impl SwapchainSupportDetails {
         } else {
             vk::PresentModeKHR::IMMEDIATE
         }
+    }
+
+    #[cfg(target_os = "android")]
+    fn choose_swapchain_surface_present_mode(
+        _: &[vk::PresentModeKHR],
+        _: bool,
+    ) -> vk::PresentModeKHR {
+        vk::PresentModeKHR::FIFO
     }
 
     /// Choose the swapchain extent.

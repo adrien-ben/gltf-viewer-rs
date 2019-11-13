@@ -7,15 +7,15 @@ edition = "2018"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+util = { path = "../util" }
 log = "0.4"
 env_logger = "0.7.1"
 ash = "0.29.0"
-winit = "0.19.4"
+raw-window-handle = "0.3"
 
-[target.'cfg(windows)'.dependencies]
-winapi = "0.3"
+[dependencies.winit]
+git = "https://github.com/adrien-ben/winit"
+rev = "c3e524f7deaa5dbc9a5a59ef0dd37980134cea53"
 
-[target.'cfg(target_os = "macos")'.dependencies]
-metal-rs = "0.10.6"
-cocoa = "0.19.1"
-objc = "0.2"
+[target.'cfg(target_os = "android")'.dependencies.android_glue]
+git = "https://github.com/rust-windowing/android-rs-glue"

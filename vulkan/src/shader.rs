@@ -29,9 +29,9 @@ impl Drop for ShaderModule {
 }
 
 fn read_shader_from_file<P: AsRef<Path>>(path: P) -> Vec<u32> {
-    log::debug!("Loading shader file {}", path.as_ref().to_str().unwrap());
-    let mut file = std::fs::File::open(path).expect("Failed to open shader file");
-    ash::util::read_spv(&mut file).expect("Failed to read shader source")
+    log::debug!("Loading shader file {:?}", path.as_ref());
+    let mut cursor = util::fs::load(path);
+    ash::util::read_spv(&mut cursor).expect("Failed to read shader source")
 }
 
 fn create_shader_module(device: &Device, code: &[u32]) -> vk::ShaderModule {
