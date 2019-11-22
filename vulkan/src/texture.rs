@@ -1,6 +1,7 @@
 use super::{buffer::*, context::*, image::*, util::*};
 use ash::{version::DeviceV1_0, vk};
 use std::{mem::size_of, sync::Arc};
+use util::compute_mipmap_levels;
 
 pub struct Texture {
     context: Arc<Context>,
@@ -38,7 +39,7 @@ impl Texture {
         height: u32,
         data: &[u8],
     ) -> (Self, Buffer) {
-        let max_mip_levels = ((width.min(height) as f32).log2().floor() + 1.0) as u32;
+        let max_mip_levels = compute_mipmap_levels(width, height);
         let extent = vk::Extent2D { width, height };
         let image_size = (data.len() * size_of::<u8>()) as vk::DeviceSize;
         let device = context.device();
@@ -78,7 +79,7 @@ impl Texture {
                 vk::ImageLayout::TRANSFER_DST_OPTIMAL,
             );
 
-            image.cmd_copy_buffer(command_buffer, &buffer, extent);
+            image.cmd_copy_buffer(command_buffer, &buffer, 0, extent, 0);
 
             image.cmd_generate_mipmaps(command_buffer, extent);
         }
@@ -116,7 +117,7 @@ impl Texture {
     }
 
     pub fn from_rgba_32(context: &Arc<Context>, width: u32, height: u32, data: &[f32]) -> Self {
-        let max_mip_levels = ((width.min(height) as f32).log2().floor() + 1.0) as u32;
+        let max_mip_levels = compute_mipmap_levels(width, height);
         let extent = vk::Extent2D { width, height };
         let image_size = (data.len() * size_of::<f32>()) as vk::DeviceSize;
         let device = context.device();
@@ -155,9 +156,22 @@ impl Texture {
                 vk::ImageLayout::TRANSFER_DST_OPTIMAL,
             );
 
-            image.copy_buffer(&buffer, extent);
+            let pixel_size = 4 * size_of::<f32>() as u32;
+            let mut offset = 0;
+            let mut extent = extent;
 
-            image.generate_mipmaps(extent);
+            for mip_level in 0..max_mip_levels {
+                image.copy_buffer(&buffer, offset, extent, mip_level);
+
+                offset += (extent.width * extent.height * pixel_size) as vk::DeviceSize;
+                extent.width /= 2;
+                extent.height /= 2;
+            }
+
+            image.transition_image_layout(
+                vk::ImageLayout::TRANSFER_DST_OPTIMAL,
+                vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
+            );
         }
 
         let image_view = image.create_view(vk::ImageViewType::TYPE_2D, vk::ImageAspectFlags::COLOR);
@@ -190,8 +204,13 @@ impl Texture {
         Texture::new(Arc::clone(context), image, image_view, Some(sampler))
     }
 
-    pub fn create_cubemap_from_data(context: &Arc<Context>, size: u32, data: &[f32]) -> Self {
-        let max_mip_levels = (size as f32).log2().floor() as u32 + 1;
+    pub fn create_cubemap_from_data(
+        context: &Arc<Context>,
+        size: u32,
+        mipmap_levels: u32,
+        data: &[f32],
+    ) -> Self {
+        let max_mip_levels = compute_mipmap_levels(size, size);
         let extent = vk::Extent2D {
             width: size,
             height: size,
@@ -236,16 +255,21 @@ impl Texture {
                 vk::ImageLayout::TRANSFER_DST_OPTIMAL,
             );
 
-            image.copy_buffer(&buffer, extent);
+            let pixel_size = 4 * size_of::<f32>() as u32;
+            let mut offset = 0;
+            let mut extent = extent;
+            for mip_level in 0..mipmap_levels {
+                image.copy_buffer(&buffer, offset, extent, mip_level);
 
-            if max_mip_levels > 1 {
-                image.generate_mipmaps(extent);
-            } else {
-                image.transition_image_layout(
-                    vk::ImageLayout::TRANSFER_DST_OPTIMAL,
-                    vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
-                );
+                offset += (extent.width * extent.height * 6 * pixel_size) as vk::DeviceSize;
+                extent.width /= 2;
+                extent.height /= 2;
             }
+
+            image.transition_image_layout(
+                vk::ImageLayout::TRANSFER_DST_OPTIMAL,
+                vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
+            );
         }
 
         let image_view = image.create_view(vk::ImageViewType::CUBE, vk::ImageAspectFlags::COLOR);

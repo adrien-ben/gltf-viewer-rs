@@ -4,6 +4,9 @@
 layout(location = 0) in vec3 oPositions;
 
 layout(binding = 0) uniform sampler2D textureSampler;
+layout(push_constant) uniform MipLevel {
+    layout(offset = 64) float value;
+} mipLevel;
 
 layout(location = 0) out vec4 outColor;
 
@@ -14,6 +17,6 @@ vec2 sampleShericalMap(vec3 position) {
 
 void main() {
     vec2 uv = sampleShericalMap(normalize(oPositions));
-    vec3 color = texture(textureSampler, uv).rgb;
+    vec3 color = textureLod(textureSampler, uv, mipLevel.value).rgb;
 	outColor = vec4(color, 1.0);
 }

@@ -284,9 +284,15 @@ impl Image {
         };
     }
 
-    pub fn copy_buffer(&self, buffer: &Buffer, extent: vk::Extent2D) {
+    pub fn copy_buffer(
+        &self,
+        buffer: &Buffer,
+        buffer_offset: vk::DeviceSize,
+        extent: vk::Extent2D,
+        mip_level: u32,
+    ) {
         self.context.execute_one_time_commands(|command_buffer| {
-            self.cmd_copy_buffer(command_buffer, buffer, extent)
+            self.cmd_copy_buffer(command_buffer, buffer, buffer_offset, extent, mip_level)
         })
     }
 
@@ -294,15 +300,17 @@ impl Image {
         &self,
         command_buffer: vk::CommandBuffer,
         buffer: &Buffer,
+        buffer_offset: vk::DeviceSize,
         extent: vk::Extent2D,
+        mip_level: u32,
     ) {
         let region = vk::BufferImageCopy::builder()
-            .buffer_offset(0)
+            .buffer_offset(buffer_offset)
             .buffer_row_length(0)
             .buffer_image_height(0)
             .image_subresource(vk::ImageSubresourceLayers {
                 aspect_mask: vk::ImageAspectFlags::COLOR,
-                mip_level: 0,
+                mip_level,
                 base_array_layer: 0,
                 layer_count: self.layers,
             })

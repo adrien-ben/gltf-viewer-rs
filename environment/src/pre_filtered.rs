@@ -23,7 +23,7 @@ pub(crate) fn create_pre_filtered_map(
 
     let skybox_model = SkyboxModel::new(context);
 
-    let max_mip_levels = (size as f32).log2().floor() as u32 + 1;
+    let max_mip_levels = compute_mipmap_levels(size, size);
 
     let render_pass = create_render_pass(context, vk::Format::R32G32B32A32_SFLOAT);
 
