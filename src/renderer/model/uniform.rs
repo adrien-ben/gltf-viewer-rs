@@ -9,6 +9,8 @@ const DIRECTIONAL_LIGHT_TYPE: u32 = 0;
 const POINT_LIGHT_TYPE: u32 = 1;
 const SPOT_LIGHT_TYPE: u32 = 2;
 const NO_TEXTURE_ID: u32 = std::u8::MAX as u32;
+const UNLIT_FLAG_LIT: u32 = 0;
+const UNLIT_FLAG_UNLIT: u32 = 1;
 
 #[derive(Copy, Clone, Debug)]
 #[repr(C)]
@@ -79,9 +81,17 @@ pub struct MaterialUniform {
     emissive_and_roughness: [f32; 4],
     metallic: f32,
     occlusion: f32,
-    // Contains the texture channels for color metallic/roughness emissive and normal (each taking 8 bytes)
+    // Contains the texture channels for color metallic/roughness emissive and normal
+    // [0-7] Color texture channel
+    // [8-15] metallic/roughness texture channel
+    // [16-23] emissive texture channel
+    // [24-31] normals texture channel
     color_metallicroughness_emissive_normal_texture_channels: u32,
-    occlusion_texture_channel_and_alpha_mode: u32,
+    // Contains occlusion texture channel, alpha mode and unlit flag
+    // [0-7] Occlusion texture channel
+    // [8-15] Alpha mode
+    // [16-23] Unlit flag
+    occlusion_texture_channel_alpha_mode_and_unlit_flag: u32,
     alpha_cutoff: f32,
 }
 
@@ -121,8 +131,13 @@ impl<'a> From<Material> for MaterialUniform {
             .get_occlusion_texture()
             .map_or(NO_TEXTURE_ID, |info| info.get_channel());
         let alpha_mode = material.get_alpha_mode();
-        let occlusion_texture_channel_and_alpha_mode =
-            ((occlusion_texture_id as u32) << 24) | (alpha_mode << 16);
+        let unlit_flag = if material.is_unlit() {
+            UNLIT_FLAG_UNLIT
+        } else {
+            UNLIT_FLAG_LIT
+        };
+        let occlusion_texture_channel_alpha_mode_and_unlit_flag =
+            (occlusion_texture_id << 24) | (alpha_mode << 16) | (unlit_flag << 8);
 
         let alpha_cutoff = material.get_alpha_cutoff();
 
@@ -132,7 +147,7 @@ impl<'a> From<Material> for MaterialUniform {
             metallic,
             occlusion,
             color_metallicroughness_emissive_normal_texture_channels,
-            occlusion_texture_channel_and_alpha_mode,
+            occlusion_texture_channel_alpha_mode_and_unlit_flag,
             alpha_cutoff,
         }
     }

@@ -28,6 +28,8 @@ const uint DIRECTIONAL_LIGHT_TYPE = 0;
 const uint POINT_LIGHT_TYPE = 1;
 const uint SPOT_LIGHT_TYPE = 2;
 
+const uint UNLIT_FLAG_UNLIT = 1;
+
 // -- Structures --
 struct TextureChannels {
     uint color;
@@ -62,10 +64,17 @@ layout(push_constant) uniform Material {
     vec4 emissiveAndRoughness;
     float metallic;
     float occlusion;
-    // Contains the texture channels for color, metallic/roughness, emissive and normal (each taking 8 bytes)
+    // Contains the texture channels for color metallic/roughness emissive and normal
+    // [0-7] Color texture channel
+    // [8-15] metallic/roughness texture channel
+    // [16-23] emissive texture channel
+    // [24-31] normals texture channel
     uint colorMetallicRoughnessEmissiveNormalTextureChannels;
-    // Contains the occlusion texture channel and the alpha mode (each taking 8 bytes) + 16 bytes of right padding
-    uint occlusionTextureChannelAndAlphaMode;
+    // Contains occlusion texture channel, alpha mode and unlit flag
+    // [0-7] Occlusion texture channel
+    // [8-15] Alpha mode
+    // [16-23] Unlit flag
+    uint occlusionTextureChannelAlphaModeAndUnlitFlag;
     float alphaCutoff;
 } material;
 
@@ -96,7 +105,7 @@ TextureChannels getTextureChannels() {
         (material.colorMetallicRoughnessEmissiveNormalTextureChannels >> 16) & 255,
         (material.colorMetallicRoughnessEmissiveNormalTextureChannels >> 8) & 255,
         material.colorMetallicRoughnessEmissiveNormalTextureChannels & 255,
-        (material.occlusionTextureChannelAndAlphaMode >> 24) & 255
+        (material.occlusionTextureChannelAlphaModeAndUnlitFlag >> 24) & 255
     );
 }
 
@@ -169,7 +178,7 @@ vec3 occludeAmbientColor(vec3 ambientColor, TextureChannels textureChannels) {
 }
 
 uint getAlphaMode() {
-    return (material.occlusionTextureChannelAndAlphaMode >> 16) & 255;
+    return (material.occlusionTextureChannelAlphaModeAndUnlitFlag >> 16) & 255;
 }
 
 bool isMasked(vec4 baseColor) {
@@ -181,6 +190,14 @@ float getAlpha(vec4 baseColor) {
         return baseColor.a;
     }
     return 1.0;
+}
+
+bool isUnlit() {
+    uint unlitFlag = (material.occlusionTextureChannelAlphaModeAndUnlitFlag >> 8) & 255;
+    if (unlitFlag == UNLIT_FLAG_UNLIT) {
+        return true;
+    }
+    return false;
 }
 
 vec3 f(vec3 f0, vec3 v, vec3 h) {
@@ -310,6 +327,11 @@ void main() {
         discard;
     }
     float alpha = getAlpha(baseColor);
+
+    if (isUnlit()) {
+        outColor = vec4(baseColor.rgb, alpha);
+        return;
+    }
 
     float metallic = getMetallic(textureChannels);
     float roughness = getRoughness(textureChannels);
