@@ -75,19 +75,13 @@ fn create_instance(entry: &Entry) -> Instance {
         .api_version(ash::vk_make_version!(1, 0, 0));
 
     let mut extension_names = surface::required_extension_names();
-    if ENABLE_VALIDATION_LAYERS {
+    if ENABLE_DEBUG_CALLBACK {
         extension_names.push(DebugReport::name().as_ptr());
     }
 
-    let (_layer_names, layer_names_ptrs) = get_layer_names_and_pointers();
-
-    let mut instance_create_info = vk::InstanceCreateInfo::builder()
+    let instance_create_info = vk::InstanceCreateInfo::builder()
         .application_info(&app_info)
         .enabled_extension_names(&extension_names);
-    if ENABLE_VALIDATION_LAYERS {
-        check_validation_layer_support(&entry);
-        instance_create_info = instance_create_info.enabled_layer_names(&layer_names_ptrs);
-    }
 
     unsafe {
         entry
@@ -265,15 +259,10 @@ fn create_logical_device_with_graphics_queue(
 
     let device_features = vk::PhysicalDeviceFeatures::builder().sampler_anisotropy(true);
 
-    let (_layer_names, layer_names_ptrs) = get_layer_names_and_pointers();
-
-    let mut device_create_info = vk::DeviceCreateInfo::builder()
+    let device_create_info = vk::DeviceCreateInfo::builder()
         .queue_create_infos(&queue_create_infos)
         .enabled_extension_names(&device_extensions_ptrs)
         .enabled_features(&device_features);
-    if ENABLE_VALIDATION_LAYERS {
-        device_create_info = device_create_info.enabled_layer_names(&layer_names_ptrs)
-    }
 
     // Build device and queues
     let device = unsafe {

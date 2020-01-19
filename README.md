@@ -62,10 +62,6 @@ the same location as the shader source, with the same name suffixed by `.spv`.
 
 > To compile the shaders you'll need to have `glslangValidator` on your PATH.
 
-Building the project with the debug profile will activate Vulkan validation layers. Activated layers are:
-
-- VK_LAYER_KHRONOS_validation
-
 ## Run it
 
 Just type the following command and drag and drop and gltf/glb file in the window.
@@ -79,6 +75,15 @@ with `--file` (or `-f`)
 
 ```sh
 RUST_LOG=gltf_viewer_rs=warn,vulkan=warn cargo run -- --config config.yml --file C:\\dev\\assets\\glTF-Sample-Models\\2.0\\Triangle\\glTF\\Triangle.gltf
+```
+
+### Validation layers
+
+Building the project with the debug profile will enable Vulkan's debug report. You can set up validation layers by running the following commands
+
+```sh
+export VK_LAYER_PATH=$VULKAN_SDK/Bin
+export VK_INSTANCE_LAYERS=VK_LAYER_KHRONOS_validation
 ```
 
 ## Known issues

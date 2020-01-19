@@ -1,16 +1,14 @@
-use ash::{extensions::ext::DebugReport, version::EntryV1_0};
+use ash::extensions::ext::DebugReport;
 use ash::{vk, Entry, Instance};
 use std::{
-    ffi::{CStr, CString},
+    ffi::CStr,
     os::raw::{c_char, c_void},
 };
 
 #[cfg(debug_assertions)]
-pub const ENABLE_VALIDATION_LAYERS: bool = true;
+pub const ENABLE_DEBUG_CALLBACK: bool = true;
 #[cfg(not(debug_assertions))]
-pub const ENABLE_VALIDATION_LAYERS: bool = false;
-
-const REQUIRED_LAYERS: [&str; 1] = ["VK_LAYER_KHRONOS_validation"];
+pub const ENABLE_DEBUG_CALLBACK: bool = false;
 
 unsafe extern "system" fn vulkan_debug_callback(
     flag: vk::DebugReportFlagsEXT,
@@ -36,50 +34,12 @@ unsafe extern "system" fn vulkan_debug_callback(
     vk::FALSE
 }
 
-/// Get the pointers to the validation layers names.
-/// Also return the corresponding `CString` to avoid dangling pointers.
-pub fn get_layer_names_and_pointers() -> (Vec<CString>, Vec<*const i8>) {
-    let layer_names = REQUIRED_LAYERS
-        .iter()
-        .map(|name| CString::new(*name).unwrap())
-        .collect::<Vec<_>>();
-    let layer_names_ptrs = layer_names
-        .iter()
-        .map(|name| name.as_ptr())
-        .collect::<Vec<_>>();
-    (layer_names, layer_names_ptrs)
-}
-
-/// Check if the required validation set in `REQUIRED_LAYERS`
-/// are supported by the Vulkan instance.
-///
-/// # Panics
-///
-/// Panic if at least one on the layer is not supported.
-pub fn check_validation_layer_support(entry: &Entry) {
-    for required in REQUIRED_LAYERS.iter() {
-        let found = entry
-            .enumerate_instance_layer_properties()
-            .expect("Failed to enumerate instance layer properties")
-            .iter()
-            .any(|layer| {
-                let name = unsafe { CStr::from_ptr(layer.layer_name.as_ptr()) };
-                let name = name.to_str().expect("Failed to get layer name pointer");
-                required == &name
-            });
-
-        if !found {
-            panic!("Validation layer not supported: {}", required);
-        }
-    }
-}
-
 /// Setup the debug message if validation layers are enabled.
 pub fn setup_debug_messenger(
     entry: &Entry,
     instance: &Instance,
 ) -> Option<(DebugReport, vk::DebugReportCallbackEXT)> {
-    if !ENABLE_VALIDATION_LAYERS {
+    if !ENABLE_DEBUG_CALLBACK {
         return None;
     }
     let create_info = vk::DebugReportCallbackCreateInfoEXT::builder()
