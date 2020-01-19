@@ -143,7 +143,7 @@ impl<'a> From<GltfMaterial<'a>> for Material {
         let alpha_cutoff = material.alpha_cutoff();
 
         let double_sided = material.double_sided();
-        
+
         let is_unlit = material.unlit();
 
         Material {

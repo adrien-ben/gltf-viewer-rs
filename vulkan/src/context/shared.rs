@@ -263,8 +263,7 @@ fn create_logical_device_with_graphics_queue(
         .map(|ext| ext.as_ptr())
         .collect::<Vec<_>>();
 
-    let device_features = vk::PhysicalDeviceFeatures::builder()
-        .sampler_anisotropy(true);
+    let device_features = vk::PhysicalDeviceFeatures::builder().sampler_anisotropy(true);
 
     let (_layer_names, layer_names_ptrs) = get_layer_names_and_pointers();
 
