@@ -1,22 +1,29 @@
 use crate::{camera::*, config::*, controls::*, loader::*, renderer::*};
 use ash::{version::DeviceV1_0, vk, Device};
 use environment::*;
+use imgui::{Context as GuiContext, FontConfig, FontGlyphRanges, FontSource};
+use imgui_winit_support::{HiDpiMode, WinitPlatform};
 use model::Model;
 use std::{cell::RefCell, path::Path, rc::Rc, sync::Arc, time::Instant};
 use vulkan::*;
 use winit::{dpi::LogicalSize, Event, EventsLoop, Window, WindowBuilder, WindowEvent};
 
-const MAX_FRAMES_IN_FLIGHT: u32 = 2;
+pub const MAX_FRAMES_IN_FLIGHT: u32 = 2;
 
 pub struct Viewer {
     config: Config,
     events_loop: EventsLoop,
-    _window: Window,
+    window: Window,
     resize_dimensions: Option<[u32; 2]>,
+    run: bool,
 
     camera: Camera,
     input_state: InputState,
     model: Option<Rc<RefCell<Model>>>,
+
+    gui_context: GuiContext,
+    gui_winit_platform: WinitPlatform,
+    last_frame_instant: Instant,
 
     context: Arc<Context>,
     swapchain_properties: SwapchainProperties,
@@ -45,6 +52,8 @@ impl Viewer {
             ))
             .build(&events_loop)
             .unwrap();
+
+        let (mut gui_context, gui_winit_platform) = Self::init_imgui(&window);
 
         let context = Arc::new(Context::new(&window));
 
@@ -79,6 +88,7 @@ impl Viewer {
             swapchain_properties,
             &simple_render_pass,
             environment,
+            &mut gui_context,
         );
 
         let command_buffers = Self::allocate_command_buffers(&context, swapchain.image_count());
@@ -92,12 +102,16 @@ impl Viewer {
 
         Self {
             events_loop,
-            _window: window,
+            window,
             config,
             resize_dimensions: None,
+            run: true,
             camera: Default::default(),
             input_state: Default::default(),
             model: None,
+            gui_context,
+            gui_winit_platform,
+            last_frame_instant: Instant::now(),
             context,
             swapchain_properties,
             simple_render_pass,
@@ -107,6 +121,37 @@ impl Viewer {
             in_flight_frames,
             loader,
         }
+    }
+
+    fn init_imgui(window: &Window) -> (GuiContext, WinitPlatform) {
+        let mut imgui = GuiContext::create();
+        imgui.set_ini_filename(None);
+
+        let mut platform = WinitPlatform::init(&mut imgui);
+
+        let hidpi_factor = platform.hidpi_factor();
+        let font_size = (13.0 * hidpi_factor) as f32;
+        imgui.fonts().add_font(&[
+            FontSource::DefaultFontData {
+                config: Some(FontConfig {
+                    size_pixels: font_size,
+                    ..FontConfig::default()
+                }),
+            },
+            FontSource::TtfData {
+                data: include_bytes!("../assets/fonts/mplus-1p-regular.ttf"),
+                size_pixels: font_size,
+                config: Some(FontConfig {
+                    rasterizer_multiply: 1.75,
+                    glyph_ranges: FontGlyphRanges::japanese(),
+                    ..FontConfig::default()
+                }),
+            },
+        ]);
+        imgui.io_mut().font_global_scale = (1.0 / hidpi_factor) as f32;
+        platform.attach_window(imgui.io_mut(), window, HiDpiMode::Rounded);
+
+        (imgui, platform)
     }
 
     fn find_depth_format(context: &Context) -> vk::Format {
@@ -136,38 +181,6 @@ impl Viewer {
                 .allocate_command_buffers(&allocate_info)
                 .unwrap()
         }
-    }
-
-    fn record_command_buffer(&self, command_buffer: vk::CommandBuffer, frame_index: usize) {
-        let device = self.context.device();
-
-        unsafe {
-            device
-                .reset_command_buffer(command_buffer, vk::CommandBufferResetFlags::empty())
-                .unwrap();
-        }
-
-        // begin command buffer
-        {
-            let command_buffer_begin_info = vk::CommandBufferBeginInfo::builder()
-                .flags(vk::CommandBufferUsageFlags::SIMULTANEOUS_USE);
-            unsafe {
-                device
-                    .begin_command_buffer(command_buffer, &command_buffer_begin_info)
-                    .unwrap()
-            };
-        }
-
-        self.renderer.cmd_draw(
-            command_buffer,
-            frame_index,
-            self.swapchain.properties(),
-            &self.simple_render_pass,
-            self.swapchain.framebuffers()[frame_index],
-        );
-
-        // End command buffer
-        unsafe { device.end_command_buffer(command_buffer).unwrap() };
     }
 
     fn create_sync_objects(device: &Device) -> InFlightFrames {
@@ -208,7 +221,8 @@ impl Viewer {
             let delta_s = ((new_time - time).as_nanos() as f64) / 1_000_000_000.0;
             time = new_time;
 
-            if self.process_event() {
+            self.process_event();
+            if !self.run {
                 break;
             }
 
@@ -222,18 +236,27 @@ impl Viewer {
 
     /// Process the events from the `EventsLoop` and return whether the
     /// main loop should stop.
-    fn process_event(&mut self) -> bool {
-        let mut should_stop = false;
+    fn process_event(&mut self) {
+        if !self.run {
+            return;
+        }
+
+        let mut run = true;
         let mut resize_dimensions = None;
         let mut path_to_load = None;
         let mut input_state = self.input_state;
         input_state.reset();
 
+        let mut io = self.gui_context.io_mut();
+        let platform = &mut self.gui_winit_platform;
+        let window = &self.window;
+
         self.events_loop.poll_events(|event| {
+            platform.handle_event(&mut io, window, &event);
             input_state = input_state.update(&event);
             if let Event::WindowEvent { event, .. } = event {
                 match event {
-                    WindowEvent::CloseRequested => should_stop = true,
+                    WindowEvent::CloseRequested => run = false,
                     WindowEvent::Resized(LogicalSize { width, height }) => {
                         resize_dimensions = Some([width as u32, height as u32]);
                     }
@@ -246,12 +269,15 @@ impl Viewer {
             }
         });
 
+        platform.prepare_frame(io, &window).unwrap();
+        self.last_frame_instant = io.update_delta_time(self.last_frame_instant);
+
         self.resize_dimensions = resize_dimensions;
         if path_to_load.is_some() {
             self.loader.load(path_to_load.as_ref().cloned().unwrap());
         }
         self.input_state = input_state;
-        should_stop
+        self.run = run;
     }
 
     fn load_new_model(&mut self) {
@@ -353,6 +379,46 @@ impl Viewer {
                 self.recreate_swapchain();
             }
         }
+    }
+
+    fn record_command_buffer(&mut self, command_buffer: vk::CommandBuffer, frame_index: usize) {
+        let device = self.context.device();
+
+        unsafe {
+            device
+                .reset_command_buffer(command_buffer, vk::CommandBufferResetFlags::empty())
+                .unwrap();
+        }
+
+        // begin command buffer
+        {
+            let command_buffer_begin_info = vk::CommandBufferBeginInfo::builder()
+                .flags(vk::CommandBufferUsageFlags::SIMULTANEOUS_USE);
+            unsafe {
+                device
+                    .begin_command_buffer(command_buffer, &command_buffer_begin_info)
+                    .unwrap()
+            };
+        }
+
+        let draw_data = {
+            let ui = self.gui_context.frame();
+            ui.show_demo_window(&mut self.run);
+            self.gui_winit_platform.prepare_render(&ui, &self.window);
+            ui.render()
+        };
+
+        self.renderer.cmd_draw(
+            command_buffer,
+            frame_index,
+            self.swapchain.properties(),
+            &self.simple_render_pass,
+            self.swapchain.framebuffers()[frame_index],
+            draw_data,
+        );
+
+        // End command buffer
+        unsafe { device.end_command_buffer(command_buffer).unwrap() };
     }
 
     /// Recreates the swapchain.
