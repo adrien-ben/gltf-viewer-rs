@@ -1,4 +1,4 @@
-use crate::{camera::*, config::*, controls::*, loader::*, renderer::*};
+use crate::{camera::*, config::*, controls::*, gui::Gui, loader::*, renderer::*};
 use ash::{version::DeviceV1_0, vk, Device};
 use environment::*;
 use imgui::{Context as GuiContext, FontConfig, FontGlyphRanges, FontSource};
@@ -23,6 +23,7 @@ pub struct Viewer {
 
     gui_context: GuiContext,
     gui_winit_platform: WinitPlatform,
+    gui: Gui,
     last_frame_instant: Instant,
 
     context: Arc<Context>,
@@ -111,6 +112,7 @@ impl Viewer {
             model: None,
             gui_context,
             gui_winit_platform,
+            gui: Default::default(),
             last_frame_instant: Instant::now(),
             context,
             swapchain_properties,
@@ -402,8 +404,8 @@ impl Viewer {
         }
 
         let draw_data = {
-            let ui = self.gui_context.frame();
-            ui.show_demo_window(&mut self.run);
+            let mut ui = self.gui_context.frame();
+            self.gui.update(&mut self.run, &mut ui);
             self.gui_winit_platform.prepare_render(&ui, &self.window);
             ui.render()
         };

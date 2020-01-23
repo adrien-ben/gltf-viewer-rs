@@ -514,7 +514,7 @@ dependencies = [
 [[package]]
 name = "imgui-rs-vulkan-renderer"
 version = "0.1.0"
-source = "git+https://github.com/adrien-ben/imgui-rs-vulkan-renderer#126b8404131a82cc6b7520c59b6da588d4738047"
+source = "git+https://github.com/adrien-ben/imgui-rs-vulkan-renderer#85fd1c0fe381a7036a57c1ae75875e43916d32b7"
 dependencies = [
  "ash 0.29.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "imgui 0.2.1 (registry+https://github.com/rust-lang/crates.io-index)",
