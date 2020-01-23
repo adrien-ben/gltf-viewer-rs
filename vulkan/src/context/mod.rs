@@ -17,7 +17,7 @@ impl Context {
         let general_command_pool = create_command_pool(
             &shared_context.device(),
             shared_context.queue_families_indices,
-            vk::CommandPoolCreateFlags::empty(),
+            vk::CommandPoolCreateFlags::RESET_COMMAND_BUFFER,
         );
         let transient_command_pool = create_command_pool(
             &shared_context.device(),

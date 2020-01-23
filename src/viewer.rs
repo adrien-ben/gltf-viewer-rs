@@ -81,12 +81,7 @@ impl Viewer {
             environment,
         );
 
-        let command_buffers = Self::create_and_register_command_buffers(
-            &context,
-            &swapchain,
-            &simple_render_pass,
-            &renderer,
-        );
+        let command_buffers = Self::allocate_command_buffers(&context, swapchain.image_count());
 
         let in_flight_frames = Self::create_sync_objects(context.device());
 
@@ -129,51 +124,50 @@ impl Viewer {
             .expect("Failed to find a supported depth format")
     }
 
-    fn create_and_register_command_buffers(
-        context: &Context,
-        swapchain: &Swapchain,
-        simple_render_pass: &SimpleRenderPass,
-        renderer: &Renderer,
-    ) -> Vec<vk::CommandBuffer> {
-        let device = context.device();
+    fn allocate_command_buffers(context: &Context, count: usize) -> Vec<vk::CommandBuffer> {
+        let allocate_info = vk::CommandBufferAllocateInfo::builder()
+            .command_pool(context.general_command_pool())
+            .level(vk::CommandBufferLevel::PRIMARY)
+            .command_buffer_count(count as _);
 
-        let buffers = {
-            let allocate_info = vk::CommandBufferAllocateInfo::builder()
-                .command_pool(context.general_command_pool())
-                .level(vk::CommandBufferLevel::PRIMARY)
-                .command_buffer_count(swapchain.image_count() as _);
+        unsafe {
+            context
+                .device()
+                .allocate_command_buffers(&allocate_info)
+                .unwrap()
+        }
+    }
 
-            unsafe { device.allocate_command_buffers(&allocate_info).unwrap() }
-        };
+    fn record_command_buffer(&self, command_buffer: vk::CommandBuffer, frame_index: usize) {
+        let device = self.context.device();
 
-        buffers.iter().enumerate().for_each(|(i, buffer)| {
-            let buffer = *buffer;
-            let framebuffer = swapchain.framebuffers()[i];
+        unsafe {
+            device
+                .reset_command_buffer(command_buffer, vk::CommandBufferResetFlags::empty())
+                .unwrap();
+        }
 
-            // begin command buffer
-            {
-                let command_buffer_begin_info = vk::CommandBufferBeginInfo::builder()
-                    .flags(vk::CommandBufferUsageFlags::SIMULTANEOUS_USE);
-                unsafe {
-                    device
-                        .begin_command_buffer(buffer, &command_buffer_begin_info)
-                        .unwrap()
-                };
-            }
+        // begin command buffer
+        {
+            let command_buffer_begin_info = vk::CommandBufferBeginInfo::builder()
+                .flags(vk::CommandBufferUsageFlags::SIMULTANEOUS_USE);
+            unsafe {
+                device
+                    .begin_command_buffer(command_buffer, &command_buffer_begin_info)
+                    .unwrap()
+            };
+        }
 
-            renderer.cmd_draw(
-                buffer,
-                i,
-                swapchain.properties(),
-                simple_render_pass,
-                framebuffer,
-            );
+        self.renderer.cmd_draw(
+            command_buffer,
+            frame_index,
+            self.swapchain.properties(),
+            &self.simple_render_pass,
+            self.swapchain.framebuffers()[frame_index],
+        );
 
-            // End command buffer
-            unsafe { device.end_command_buffer(buffer).unwrap() };
-        });
-
-        buffers
+        // End command buffer
+        unsafe { device.end_command_buffer(command_buffer).unwrap() };
     }
 
     fn create_sync_objects(device: &Device) -> InFlightFrames {
@@ -265,25 +259,9 @@ impl Viewer {
             self.model.take();
 
             self.context.graphics_queue_wait_idle();
-            unsafe {
-                self.context.device().free_command_buffers(
-                    self.context.general_command_pool(),
-                    &self.command_buffers,
-                );
-            }
-
             let model = Rc::new(RefCell::new(model));
             self.renderer.set_model(Rc::downgrade(&model));
-
-            let command_buffers = Self::create_and_register_command_buffers(
-                &self.context,
-                &self.swapchain,
-                &self.simple_render_pass,
-                &self.renderer,
-            );
-
             self.model = Some(model);
-            self.command_buffers = command_buffers;
         }
     }
 
@@ -322,6 +300,7 @@ impl Viewer {
 
         unsafe { self.context.device().reset_fences(&wait_fences).unwrap() };
 
+        self.record_command_buffer(self.command_buffers[image_index as usize], image_index as _);
         self.renderer.update_ubos(image_index as _, self.camera);
 
         let device = self.context.device();
@@ -421,12 +400,8 @@ impl Viewer {
             &self.simple_render_pass,
         );
 
-        let command_buffers = Self::create_and_register_command_buffers(
-            &self.context,
-            &swapchain,
-            &self.simple_render_pass,
-            &self.renderer,
-        );
+        let command_buffers =
+            Self::allocate_command_buffers(&self.context, swapchain.image_count());
 
         self.swapchain = swapchain;
         self.swapchain_properties = swapchain_properties;
