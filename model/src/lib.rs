@@ -3,6 +3,7 @@ mod error;
 mod light;
 mod material;
 mod mesh;
+pub mod metadata;
 mod mikktspace;
 mod node;
 mod skin;
@@ -15,6 +16,7 @@ pub use self::{
 };
 use cgmath::Matrix4;
 use math::*;
+use metadata::Metadata;
 use std::{error::Error, path::Path, result::Result, sync::Arc};
 use vulkan::ash::vk;
 use vulkan::{Buffer, Context, PreLoadedResource};
@@ -26,6 +28,7 @@ pub struct ModelStagingResources {
 }
 
 pub struct Model {
+    metadata: Metadata,
     meshes: Vec<Mesh>,
     nodes: Nodes,
     global_transform: Matrix4<f32>,
@@ -42,7 +45,9 @@ impl Model {
         path: P,
     ) -> Result<PreLoadedResource<Model, ModelStagingResources>, Box<dyn Error>> {
         log::debug!("Importing gltf file");
-        let (document, buffers, images) = gltf::import(path)?;
+        let (document, buffers, images) = gltf::import(&path)?;
+
+        let metadata = Metadata::new(path, &document);
 
         log::debug!("Creating the model");
         if document.scenes().len() == 0 {
@@ -96,6 +101,7 @@ impl Model {
         let lights = create_lights_from_gltf(&document);
 
         let model = Model {
+            metadata,
             meshes,
             nodes,
             global_transform,
@@ -144,6 +150,10 @@ impl Model {
 }
 
 impl Model {
+    pub fn metadata(&self) -> &Metadata {
+        &self.metadata
+    }
+
     pub fn meshes(&self) -> &[Mesh] {
         &self.meshes
     }

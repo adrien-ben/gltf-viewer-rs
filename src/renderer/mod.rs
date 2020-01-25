@@ -297,7 +297,9 @@ impl Renderer {
 
 impl Drop for Renderer {
     fn drop(&mut self) {
-        self.gui_renderer.drop(self.context.device());
+        self.gui_renderer
+            .destroy::<Context>(self.context.borrow())
+            .expect("Failed to destroy renderer");
         unsafe {
             self.context
                 .device()

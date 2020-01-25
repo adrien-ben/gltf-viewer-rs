@@ -13,7 +13,7 @@ ash = "0.29.0"
 winit = "0.19.4"
 
 imgui = "0.2"
-imgui-rs-vulkan-renderer = { git = "https://github.com/adrien-ben/imgui-rs-vulkan-renderer" }
+imgui-rs-vulkan-renderer = "0.1"
 
 [target.'cfg(windows)'.dependencies]
 winapi = "0.3"

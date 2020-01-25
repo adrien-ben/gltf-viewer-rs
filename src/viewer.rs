@@ -284,6 +284,7 @@ impl Viewer {
 
     fn load_new_model(&mut self) {
         if let Some(model) = self.loader.get_model() {
+            self.gui.set_model_metadata(model.metadata().clone());
             self.model.take();
 
             self.context.graphics_queue_wait_idle();

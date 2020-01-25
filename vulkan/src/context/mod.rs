@@ -160,7 +160,7 @@ impl RendererVkContext for Context {
         &self.shared_context.device()
     }
 
-    fn graphics_queue(&self) -> vk::Queue {
+    fn queue(&self) -> vk::Queue {
         self.shared_context.graphics_queue()
     }
 
