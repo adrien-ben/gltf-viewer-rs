@@ -4,13 +4,13 @@ use vulkan::winit::{DeviceEvent, ElementState, Event, MouseButton, MouseScrollDe
 pub struct InputState {
     is_left_clicked: bool,
     cursor_delta: [f32; 2],
-    wheel_delta: Option<f32>,
+    wheel_delta: f32,
 }
 
 impl InputState {
     pub fn update(self, event: &Event) -> Self {
         let mut is_left_clicked = None;
-        let mut wheel_delta = None;
+        let mut wheel_delta = self.wheel_delta;
         let mut cursor_delta = self.cursor_delta;
 
         if let Event::WindowEvent { event, .. } = event {
@@ -30,7 +30,7 @@ impl InputState {
                     delta: MouseScrollDelta::LineDelta(_, v_lines),
                     ..
                 } => {
-                    wheel_delta = Some(*v_lines);
+                    wheel_delta += v_lines;
                 }
                 _ => {}
             }
@@ -52,7 +52,7 @@ impl InputState {
 
     pub fn reset(&mut self) {
         self.cursor_delta = [0.0, 0.0];
-        self.wheel_delta = None;
+        self.wheel_delta = 0.0;
     }
 }
 
@@ -65,7 +65,7 @@ impl InputState {
         self.cursor_delta
     }
 
-    pub fn wheel_delta(&self) -> Option<f32> {
+    pub fn wheel_delta(&self) -> f32 {
         self.wheel_delta
     }
 }
@@ -75,7 +75,7 @@ impl Default for InputState {
         Self {
             is_left_clicked: false,
             cursor_delta: [0.0, 0.0],
-            wheel_delta: None,
+            wheel_delta: 0.0,
         }
     }
 }

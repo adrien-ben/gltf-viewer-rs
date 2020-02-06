@@ -29,9 +29,7 @@ impl Camera {
             let phi = delta[1] as f32 * (0.2_f32).to_radians();
             self.rotate(theta, phi);
         }
-        if let Some(wheel_delta) = input.wheel_delta() {
-            self.forward(wheel_delta * self.r * 0.2);
-        }
+        self.forward(input.wheel_delta() * self.r * 0.2);
     }
 
     pub fn rotate(&mut self, theta: f32, phi: f32) {
