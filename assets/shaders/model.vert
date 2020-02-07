@@ -21,7 +21,7 @@ layout(binding = 2, set = 0) uniform TransformUBO {
 } transform;
 
 layout(binding = 3, set = 0) uniform SkinUBO {
-    mat4 jointMatrices[128];
+    mat4 jointMatrices[255];
 } skin;
 
 layout(location = 0) out vec3 oNormals;

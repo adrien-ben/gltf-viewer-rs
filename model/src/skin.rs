@@ -2,7 +2,8 @@ use super::node::Node;
 use gltf::{buffer::Data, iter::Skins as GltfSkins, Skin as GltfSkin};
 use math::cgmath::{Matrix4, SquareMatrix};
 
-pub const MAX_JOINTS_PER_MESH: usize = 128;
+// Must be kept in sync with the value in model.vert
+pub const MAX_JOINTS_PER_MESH: usize = 512;
 
 #[derive(Clone, Debug)]
 pub struct Skin {

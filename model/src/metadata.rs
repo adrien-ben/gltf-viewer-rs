@@ -2,8 +2,8 @@ use gltf::{
     khr_lights_punctual::{Kind as GltfLightKind, Light as GltfLight},
     material::AlphaMode as GltfAlphaMode,
     mesh::Mode as GltfPrimitiveMode,
-    Document, Material as GltfMaterial, Mesh as GltfMesh, Node as GltfNode,
-    Primitive as GltfPrimitive, Scene,
+    Animation as GltfAnimation, Document, Material as GltfMaterial, Mesh as GltfMesh,
+    Node as GltfNode, Primitive as GltfPrimitive, Scene,
 };
 use std::{fmt, path::Path};
 
@@ -20,6 +20,7 @@ pub struct Metadata {
     texture_count: usize,
     light_count: usize,
     nodes: Vec<Node>,
+    animations: Vec<Animation>,
 }
 
 impl Metadata {
@@ -36,6 +37,7 @@ impl Metadata {
             texture_count: document.textures().len(),
             light_count: document.lights().map_or(0, |lights| lights.len()),
             nodes: build_tree(document),
+            animations: document.animations().map(Animation::from).collect(),
         }
     }
 }
@@ -138,6 +140,10 @@ impl Metadata {
 
     pub fn nodes(&self) -> &[Node] {
         &self.nodes
+    }
+
+    pub fn animations(&self) -> &[Animation] {
+        &self.animations
     }
 }
 
@@ -379,5 +385,20 @@ impl fmt::Display for LightKind {
             LightKind::Spot { .. } => "Spot",
         };
         write!(f, "{}", name)
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct Animation {
+    pub index: usize,
+    pub name: Option<String>,
+}
+
+impl From<GltfAnimation<'_>> for Animation {
+    fn from(animation: GltfAnimation) -> Self {
+        Self {
+            index: animation.index(),
+            name: animation.name().map(String::from),
+        }
     }
 }

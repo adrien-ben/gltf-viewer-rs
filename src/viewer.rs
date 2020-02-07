@@ -3,7 +3,7 @@ use ash::{version::DeviceV1_0, vk, Device};
 use environment::*;
 use imgui::{Context as GuiContext, FontConfig, FontGlyphRanges, FontSource};
 use imgui_winit_support::{HiDpiMode, WinitPlatform};
-use model::Model;
+use model::{Model, PlaybackMode};
 use std::{cell::RefCell, path::Path, rc::Rc, sync::Arc, time::Instant};
 use vulkan::*;
 use winit::{dpi::LogicalSize, Event, EventsLoop, Window, WindowBuilder, WindowEvent};
@@ -145,7 +145,7 @@ impl Viewer {
                 size_pixels: font_size,
                 config: Some(FontConfig {
                     rasterizer_multiply: 1.75,
-                    glyph_ranges: FontGlyphRanges::japanese(),
+                    glyph_ranges: FontGlyphRanges::default(),
                     ..FontConfig::default()
                 }),
             },
@@ -296,7 +296,28 @@ impl Viewer {
 
     fn update_model(&mut self, delta_s: f32) {
         if let Some(model) = self.model.as_ref() {
-            model.borrow_mut().update(delta_s as _);
+            let mut model = model.borrow_mut();
+
+            if self.gui.should_toggle_animation() {
+                model.toggle_animation();
+            } else if self.gui.should_stop_animation() {
+                model.stop_animation();
+            } else if self.gui.should_reset_animation() {
+                model.reset_animation();
+            } else {
+                let playback_mode = match self.gui.is_infinite_animation_checked() {
+                    true => PlaybackMode::LOOP,
+                    false => PlaybackMode::ONCE,
+                };
+
+                model.set_animation_playback_mode(playback_mode);
+                model.set_current_animation(self.gui.get_selected_animation());
+            }
+            self.gui
+                .set_animation_playback_state(model.get_animation_playback_state());
+
+            let delta_s = delta_s * self.gui.get_animation_speed();
+            model.update(delta_s);
         }
     }
 
