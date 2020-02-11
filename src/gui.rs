@@ -10,86 +10,20 @@ pub struct Gui {
 
 impl Gui {
     pub fn update(&mut self, _run: &mut bool, ui: &mut Ui) {
-        let window_alpha = if self.state.is_focused { 0.8 } else { 0.5 };
-        Window::new(im_str!("Model metadata"))
-            .position([20.0, 20.0], Condition::Appearing)
-            .size([400.0, 400.0], Condition::Appearing)
-            .movable(false)
-            .bg_alpha(window_alpha)
-            .build(ui, || {
-                let parent_size = ui.window_size();
+        build_main_menu_bar(ui, &mut self.state);
 
-                ChildWindow::new(0)
-                    .size([parent_size[0] / 3.0, 0.0])
-                    .build(ui, || {
-                        if let Some(metadata) = self.model_metadata.as_ref() {
-                            build_summary_block_ui(ui, metadata);
-                            build_hierarchy_block_ui(ui, metadata, &mut self.state);
-                            build_animation_block_ui(ui, metadata);
-                        }
-                    });
+        if self.state.show_model_descriptor {
+            build_model_descriptor_window(ui, &mut self.state, self.model_metadata.as_ref());
+        }
 
-                ui.same_line(0.0);
-
-                if let Some(selected_hierarchy_node) = self.state.selected_hierarchy_node.as_ref() {
-                    ChildWindow::new(im_str!("Node details"))
-                        .border(true)
-                        .build(ui, || build_node_details_ui(ui, selected_hierarchy_node));
-                }
-
-                self.state.is_focused =
-                    ui.is_window_focused_with_flags(WindowFocusedFlags::CHILD_WINDOWS);
-            });
-
-        Window::new(im_str!("Animation player"))
-            .position([440.0, 20.0], Condition::Appearing)
-            .size([300.0, 100.0], Condition::Appearing)
-            .always_auto_resize(true)
-            .collapsed(true, Condition::Appearing)
-            .movable(true)
-            .build(ui, || {
-                if let Some(metadata) = self.model_metadata.as_ref() {
-                    let animations_labels = metadata
-                        .animations()
-                        .iter()
-                        .map(|a| {
-                            let name = a.name.as_ref().map_or("no name", |n| &n);
-                            im_str!("{}: {}", a.index, name)
-                        })
-                        .collect::<Vec<_>>();
-                    let combo_labels = animations_labels.iter().map(|l| l).collect::<Vec<_>>();
-                    ComboBox::new(im_str!("Select animation")).build_simple_string(
-                        ui,
-                        &mut self.state.selected_animation,
-                        &combo_labels,
-                    );
-
-                    if let Some(state) = self.animation_playback_state {
-                        let toggle_text = match state.paused {
-                            true => "Resume",
-                            false => "Pause",
-                        };
-
-                        self.state.toggle_animation = ui.button(&im_str!("{}", toggle_text), [0.0, 0.0]);
-                        ui.same_line(0.0);
-                        self.state.stop_animation = ui.button(im_str!("Stop"), [0.0, 0.0]);
-                        ui.same_line(0.0);
-                        self.state.reset_animation = ui.button(im_str!("Reset"), [0.0, 0.0]);
-                        ui.same_line(0.0);
-                        ui.checkbox(im_str!("Loop"), &mut self.state.infinite_animation);
-
-                        Slider::new(im_str!("Speed"), 0.05f32..=3.0)
-                            .build(ui, &mut self.state.animation_speed);
-                        ui.same_line(0.0);
-                        if ui.button(&im_str!("Default"), [0.0, 0.0]) {
-                            self.state.animation_speed = 1.0;
-                        }
-
-                        let progress = state.time / state.total_time;
-                        ProgressBar::new(progress).build(ui);
-                    }
-                }
-            });
+        if self.state.show_animation_player {
+            build_animation_player_window(
+                ui,
+                &mut self.state,
+                self.model_metadata.as_ref(),
+                self.animation_playback_state,
+            );
+        }
     }
 
     pub fn set_model_metadata(&mut self, metadata: Metadata) {
@@ -128,6 +62,48 @@ impl Gui {
     pub fn get_animation_speed(&self) -> f32 {
         self.state.animation_speed
     }
+}
+
+fn build_main_menu_bar(ui: &Ui, state: &mut State) {
+    ui.main_menu_bar(|| {
+        ui.menu(im_str!("View"), true, || {
+            MenuItem::new(im_str!("Model descriptor"))
+                .build_with_ref(ui, &mut state.show_model_descriptor);
+            MenuItem::new(im_str!("Animation player"))
+                .build_with_ref(ui, &mut state.show_animation_player);
+        });
+    });
+}
+
+fn build_model_descriptor_window(ui: &Ui, state: &mut State, model_metadata: Option<&Metadata>) {
+    let mut opened = true;
+    Window::new(im_str!("Model metadata"))
+        .position([20.0, 20.0], Condition::Appearing)
+        .size([400.0, 400.0], Condition::Appearing)
+        .collapsible(false)
+        .opened(&mut opened)
+        .build(ui, || {
+            let parent_size = ui.window_size();
+
+            ChildWindow::new(0)
+                .size([parent_size[0] / 3.0, 0.0])
+                .build(ui, || {
+                    if let Some(metadata) = model_metadata {
+                        build_summary_block_ui(ui, metadata);
+                        build_hierarchy_block_ui(ui, metadata, state);
+                        build_animation_block_ui(ui, metadata);
+                    }
+                });
+
+            ui.same_line(0.0);
+
+            if let Some(selected_hierarchy_node) = state.selected_hierarchy_node.as_ref() {
+                ChildWindow::new(im_str!("Node details"))
+                    .border(true)
+                    .build(ui, || build_node_details_ui(ui, selected_hierarchy_node));
+            }
+        });
+    state.show_model_descriptor = opened;
 }
 
 fn build_summary_block_ui(ui: &Ui, metadata: &Metadata) {
@@ -239,47 +215,50 @@ fn build_mesh_details_ui(ui: &Ui, mesh_data: &Mesh) {
 }
 
 fn build_primitive_ui(ui: &Ui, prim: &Primitive) {
-    ui.tree_node(&im_str!("{}", prim.index)).build(|| {
-        ui.text(im_str!("Mode: {}", prim.mode));
-        ui.text("Material:");
-        let material = &prim.material;
-        ui.indent();
-        if let Some(index) = material.index {
-            ui.text(im_str!("Index {}", index));
-        }
-        ui.text(im_str!(
-            "Name: {}",
-            material.name.as_ref().map_or("no name", |s| &s)
-        ));
-
-        ui.text("Base color");
-        ui.same_line(0.0);
-        ColorButton::new(im_str!("Base color"), material.base_color).build(ui);
-        ui.text(im_str!("Alpha mode: {}", material.alpha_mode));
-        match material.alpha_mode {
-            AlphaMode::Blend | AlphaMode::Mask => {
-                ui.text(im_str!("Alpha cutoff: {}", material.alpha_cutoff))
+    ui.tree_node(&im_str!("{}", prim.index))
+        .open_on_double_click(true)
+        .open_on_arrow(true)
+        .build(|| {
+            ui.text(im_str!("Mode: {}", prim.mode));
+            ui.text("Material:");
+            let material = &prim.material;
+            ui.indent();
+            if let Some(index) = material.index {
+                ui.text(im_str!("Index {}", index));
             }
-            _ => (),
-        };
+            ui.text(im_str!(
+                "Name: {}",
+                material.name.as_ref().map_or("no name", |s| &s)
+            ));
 
-        if material.unlit {
-            ui.text("Unlit: true");
-        } else {
-            ui.text("Emissise color");
+            ui.text("Base color");
             ui.same_line(0.0);
-            let emissive_color_rgba = [
-                material.emissive_color[0],
-                material.emissive_color[1],
-                material.emissive_color[2],
-                1.0,
-            ];
-            ColorButton::new(im_str!("Emissive color"), emissive_color_rgba).build(ui);
+            ColorButton::new(im_str!("Base color"), material.base_color).build(ui);
+            ui.text(im_str!("Alpha mode: {}", material.alpha_mode));
+            match material.alpha_mode {
+                AlphaMode::Blend | AlphaMode::Mask => {
+                    ui.text(im_str!("Alpha cutoff: {}", material.alpha_cutoff))
+                }
+                _ => (),
+            };
 
-            ui.text(im_str!("Metalness: {}", material.metallic_factor));
-            ui.text(im_str!("Roughness: {}", material.roughness_factor));
-        }
-    })
+            if material.unlit {
+                ui.text("Unlit: true");
+            } else {
+                ui.text("Emissise color");
+                ui.same_line(0.0);
+                let emissive_color_rgba = [
+                    material.emissive_color[0],
+                    material.emissive_color[1],
+                    material.emissive_color[2],
+                    1.0,
+                ];
+                ColorButton::new(im_str!("Emissive color"), emissive_color_rgba).build(ui);
+
+                ui.text(im_str!("Metalness: {}", material.metallic_factor));
+                ui.text(im_str!("Roughness: {}", material.roughness_factor));
+            }
+        })
 }
 
 fn build_light_details_ui(ui: &Ui, light: Light) {
@@ -316,8 +295,67 @@ fn build_animation_block_ui(ui: &Ui, metadata: &Metadata) {
     }
 }
 
+fn build_animation_player_window(
+    ui: &Ui,
+    state: &mut State,
+    model_metadata: Option<&Metadata>,
+    animation_playback_state: Option<PlaybackState>,
+) {
+    let mut opened = true;
+    Window::new(im_str!("Animation player"))
+        .position([20.0, 20.0], Condition::Appearing)
+        .size([300.0, 100.0], Condition::Appearing)
+        .collapsible(false)
+        .opened(&mut opened)
+        .build(ui, || {
+            if let Some(metadata) = model_metadata {
+                let animations_labels = metadata
+                    .animations()
+                    .iter()
+                    .map(|a| {
+                        let name = a.name.as_ref().map_or("no name", |n| &n);
+                        im_str!("{}: {}", a.index, name)
+                    })
+                    .collect::<Vec<_>>();
+                let combo_labels = animations_labels.iter().map(|l| l).collect::<Vec<_>>();
+                ComboBox::new(im_str!("Select animation")).build_simple_string(
+                    ui,
+                    &mut state.selected_animation,
+                    &combo_labels,
+                );
+
+                if let Some(playback_state) = animation_playback_state {
+                    let toggle_text = match playback_state.paused {
+                        true => "Resume",
+                        false => "Pause",
+                    };
+
+                    state.toggle_animation = ui.button(&im_str!("{}", toggle_text), [0.0, 0.0]);
+                    ui.same_line(0.0);
+                    state.stop_animation = ui.button(im_str!("Stop"), [0.0, 0.0]);
+                    ui.same_line(0.0);
+                    state.reset_animation = ui.button(im_str!("Reset"), [0.0, 0.0]);
+                    ui.same_line(0.0);
+                    ui.checkbox(im_str!("Loop"), &mut state.infinite_animation);
+
+                    Slider::new(im_str!("Speed"), 0.05f32..=3.0)
+                        .build(ui, &mut state.animation_speed);
+                    ui.same_line(0.0);
+                    if ui.button(&im_str!("Default"), [0.0, 0.0]) {
+                        state.animation_speed = 1.0;
+                    }
+
+                    let progress = playback_state.time / playback_state.total_time;
+                    ProgressBar::new(progress).build(ui);
+                }
+            }
+        });
+    state.show_animation_player = opened;
+}
+
 struct State {
-    is_focused: bool,
+    show_model_descriptor: bool,
+    show_animation_player: bool,
     selected_hierarchy_node: Option<NodeDetails>,
     selected_animation: usize,
     infinite_animation: bool,
@@ -330,7 +368,8 @@ struct State {
 impl Default for State {
     fn default() -> Self {
         Self {
-            is_focused: true,
+            show_model_descriptor: false,
+            show_animation_player: false,
             selected_hierarchy_node: None,
             selected_animation: 0,
             infinite_animation: true,
