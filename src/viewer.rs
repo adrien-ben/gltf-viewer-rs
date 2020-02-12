@@ -1,8 +1,6 @@
 use crate::{camera::*, config::*, controls::*, gui::Gui, loader::*, renderer::*};
 use ash::{version::DeviceV1_0, vk, Device};
 use environment::*;
-use imgui::{Context as GuiContext, FontConfig, FontGlyphRanges, FontSource};
-use imgui_winit_support::{HiDpiMode, WinitPlatform};
 use model::{Model, PlaybackMode};
 use std::{cell::RefCell, path::Path, rc::Rc, sync::Arc, time::Instant};
 use vulkan::*;
@@ -21,10 +19,7 @@ pub struct Viewer {
     input_state: InputState,
     model: Option<Rc<RefCell<Model>>>,
 
-    gui_context: GuiContext,
-    gui_winit_platform: WinitPlatform,
     gui: Gui,
-    last_frame_instant: Instant,
 
     context: Arc<Context>,
     swapchain_properties: SwapchainProperties,
@@ -54,7 +49,7 @@ impl Viewer {
             .build(&events_loop)
             .unwrap();
 
-        let (mut gui_context, gui_winit_platform) = Self::init_imgui(&window);
+        let mut gui = Gui::new(&window);
 
         let context = Arc::new(Context::new(&window));
 
@@ -89,7 +84,7 @@ impl Viewer {
             swapchain_properties,
             &simple_render_pass,
             environment,
-            &mut gui_context,
+            gui.get_context(),
         );
 
         let command_buffers = Self::allocate_command_buffers(&context, swapchain.image_count());
@@ -110,10 +105,7 @@ impl Viewer {
             camera: Default::default(),
             input_state: Default::default(),
             model: None,
-            gui_context,
-            gui_winit_platform,
-            gui: Default::default(),
-            last_frame_instant: Instant::now(),
+            gui,
             context,
             swapchain_properties,
             simple_render_pass,
@@ -123,37 +115,6 @@ impl Viewer {
             in_flight_frames,
             loader,
         }
-    }
-
-    fn init_imgui(window: &Window) -> (GuiContext, WinitPlatform) {
-        let mut imgui = GuiContext::create();
-        imgui.set_ini_filename(None);
-
-        let mut platform = WinitPlatform::init(&mut imgui);
-
-        let hidpi_factor = platform.hidpi_factor();
-        let font_size = (13.0 * hidpi_factor) as f32;
-        imgui.fonts().add_font(&[
-            FontSource::DefaultFontData {
-                config: Some(FontConfig {
-                    size_pixels: font_size,
-                    ..FontConfig::default()
-                }),
-            },
-            FontSource::TtfData {
-                data: include_bytes!("../assets/fonts/mplus-1p-regular.ttf"),
-                size_pixels: font_size,
-                config: Some(FontConfig {
-                    rasterizer_multiply: 1.75,
-                    glyph_ranges: FontGlyphRanges::default(),
-                    ..FontConfig::default()
-                }),
-            },
-        ]);
-        imgui.io_mut().font_global_scale = (1.0 / hidpi_factor) as f32;
-        platform.attach_window(imgui.io_mut(), window, HiDpiMode::Rounded);
-
-        (imgui, platform)
     }
 
     fn find_depth_format(context: &Context) -> vk::Format {
@@ -249,12 +210,11 @@ impl Viewer {
         let mut input_state = self.input_state;
         input_state.reset();
 
-        let mut io = self.gui_context.io_mut();
-        let platform = &mut self.gui_winit_platform;
+        let gui = &mut self.gui;
         let window = &self.window;
 
         self.events_loop.poll_events(|event| {
-            platform.handle_event(&mut io, window, &event);
+            gui.handle_event(window, &event);
             input_state = input_state.update(&event);
             if let Event::WindowEvent { event, .. } = event {
                 match event {
@@ -271,8 +231,7 @@ impl Viewer {
             }
         });
 
-        platform.prepare_frame(io, &window).unwrap();
-        self.last_frame_instant = io.update_delta_time(self.last_frame_instant);
+        self.gui.prepare_frame(window);
 
         self.resize_dimensions = resize_dimensions;
         if path_to_load.is_some() {
@@ -305,9 +264,10 @@ impl Viewer {
             } else if self.gui.should_reset_animation() {
                 model.reset_animation();
             } else {
-                let playback_mode = match self.gui.is_infinite_animation_checked() {
-                    true => PlaybackMode::LOOP,
-                    false => PlaybackMode::ONCE,
+                let playback_mode = if self.gui.is_infinite_animation_checked() {
+                    PlaybackMode::LOOP
+                } else {
+                    PlaybackMode::ONCE
                 };
 
                 model.set_animation_playback_mode(playback_mode);
@@ -425,12 +385,7 @@ impl Viewer {
             };
         }
 
-        let draw_data = {
-            let mut ui = self.gui_context.frame();
-            self.gui.update(&mut self.run, &mut ui);
-            self.gui_winit_platform.prepare_render(&ui, &self.window);
-            ui.render()
-        };
+        let draw_data = self.gui.render(&mut self.run, &self.window);
 
         self.renderer.cmd_draw(
             command_buffer,

@@ -1,29 +1,74 @@
 use imgui::*;
+use imgui_winit_support::{HiDpiMode, WinitPlatform};
 use model::{metadata::*, PlaybackState};
+use std::time::Instant;
+use vulkan::winit::{Event, Window as WinitWindow};
 
-#[derive(Default)]
 pub struct Gui {
+    context: Context,
+    winit_platform: WinitPlatform,
+    last_frame_instant: Instant,
     model_metadata: Option<Metadata>,
     animation_playback_state: Option<PlaybackState>,
     state: State,
 }
 
 impl Gui {
-    pub fn update(&mut self, _run: &mut bool, ui: &mut Ui) {
-        build_main_menu_bar(ui, &mut self.state);
+    pub fn new(window: &WinitWindow) -> Self {
+        let (context, winit_platform) = init_imgui(window);
 
-        if self.state.show_model_descriptor {
-            build_model_descriptor_window(ui, &mut self.state, self.model_metadata.as_ref());
+        Self {
+            context,
+            winit_platform,
+            last_frame_instant: Instant::now(),
+            model_metadata: None,
+            animation_playback_state: None,
+            state: Default::default(),
+        }
+    }
+
+    pub fn handle_event(&mut self, window: &WinitWindow, event: &Event) {
+        let mut io = self.context.io_mut();
+        let platform = &mut self.winit_platform;
+
+        platform.handle_event(&mut io, window, event);
+    }
+
+    pub fn prepare_frame(&mut self, window: &WinitWindow) {
+        let io = self.context.io_mut();
+        let platform = &mut self.winit_platform;
+        platform.prepare_frame(io, &window).unwrap();
+        self.last_frame_instant = io.update_delta_time(self.last_frame_instant);
+    }
+
+    pub fn render(&mut self, _run: &mut bool, window: &WinitWindow) -> &DrawData {
+        let ui = self.context.frame();
+
+        {
+            let ui = &ui;
+
+            build_main_menu_bar(ui, &mut self.state);
+
+            if self.state.show_model_descriptor {
+                build_model_descriptor_window(ui, &mut self.state, self.model_metadata.as_ref());
+            }
+
+            if self.state.show_animation_player {
+                build_animation_player_window(
+                    ui,
+                    &mut self.state,
+                    self.model_metadata.as_ref(),
+                    self.animation_playback_state,
+                );
+            }
         }
 
-        if self.state.show_animation_player {
-            build_animation_player_window(
-                ui,
-                &mut self.state,
-                self.model_metadata.as_ref(),
-                self.animation_playback_state,
-            );
-        }
+        self.winit_platform.prepare_render(&ui, window);
+        ui.render()
+    }
+
+    pub fn get_context(&mut self) -> &mut Context {
+        &mut self.context
     }
 
     pub fn set_model_metadata(&mut self, metadata: Metadata) {
@@ -62,6 +107,37 @@ impl Gui {
     pub fn get_animation_speed(&self) -> f32 {
         self.state.animation_speed
     }
+}
+
+fn init_imgui(window: &WinitWindow) -> (Context, WinitPlatform) {
+    let mut imgui = Context::create();
+    imgui.set_ini_filename(None);
+
+    let mut platform = WinitPlatform::init(&mut imgui);
+
+    let hidpi_factor = platform.hidpi_factor();
+    let font_size = (13.0 * hidpi_factor) as f32;
+    imgui.fonts().add_font(&[
+        FontSource::DefaultFontData {
+            config: Some(FontConfig {
+                size_pixels: font_size,
+                ..FontConfig::default()
+            }),
+        },
+        FontSource::TtfData {
+            data: include_bytes!("../assets/fonts/mplus-1p-regular.ttf"),
+            size_pixels: font_size,
+            config: Some(FontConfig {
+                rasterizer_multiply: 1.75,
+                glyph_ranges: FontGlyphRanges::default(),
+                ..FontConfig::default()
+            }),
+        },
+    ]);
+    imgui.io_mut().font_global_scale = (1.0 / hidpi_factor) as f32;
+    platform.attach_window(imgui.io_mut(), window, HiDpiMode::Rounded);
+
+    (imgui, platform)
 }
 
 fn build_main_menu_bar(ui: &Ui, state: &mut State) {
@@ -304,7 +380,7 @@ fn build_animation_player_window(
     let mut opened = true;
     Window::new(im_str!("Animation player"))
         .position([20.0, 20.0], Condition::Appearing)
-        .size([300.0, 100.0], Condition::Appearing)
+        .size([400.0, 150.0], Condition::Appearing)
         .collapsible(false)
         .opened(&mut opened)
         .build(ui, || {
@@ -325,9 +401,10 @@ fn build_animation_player_window(
                 );
 
                 if let Some(playback_state) = animation_playback_state {
-                    let toggle_text = match playback_state.paused {
-                        true => "Resume",
-                        false => "Pause",
+                    let toggle_text = if playback_state.paused {
+                        "Resume"
+                    } else {
+                        "Pause"
                     };
 
                     state.toggle_animation = ui.button(&im_str!("{}", toggle_text), [0.0, 0.0]);
