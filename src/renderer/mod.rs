@@ -11,7 +11,7 @@ use ash::{version::DeviceV1_0, vk};
 use environment::Environment;
 use imgui::{Context as GuiContext, DrawData};
 use imgui_rs_vulkan_renderer::Renderer as GuiRenderer;
-use math::cgmath::{Deg, Matrix4, Point3, Vector3};
+use math::cgmath::{Deg, Matrix4, Vector3};
 use model_crate::Model;
 use std::borrow::Borrow;
 use std::cell::RefCell;
@@ -275,7 +275,7 @@ impl Renderer {
 
             let view = Matrix4::look_at(
                 camera.position(),
-                Point3::new(0.0, 0.0, 0.0),
+                camera.target(),
                 Vector3::new(0.0, 1.0, 0.0),
             );
             let proj = math::perspective(Deg(45.0), aspect, 0.01, 10.0);

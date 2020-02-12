@@ -1,3 +1,4 @@
+use crate::camera::Camera;
 use imgui::*;
 use imgui_winit_support::{HiDpiMode, WinitPlatform};
 use model::{metadata::*, PlaybackState};
@@ -10,6 +11,7 @@ pub struct Gui {
     last_frame_instant: Instant,
     model_metadata: Option<Metadata>,
     animation_playback_state: Option<PlaybackState>,
+    camera: Option<Camera>,
     state: State,
 }
 
@@ -23,6 +25,7 @@ impl Gui {
             last_frame_instant: Instant::now(),
             model_metadata: None,
             animation_playback_state: None,
+            camera: None,
             state: Default::default(),
         }
     }
@@ -61,6 +64,10 @@ impl Gui {
                     self.animation_playback_state,
                 );
             }
+
+            if self.state.show_camera_details {
+                build_camera_details_window(ui, &mut self.state, self.camera);
+            }
         }
 
         self.winit_platform.prepare_render(&ui, window);
@@ -74,7 +81,7 @@ impl Gui {
     pub fn set_model_metadata(&mut self, metadata: Metadata) {
         self.model_metadata.replace(metadata);
         self.animation_playback_state = None;
-        self.state = Default::default();
+        self.state = self.state.reset();
     }
 
     pub fn set_animation_playback_state(
@@ -82,6 +89,10 @@ impl Gui {
         animation_playback_state: Option<PlaybackState>,
     ) {
         self.animation_playback_state = animation_playback_state;
+    }
+
+    pub fn set_camera(&mut self, camera: Option<Camera>) {
+        self.camera = camera;
     }
 
     pub fn get_selected_animation(&self) -> usize {
@@ -106,6 +117,10 @@ impl Gui {
 
     pub fn get_animation_speed(&self) -> f32 {
         self.state.animation_speed
+    }
+
+    pub fn should_reset_camera(&self) -> bool {
+        self.state.reset_camera
     }
 }
 
@@ -147,6 +162,8 @@ fn build_main_menu_bar(ui: &Ui, state: &mut State) {
                 .build_with_ref(ui, &mut state.show_model_descriptor);
             MenuItem::new(im_str!("Animation player"))
                 .build_with_ref(ui, &mut state.show_animation_player);
+            MenuItem::new(im_str!("Camera details"))
+                .build_with_ref(ui, &mut state.show_camera_details);
         });
     });
 }
@@ -430,30 +447,68 @@ fn build_animation_player_window(
     state.show_animation_player = opened;
 }
 
+fn build_camera_details_window(ui: &Ui, state: &mut State, camera: Option<Camera>) {
+    let mut opened = true;
+    Window::new(im_str!("Camera"))
+        .position([20.0, 20.0], Condition::Appearing)
+        .size([250.0, 100.0], Condition::Appearing)
+        .collapsible(false)
+        .opened(&mut opened)
+        .build(ui, || {
+            if let Some(camera) = camera {
+                let p = camera.position();
+                let t = camera.target();
+                ui.text(im_str!("Position: {:.3}, {:.3}, {:.3}", p.x, p.y, p.z));
+                ui.text(im_str!("Target: {:.3}, {:.3}, {:.3}", t.x, t.y, t.z));
+                state.reset_camera = ui.button(im_str!("Reset"), [0.0, 0.0]);
+            }
+        });
+    state.show_camera_details = opened;
+}
+
 struct State {
     show_model_descriptor: bool,
-    show_animation_player: bool,
     selected_hierarchy_node: Option<NodeDetails>,
+
+    show_animation_player: bool,
     selected_animation: usize,
     infinite_animation: bool,
     reset_animation: bool,
     toggle_animation: bool,
     stop_animation: bool,
     animation_speed: f32,
+
+    show_camera_details: bool,
+    reset_camera: bool,
+}
+
+impl State {
+    fn reset(&self) -> Self {
+        Self {
+            show_model_descriptor: self.show_model_descriptor,
+            show_animation_player: self.show_animation_player,
+            show_camera_details: self.show_camera_details,
+            ..Default::default()
+        }
+    }
 }
 
 impl Default for State {
     fn default() -> Self {
         Self {
             show_model_descriptor: false,
-            show_animation_player: false,
             selected_hierarchy_node: None,
+
+            show_animation_player: false,
             selected_animation: 0,
             infinite_animation: true,
             reset_animation: false,
             toggle_animation: false,
             stop_animation: false,
             animation_speed: 1.0,
+
+            show_camera_details: false,
+            reset_camera: false,
         }
     }
 }

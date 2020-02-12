@@ -46,10 +46,12 @@ using [Ash][2]. It runs on Window, Linux and MacOS.
 - [x] Imgui integration
   - [x] Model description
   - [x] Animation controller
+  - [x] Camera details
 
 ## Controls
 
 - Left click and move to rotate camera around origin
+- Right click and move to move camera
 - Mouse wheel to un/zoom
 
 ## Build it

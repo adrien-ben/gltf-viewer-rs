@@ -191,7 +191,7 @@ impl Viewer {
 
             self.load_new_model();
             self.update_model(delta_s as f32);
-            self.camera.update(&self.input_state);
+            self.update_camera();
             self.draw_frame();
         }
         unsafe { self.context.device().device_wait_idle().unwrap() };
@@ -279,6 +279,14 @@ impl Viewer {
             let delta_s = delta_s * self.gui.get_animation_speed();
             model.update(delta_s);
         }
+    }
+
+    fn update_camera(&mut self) {
+        if self.gui.should_reset_camera() {
+            self.camera = Default::default();
+        }
+        self.camera.update(&self.input_state);
+        self.gui.set_camera(Some(self.camera));
     }
 
     fn draw_frame(&mut self) {
