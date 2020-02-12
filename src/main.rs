@@ -2,6 +2,7 @@ mod camera;
 mod config;
 mod controls;
 mod error;
+mod gui;
 mod loader;
 mod renderer;
 mod viewer;

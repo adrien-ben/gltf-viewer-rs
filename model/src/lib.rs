@@ -3,6 +3,7 @@ mod error;
 mod light;
 mod material;
 mod mesh;
+pub mod metadata;
 mod mikktspace;
 mod node;
 mod skin;
@@ -15,6 +16,7 @@ pub use self::{
 };
 use cgmath::Matrix4;
 use math::*;
+use metadata::Metadata;
 use std::{error::Error, path::Path, result::Result, sync::Arc};
 use vulkan::ash::vk;
 use vulkan::{Buffer, Context, PreLoadedResource};
@@ -26,10 +28,11 @@ pub struct ModelStagingResources {
 }
 
 pub struct Model {
+    metadata: Metadata,
     meshes: Vec<Mesh>,
     nodes: Nodes,
     global_transform: Matrix4<f32>,
-    animations: Vec<Animation>,
+    animations: Option<Animations>,
     skins: Vec<Skin>,
     textures: Textures,
     lights: Vec<Light>,
@@ -42,7 +45,9 @@ impl Model {
         path: P,
     ) -> Result<PreLoadedResource<Model, ModelStagingResources>, Box<dyn Error>> {
         log::debug!("Importing gltf file");
-        let (document, buffers, images) = gltf::import(path)?;
+        let (document, buffers, images) = gltf::import(&path)?;
+
+        let metadata = Metadata::new(path, &document);
 
         log::debug!("Creating the model");
         if document.scenes().len() == 0 {
@@ -96,6 +101,7 @@ impl Model {
         let lights = create_lights_from_gltf(&document);
 
         let model = Model {
+            metadata,
             meshes,
             nodes,
             global_transform,
@@ -122,8 +128,8 @@ impl Model {
 
 impl Model {
     pub fn update(&mut self, delta_time: f32) -> bool {
-        let updated = if let Some(animation) = &mut self.animations.get_mut(0) {
-            animation.animate(&mut self.nodes, delta_time)
+        let updated = if let Some(animations) = self.animations.as_mut() {
+            animations.update(&mut self.nodes, delta_time)
         } else {
             false
         };
@@ -143,7 +149,52 @@ impl Model {
     }
 }
 
+/// Animations methods
 impl Model {
+    pub fn get_animation_playback_state(&self) -> Option<PlaybackState> {
+        self.animations
+            .as_ref()
+            .map(Animations::get_playback_state)
+            .copied()
+    }
+
+    pub fn set_current_animation(&mut self, animation_index: usize) {
+        if let Some(animations) = self.animations.as_mut() {
+            animations.set_current(animation_index);
+        }
+    }
+
+    pub fn set_animation_playback_mode(&mut self, playback_mode: PlaybackMode) {
+        if let Some(animations) = self.animations.as_mut() {
+            animations.set_playback_mode(playback_mode);
+        }
+    }
+
+    pub fn toggle_animation(&mut self) {
+        if let Some(animations) = self.animations.as_mut() {
+            animations.toggle();
+        }
+    }
+
+    pub fn stop_animation(&mut self) {
+        if let Some(animations) = self.animations.as_mut() {
+            animations.stop();
+        }
+    }
+
+    pub fn reset_animation(&mut self) {
+        if let Some(animations) = self.animations.as_mut() {
+            animations.reset();
+        }
+    }
+}
+
+/// Getters
+impl Model {
+    pub fn metadata(&self) -> &Metadata {
+        &self.metadata
+    }
+
     pub fn meshes(&self) -> &[Mesh] {
         &self.meshes
     }

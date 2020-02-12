@@ -1,22 +1,25 @@
-use crate::{camera::*, config::*, controls::*, loader::*, renderer::*};
+use crate::{camera::*, config::*, controls::*, gui::Gui, loader::*, renderer::*};
 use ash::{version::DeviceV1_0, vk, Device};
 use environment::*;
-use model::Model;
+use model::{Model, PlaybackMode};
 use std::{cell::RefCell, path::Path, rc::Rc, sync::Arc, time::Instant};
 use vulkan::*;
 use winit::{dpi::LogicalSize, Event, EventsLoop, Window, WindowBuilder, WindowEvent};
 
-const MAX_FRAMES_IN_FLIGHT: u32 = 2;
+pub const MAX_FRAMES_IN_FLIGHT: u32 = 2;
 
 pub struct Viewer {
     config: Config,
     events_loop: EventsLoop,
-    _window: Window,
+    window: Window,
     resize_dimensions: Option<[u32; 2]>,
+    run: bool,
 
     camera: Camera,
     input_state: InputState,
     model: Option<Rc<RefCell<Model>>>,
+
+    gui: Gui,
 
     context: Arc<Context>,
     swapchain_properties: SwapchainProperties,
@@ -45,6 +48,8 @@ impl Viewer {
             ))
             .build(&events_loop)
             .unwrap();
+
+        let mut gui = Gui::new(&window);
 
         let context = Arc::new(Context::new(&window));
 
@@ -79,14 +84,10 @@ impl Viewer {
             swapchain_properties,
             &simple_render_pass,
             environment,
+            gui.get_context(),
         );
 
-        let command_buffers = Self::create_and_register_command_buffers(
-            &context,
-            &swapchain,
-            &simple_render_pass,
-            &renderer,
-        );
+        let command_buffers = Self::allocate_command_buffers(&context, swapchain.image_count());
 
         let in_flight_frames = Self::create_sync_objects(context.device());
 
@@ -97,12 +98,14 @@ impl Viewer {
 
         Self {
             events_loop,
-            _window: window,
+            window,
             config,
             resize_dimensions: None,
+            run: true,
             camera: Default::default(),
             input_state: Default::default(),
             model: None,
+            gui,
             context,
             swapchain_properties,
             simple_render_pass,
@@ -129,51 +132,18 @@ impl Viewer {
             .expect("Failed to find a supported depth format")
     }
 
-    fn create_and_register_command_buffers(
-        context: &Context,
-        swapchain: &Swapchain,
-        simple_render_pass: &SimpleRenderPass,
-        renderer: &Renderer,
-    ) -> Vec<vk::CommandBuffer> {
-        let device = context.device();
+    fn allocate_command_buffers(context: &Context, count: usize) -> Vec<vk::CommandBuffer> {
+        let allocate_info = vk::CommandBufferAllocateInfo::builder()
+            .command_pool(context.general_command_pool())
+            .level(vk::CommandBufferLevel::PRIMARY)
+            .command_buffer_count(count as _);
 
-        let buffers = {
-            let allocate_info = vk::CommandBufferAllocateInfo::builder()
-                .command_pool(context.general_command_pool())
-                .level(vk::CommandBufferLevel::PRIMARY)
-                .command_buffer_count(swapchain.image_count() as _);
-
-            unsafe { device.allocate_command_buffers(&allocate_info).unwrap() }
-        };
-
-        buffers.iter().enumerate().for_each(|(i, buffer)| {
-            let buffer = *buffer;
-            let framebuffer = swapchain.framebuffers()[i];
-
-            // begin command buffer
-            {
-                let command_buffer_begin_info = vk::CommandBufferBeginInfo::builder()
-                    .flags(vk::CommandBufferUsageFlags::SIMULTANEOUS_USE);
-                unsafe {
-                    device
-                        .begin_command_buffer(buffer, &command_buffer_begin_info)
-                        .unwrap()
-                };
-            }
-
-            renderer.cmd_draw(
-                buffer,
-                i,
-                swapchain.properties(),
-                simple_render_pass,
-                framebuffer,
-            );
-
-            // End command buffer
-            unsafe { device.end_command_buffer(buffer).unwrap() };
-        });
-
-        buffers
+        unsafe {
+            context
+                .device()
+                .allocate_command_buffers(&allocate_info)
+                .unwrap()
+        }
     }
 
     fn create_sync_objects(device: &Device) -> InFlightFrames {
@@ -214,7 +184,8 @@ impl Viewer {
             let delta_s = ((new_time - time).as_nanos() as f64) / 1_000_000_000.0;
             time = new_time;
 
-            if self.process_event() {
+            self.process_event();
+            if !self.run {
                 break;
             }
 
@@ -228,18 +199,26 @@ impl Viewer {
 
     /// Process the events from the `EventsLoop` and return whether the
     /// main loop should stop.
-    fn process_event(&mut self) -> bool {
-        let mut should_stop = false;
+    fn process_event(&mut self) {
+        if !self.run {
+            return;
+        }
+
+        let mut run = true;
         let mut resize_dimensions = None;
         let mut path_to_load = None;
         let mut input_state = self.input_state;
         input_state.reset();
 
+        let gui = &mut self.gui;
+        let window = &self.window;
+
         self.events_loop.poll_events(|event| {
+            gui.handle_event(window, &event);
             input_state = input_state.update(&event);
             if let Event::WindowEvent { event, .. } = event {
                 match event {
-                    WindowEvent::CloseRequested => should_stop = true,
+                    WindowEvent::CloseRequested => run = false,
                     WindowEvent::Resized(LogicalSize { width, height }) => {
                         resize_dimensions = Some([width as u32, height as u32]);
                     }
@@ -252,44 +231,53 @@ impl Viewer {
             }
         });
 
+        self.gui.prepare_frame(window);
+
         self.resize_dimensions = resize_dimensions;
         if path_to_load.is_some() {
             self.loader.load(path_to_load.as_ref().cloned().unwrap());
         }
         self.input_state = input_state;
-        should_stop
+        self.run = run;
     }
 
     fn load_new_model(&mut self) {
         if let Some(model) = self.loader.get_model() {
+            self.gui.set_model_metadata(model.metadata().clone());
             self.model.take();
 
             self.context.graphics_queue_wait_idle();
-            unsafe {
-                self.context.device().free_command_buffers(
-                    self.context.general_command_pool(),
-                    &self.command_buffers,
-                );
-            }
-
             let model = Rc::new(RefCell::new(model));
             self.renderer.set_model(Rc::downgrade(&model));
-
-            let command_buffers = Self::create_and_register_command_buffers(
-                &self.context,
-                &self.swapchain,
-                &self.simple_render_pass,
-                &self.renderer,
-            );
-
             self.model = Some(model);
-            self.command_buffers = command_buffers;
         }
     }
 
     fn update_model(&mut self, delta_s: f32) {
         if let Some(model) = self.model.as_ref() {
-            model.borrow_mut().update(delta_s as _);
+            let mut model = model.borrow_mut();
+
+            if self.gui.should_toggle_animation() {
+                model.toggle_animation();
+            } else if self.gui.should_stop_animation() {
+                model.stop_animation();
+            } else if self.gui.should_reset_animation() {
+                model.reset_animation();
+            } else {
+                let playback_mode = if self.gui.is_infinite_animation_checked() {
+                    PlaybackMode::LOOP
+                } else {
+                    PlaybackMode::ONCE
+                };
+
+                model.set_animation_playback_mode(playback_mode);
+                model.set_current_animation(self.gui.get_selected_animation());
+            }
+            self.gui
+                .set_animation_playback_state(model.get_animation_playback_state());
+
+            let delta_s = delta_s * self.gui.get_animation_speed();
+            model.update(delta_s);
         }
     }
 
@@ -322,6 +310,7 @@ impl Viewer {
 
         unsafe { self.context.device().reset_fences(&wait_fences).unwrap() };
 
+        self.record_command_buffer(self.command_buffers[image_index as usize], image_index as _);
         self.renderer.update_ubos(image_index as _, self.camera);
 
         let device = self.context.device();
@@ -376,6 +365,41 @@ impl Viewer {
         }
     }
 
+    fn record_command_buffer(&mut self, command_buffer: vk::CommandBuffer, frame_index: usize) {
+        let device = self.context.device();
+
+        unsafe {
+            device
+                .reset_command_buffer(command_buffer, vk::CommandBufferResetFlags::empty())
+                .unwrap();
+        }
+
+        // begin command buffer
+        {
+            let command_buffer_begin_info = vk::CommandBufferBeginInfo::builder()
+                .flags(vk::CommandBufferUsageFlags::SIMULTANEOUS_USE);
+            unsafe {
+                device
+                    .begin_command_buffer(command_buffer, &command_buffer_begin_info)
+                    .unwrap()
+            };
+        }
+
+        let draw_data = self.gui.render(&mut self.run, &self.window);
+
+        self.renderer.cmd_draw(
+            command_buffer,
+            frame_index,
+            self.swapchain.properties(),
+            &self.simple_render_pass,
+            self.swapchain.framebuffers()[frame_index],
+            draw_data,
+        );
+
+        // End command buffer
+        unsafe { device.end_command_buffer(command_buffer).unwrap() };
+    }
+
     /// Recreates the swapchain.
     ///
     /// If the window has been resized, then the new size is used
@@ -421,12 +445,8 @@ impl Viewer {
             &self.simple_render_pass,
         );
 
-        let command_buffers = Self::create_and_register_command_buffers(
-            &self.context,
-            &swapchain,
-            &self.simple_render_pass,
-            &self.renderer,
-        );
+        let command_buffers =
+            Self::allocate_command_buffers(&self.context, swapchain.image_count());
 
         self.swapchain = swapchain;
         self.swapchain_properties = swapchain_properties;

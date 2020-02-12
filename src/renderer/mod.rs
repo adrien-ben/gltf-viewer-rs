@@ -9,8 +9,11 @@ pub use self::{model::*, postprocess::*, renderpass::*, skybox::*};
 use super::camera::{Camera, CameraUBO};
 use ash::{version::DeviceV1_0, vk};
 use environment::Environment;
+use imgui::{Context as GuiContext, DrawData};
+use imgui_rs_vulkan_renderer::Renderer as GuiRenderer;
 use math::cgmath::{Deg, Matrix4, Point3, Vector3};
 use model_crate::Model;
+use std::borrow::Borrow;
 use std::cell::RefCell;
 use std::mem::size_of;
 use std::rc::Weak;
@@ -29,6 +32,7 @@ pub struct Renderer {
     skybox_renderer: SkyboxRenderer,
     model_renderer: Option<ModelRenderer>,
     post_process_renderer: PostProcessRenderer,
+    gui_renderer: GuiRenderer,
 }
 
 impl Renderer {
@@ -39,6 +43,7 @@ impl Renderer {
         swapchain_properties: SwapchainProperties,
         simple_render_pass: &SimpleRenderPass,
         environment: Environment,
+        gui_context: &mut GuiContext,
     ) -> Self {
         let camera_uniform_buffers =
             create_camera_uniform_buffers(&context, swapchain_properties.image_count);
@@ -68,6 +73,14 @@ impl Renderer {
             renderer_render_pass.get_color_attachment(),
         );
 
+        let gui_renderer = GuiRenderer::new::<Context>(
+            context.borrow(),
+            crate::viewer::MAX_FRAMES_IN_FLIGHT as _,
+            simple_render_pass.get_render_pass(),
+            gui_context,
+        )
+        .expect("Failed to create gui renderer");
+
         Self {
             context,
             depth_format,
@@ -80,6 +93,7 @@ impl Renderer {
             skybox_renderer,
             model_renderer: None,
             post_process_renderer,
+            gui_renderer,
         }
     }
 }
@@ -101,12 +115,13 @@ fn create_camera_uniform_buffers(context: &Arc<Context>, count: u32) -> Vec<Buff
 
 impl Renderer {
     pub fn cmd_draw(
-        &self,
+        &mut self,
         command_buffer: vk::CommandBuffer,
         frame_index: usize,
         swapchain_properties: SwapchainProperties,
         simple_render_pass: &SimpleRenderPass,
         final_framebuffer: vk::Framebuffer,
+        draw_data: &DrawData,
     ) {
         let device = self.context.device();
 
@@ -179,6 +194,11 @@ impl Renderer {
 
         // Apply post process
         self.post_process_renderer.cmd_draw(command_buffer);
+
+        // Draw UI
+        self.gui_renderer
+            .cmd_draw::<Context>(self.context.borrow(), command_buffer, draw_data)
+            .unwrap();
 
         // End render pass
         unsafe { device.cmd_end_render_pass(command_buffer) };
@@ -277,6 +297,9 @@ impl Renderer {
 
 impl Drop for Renderer {
     fn drop(&mut self) {
+        self.gui_renderer
+            .destroy::<Context>(self.context.borrow())
+            .expect("Failed to destroy renderer");
         unsafe {
             self.context
                 .device()

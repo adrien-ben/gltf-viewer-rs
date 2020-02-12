@@ -2,6 +2,7 @@ mod shared;
 
 use self::shared::*;
 use ash::{extensions::khr::Surface, version::DeviceV1_0, vk, Device, Instance};
+use imgui_rs_vulkan_renderer::RendererVkContext;
 use std::sync::Arc;
 use winit::Window;
 
@@ -17,7 +18,7 @@ impl Context {
         let general_command_pool = create_command_pool(
             &shared_context.device(),
             shared_context.queue_families_indices,
-            vk::CommandPoolCreateFlags::empty(),
+            vk::CommandPoolCreateFlags::RESET_COMMAND_BUFFER,
         );
         let transient_command_pool = create_command_pool(
             &shared_context.device(),
@@ -143,6 +144,28 @@ impl Context {
 
     pub fn graphics_queue_wait_idle(&self) {
         self.shared_context.graphics_queue_wait_idle()
+    }
+}
+
+impl RendererVkContext for Context {
+    fn instance(&self) -> &Instance {
+        &self.shared_context.instance()
+    }
+
+    fn physical_device(&self) -> vk::PhysicalDevice {
+        self.shared_context.physical_device()
+    }
+
+    fn device(&self) -> &Device {
+        &self.shared_context.device()
+    }
+
+    fn queue(&self) -> vk::Queue {
+        self.shared_context.graphics_queue()
+    }
+
+    fn command_pool(&self) -> vk::CommandPool {
+        self.transient_command_pool
     }
 }
 

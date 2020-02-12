@@ -71,19 +71,19 @@ fn handle_program_result(result: Result<Output>) {
                 print!(
                     "stdout: {}",
                     String::from_utf8(output.stdout)
-                        .unwrap_or("Failed to print program stdout".to_string())
+                        .unwrap_or_else(|_| "Failed to print program stdout".to_string())
                 );
             } else {
                 eprintln!("Shader compilation failed. Status: {}", output.status);
                 eprint!(
                     "stdout: {}",
                     String::from_utf8(output.stdout)
-                        .unwrap_or("Failed to print program stdout".to_string())
+                        .unwrap_or_else(|_| "Failed to print program stdout".to_string())
                 );
                 eprint!(
                     "stderr: {}",
                     String::from_utf8(output.stderr)
-                        .unwrap_or("Failed to print program stderr".to_string())
+                        .unwrap_or_else(|_| "Failed to print program stderr".to_string())
                 );
                 panic!("Shader compilation failed. Status: {}", output.status);
             }
