@@ -1,0 +1,25 @@
+name: Cross-platform build
+
+on: [push]
+
+jobs:
+  # Build the project on linux, windows and macos
+  build:
+    name: Build on ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: ["ubuntu-latest", "windows-latest", "macos-latest"]
+    steps:
+      - uses: actions/checkout@v1
+      - name: Install toolchain
+        uses: actions-rs/toolchain@v1
+        with:
+            toolchain: stable
+            override: true
+      - name: Build
+        uses: actions-rs/cargo@v1
+        env:
+          SKIP_SHADER_COMPILATION: true
+        with:
+          command: build

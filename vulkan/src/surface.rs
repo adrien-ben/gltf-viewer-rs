@@ -91,7 +91,7 @@ pub unsafe fn create_surface<E: EntryV1_0, I: InstanceV1_0>(
         appkit::{NSView, NSWindow},
         base::id as cocoa_id,
     };
-    use metal_rs::CoreAnimationLayer;
+    use metal::CoreAnimationLayer;
     use objc::runtime::YES;
     use std::{mem, os::raw::c_void, ptr};
     use winit::os::macos::WindowExt;
