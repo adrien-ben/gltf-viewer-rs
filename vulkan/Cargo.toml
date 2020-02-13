@@ -19,6 +19,6 @@ imgui-rs-vulkan-renderer = "0.1"
 winapi = "0.3"
 
 [target.'cfg(target_os = "macos")'.dependencies]
-metal-rs = "0.10.6"
-cocoa = "0.19.1"
+metal = "0.17"
+cocoa = "0.20"
 objc = "0.2"
