@@ -61,9 +61,16 @@ layout(location = 5) in mat3 oTBN;
 // -- Push constants
 layout(push_constant) uniform Material {
     vec4 color;
-    vec4 emissiveAndRoughness;
-    float metallic;
-    float occlusion;
+    // Contains the emissive factor and roughness (or glossiness) factor.
+    // - emissive: emissiveAndRoughnessGlossiness.rgb
+    // - roughness: emissiveAndRoughnessGlossiness.a (for metallic/roughness workflows)
+    // - glossiness: emissiveAndRoughnessGlossiness.a (for specular/glossiness workflows)
+    vec4 emissiveAndRoughnessGlossiness;
+    // Contains the metallic (or specular) factor and occlusion factor.
+    // - metallic: metallicSpecularAndOcclusion.r (for metallic/roughness workflows)
+    // - specular: metallicSpecularAndOcclusion.rgb (for specular/glossiness workflows)
+    // - occlusion: metallicSpecularAndOcclusion.a
+    vec4 metallicSpecularAndOcclusion;
     // Contains the texture channels for color metallic/roughness emissive and normal
     // [0-7] Color texture channel
     // [8-15] metallic/roughness texture channel
@@ -74,7 +81,8 @@ layout(push_constant) uniform Material {
     // [0-7] Occlusion texture channel
     // [8-15] Alpha mode
     // [16-23] Unlit flag
-    uint occlusionTextureChannelAlphaModeAndUnlitFlag;
+    // [24-31] Workflow (metallic/roughness or specular/glossiness)
+    uint occlusionTextureChannelAlphaModeUnlitFlagAndWorkflow;
     float alphaCutoff;
 } material;
 
@@ -105,7 +113,7 @@ TextureChannels getTextureChannels() {
         (material.colorMetallicRoughnessEmissiveNormalTextureChannels >> 16) & 255,
         (material.colorMetallicRoughnessEmissiveNormalTextureChannels >> 8) & 255,
         material.colorMetallicRoughnessEmissiveNormalTextureChannels & 255,
-        (material.occlusionTextureChannelAlphaModeAndUnlitFlag >> 24) & 255
+        (material.occlusionTextureChannelAlphaModeUnlitFlagAndWorkflow >> 24) & 255
     );
 }
 
@@ -127,7 +135,7 @@ vec4 getBaseColor(TextureChannels textureChannels) {
 }
 
 float getMetallic(TextureChannels textureChannels) {
-    float metallic = material.metallic;
+    float metallic = material.metallicSpecularAndOcclusion.r;
     if(textureChannels.metallicRoughness != NO_TEXTURE_ID) {
         vec2 uv = getUV(textureChannels.metallicRoughness);
         metallic *= texture(metallicRoughnessSampler, uv).b;
@@ -136,7 +144,7 @@ float getMetallic(TextureChannels textureChannels) {
 }
 
 float getRoughness(TextureChannels textureChannels) {
-    float roughness = material.emissiveAndRoughness.a;
+    float roughness = material.emissiveAndRoughnessGlossiness.a;
     if(textureChannels.metallicRoughness != NO_TEXTURE_ID) {
         vec2 uv = getUV(textureChannels.metallicRoughness);
         roughness *= texture(metallicRoughnessSampler, uv).g;
@@ -145,7 +153,7 @@ float getRoughness(TextureChannels textureChannels) {
 }
 
 vec3 getEmissiveColor(TextureChannels textureChannels) {
-    vec3 emissive = material.emissiveAndRoughness.rgb;
+    vec3 emissive = material.emissiveAndRoughnessGlossiness.rgb;
     if(textureChannels.emissive != NO_TEXTURE_ID) {
         vec2 uv = getUV(textureChannels.emissive);
         emissive *= pow(texture(emissiveSampler, uv).rgb, vec3(2.2));
@@ -174,11 +182,11 @@ vec3 occludeAmbientColor(vec3 ambientColor, TextureChannels textureChannels) {
         vec2 uv = getUV(textureChannels.occlusion);
         sampledOcclusion = texture(occlusionSampler, uv).r;
     }
-    return mix(ambientColor, ambientColor * sampledOcclusion, material.occlusion);
+    return mix(ambientColor, ambientColor * sampledOcclusion, material.metallicSpecularAndOcclusion.a);
 }
 
 uint getAlphaMode() {
-    return (material.occlusionTextureChannelAlphaModeAndUnlitFlag >> 16) & 255;
+    return (material.occlusionTextureChannelAlphaModeUnlitFlagAndWorkflow >> 16) & 255;
 }
 
 bool isMasked(vec4 baseColor) {
@@ -193,7 +201,7 @@ float getAlpha(vec4 baseColor) {
 }
 
 bool isUnlit() {
-    uint unlitFlag = (material.occlusionTextureChannelAlphaModeAndUnlitFlag >> 8) & 255;
+    uint unlitFlag = (material.occlusionTextureChannelAlphaModeUnlitFlagAndWorkflow >> 8) & 255;
     if (unlitFlag == UNLIT_FLAG_UNLIT) {
         return true;
     }
