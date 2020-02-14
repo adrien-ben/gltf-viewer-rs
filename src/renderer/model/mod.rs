@@ -3,7 +3,7 @@ mod uniform;
 use super::{create_renderer_pipeline, RenderPass, RendererPipelineParameters};
 use environment::*;
 use math::cgmath::Matrix4;
-use model::{Material, Model, ModelVertex, Primitive, Texture, MAX_JOINTS_PER_MESH};
+use model::{Material, Model, ModelVertex, Primitive, Texture, Workflow, MAX_JOINTS_PER_MESH};
 use std::{cell::RefCell, mem::size_of, rc::Weak, sync::Arc};
 use uniform::*;
 use util::*;
@@ -729,8 +729,19 @@ fn create_per_primitive_descriptor_sets(
                 textures,
                 resources.dummy_texture,
             );
+
+            let metallic_roughness_texture = match material.get_workflow() {
+                Workflow::MetallicRoughness {
+                    metallic_roughness_texture,
+                    ..
+                } => metallic_roughness_texture,
+                Workflow::SpecularGlossiness {
+                    specular_glossiness_texture,
+                    ..
+                } => specular_glossiness_texture,
+            };
             let metallic_roughness_info = create_descriptor_image_info(
-                material.get_metallic_roughness_texture_index(),
+                metallic_roughness_texture.map(|t| t.get_index()),
                 textures,
                 resources.dummy_texture,
             );

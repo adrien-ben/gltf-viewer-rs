@@ -1,6 +1,6 @@
 use super::JointsBuffer;
 use math::cgmath::{InnerSpace, Matrix4, SquareMatrix, Vector4};
-use model::{Light, Material, Model, Type, MAX_JOINTS_PER_MESH};
+use model::{Light, Material, Model, Type, Workflow, MAX_JOINTS_PER_MESH};
 use std::{mem::size_of, sync::Arc};
 use vulkan::{ash::vk, Buffer, Context};
 
@@ -110,23 +110,48 @@ impl<'a> From<Material> for MaterialUniform {
         let color = material.get_color();
         let emissive_factor = material.get_emissive();
 
+        let workflow = material.get_workflow();
+
+        let roughness_glossiness = match workflow {
+            Workflow::MetallicRoughness { roughness, .. } => roughness,
+            Workflow::SpecularGlossiness { glossiness, .. } => glossiness,
+        };
+
         let emissive_and_roughness_glossiness = [
             emissive_factor[0],
             emissive_factor[1],
             emissive_factor[2],
-            material.get_roughness(),
+            roughness_glossiness,
         ];
 
-        let metallic = material.get_metallic();
+        let metallic_specular = match workflow {
+            Workflow::MetallicRoughness { metallic, .. } => [metallic, 0.0, 0.0],
+            Workflow::SpecularGlossiness { specular, .. } => specular,
+        };
+
         let occlusion = material.get_occlusion();
-        let metallic_specular_and_occlusion = [metallic, 0.0, 0.0, occlusion];
+        let metallic_specular_and_occlusion = [
+            metallic_specular[0],
+            metallic_specular[1],
+            metallic_specular[2],
+            occlusion,
+        ];
 
         let color_texture_id = material
             .get_color_texture()
             .map_or(NO_TEXTURE_ID, |info| info.get_channel());
-        let metallic_roughness_texture_id = material
-            .get_metallic_roughness_texture()
-            .map_or(NO_TEXTURE_ID, |info| info.get_channel());
+
+        let metallic_roughness_texture_id = match material.get_workflow() {
+            Workflow::MetallicRoughness {
+                metallic_roughness_texture,
+                ..
+            } => metallic_roughness_texture,
+            Workflow::SpecularGlossiness {
+                specular_glossiness_texture,
+                ..
+            } => specular_glossiness_texture,
+        }
+        .map_or(NO_TEXTURE_ID, |t| t.get_channel());
         let emissive_texture_id = material
             .get_emissive_texture()
             .map_or(NO_TEXTURE_ID, |info| info.get_channel());
@@ -147,11 +172,13 @@ impl<'a> From<Material> for MaterialUniform {
         } else {
             UNLIT_FLAG_LIT
         };
-        let occlusion_texture_channel_alpha_mode_unlit_flag_and_workflow = (occlusion_texture_id
-            << 24)
-            | (alpha_mode << 16)
-            | (unlit_flag << 8)
-            | METALLIC_ROUGHNESS_WORKFLOW;
+        let workflow = if let Workflow::MetallicRoughness { .. } = workflow {
+            METALLIC_ROUGHNESS_WORKFLOW
+        } else {
+            SPECULAR_GLOSSINESS_WORKFLOW
+        };
+        let occlusion_texture_channel_alpha_mode_unlit_flag_and_workflow =
+            (occlusion_texture_id << 24) | (alpha_mode << 16) | (unlit_flag << 8) | workflow;
 
         let alpha_cutoff = material.get_alpha_cutoff();
 
