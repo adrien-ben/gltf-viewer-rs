@@ -36,7 +36,7 @@ const uint METALLIC_ROUGHNESS_WORKFLOW = 0;
 // -- Structures --
 struct TextureChannels {
     uint color;
-    uint metallicRoughness;
+    uint material;
     uint emissive;
     uint normal;
     uint occlusion;
@@ -111,7 +111,7 @@ layout(binding = 5, set = 1) uniform samplerCube preFilteredSampler;
 layout(binding = 6, set = 1) uniform sampler2D brdfLookupSampler;
 layout(binding = 7, set = 2) uniform sampler2D colorSampler;
 layout(binding = 8, set = 2) uniform sampler2D normalsSampler;
-layout(binding = 9, set = 2) uniform sampler2D metallicRoughnessSampler;
+layout(binding = 9, set = 2) uniform sampler2D materialSampler;
 layout(binding = 10, set = 2) uniform sampler2D occlusionSampler;
 layout(binding = 11, set = 2) uniform sampler2D emissiveSampler;
 
@@ -147,18 +147,18 @@ vec4 getBaseColor(TextureChannels textureChannels) {
 
 float getMetallic(TextureChannels textureChannels) {
     float metallic = material.metallicSpecularAndOcclusion.r;
-    if(textureChannels.metallicRoughness != NO_TEXTURE_ID) {
-        vec2 uv = getUV(textureChannels.metallicRoughness);
-        metallic *= texture(metallicRoughnessSampler, uv).b;
+    if(textureChannels.material != NO_TEXTURE_ID) {
+        vec2 uv = getUV(textureChannels.material);
+        metallic *= texture(materialSampler, uv).b;
     }
     return metallic;
 }
 
 vec3 getSpecular(TextureChannels textureChannels) {
     vec3 specular = material.metallicSpecularAndOcclusion.rgb;
-    if(textureChannels.metallicRoughness != NO_TEXTURE_ID) {
-        vec2 uv = getUV(textureChannels.metallicRoughness);
-        vec4 sampledColor= texture(metallicRoughnessSampler, uv);
+    if(textureChannels.material != NO_TEXTURE_ID) {
+        vec2 uv = getUV(textureChannels.material);
+        vec4 sampledColor= texture(materialSampler, uv);
         specular *= pow(sampledColor.rgb, vec3(2.2));
     }
     return specular;
@@ -180,12 +180,12 @@ float convertMetallic(vec3 diffuse, vec3 specular, float maxSpecular) {
 
 float getRoughness(TextureChannels textureChannels, bool metallicRoughnessWorkflow) {
     float roughness = material.emissiveAndRoughnessGlossiness.a;
-    if(textureChannels.metallicRoughness != NO_TEXTURE_ID) {
-        vec2 uv = getUV(textureChannels.metallicRoughness);
+    if(textureChannels.material != NO_TEXTURE_ID) {
+        vec2 uv = getUV(textureChannels.material);
         if (metallicRoughnessWorkflow) {
-            roughness *= texture(metallicRoughnessSampler, uv).g;
+            roughness *= texture(materialSampler, uv).g;
         } else {
-            roughness *= texture(metallicRoughnessSampler, uv).a;
+            roughness *= texture(materialSampler, uv).a;
         }
     }
 

@@ -92,10 +92,10 @@ pub struct MaterialUniform {
     metallic_specular_and_occlusion: [f32; 4],
     // Contains the texture channels for color metallic/roughness emissive and normal
     // [0-7] Color texture channel
-    // [8-15] metallic/roughness texture channel
+    // [8-15] metallic/roughness or specular/glossiness texture channel
     // [16-23] emissive texture channel
     // [24-31] normals texture channel
-    color_metallicroughness_emissive_normal_texture_channels: u32,
+    color_material_emissive_normal_texture_channels: u32,
     // Contains occlusion texture channel, alpha mode and unlit flag
     // [0-7] Occlusion texture channel
     // [8-15] Alpha mode
@@ -158,7 +158,7 @@ impl<'a> From<Material> for MaterialUniform {
         let normal_texture_id = material
             .get_normals_texture()
             .map_or(NO_TEXTURE_ID, |info| info.get_channel());
-        let color_metallicroughness_emissive_normal_texture_channels = (color_texture_id << 24)
+        let color_material_emissive_normal_texture_channels = (color_texture_id << 24)
             | (metallic_roughness_texture_id << 16)
             | (emissive_texture_id << 8)
             | normal_texture_id;
@@ -186,7 +186,7 @@ impl<'a> From<Material> for MaterialUniform {
             color,
             emissive_and_roughness_glossiness,
             metallic_specular_and_occlusion,
-            color_metallicroughness_emissive_normal_texture_channels,
+            color_material_emissive_normal_texture_channels,
             occlusion_texture_channel_alpha_mode_unlit_flag_and_workflow,
             alpha_cutoff,
         }

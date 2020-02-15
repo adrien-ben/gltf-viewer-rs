@@ -25,7 +25,7 @@ const PRE_FILTERED_SAMPLER_BINDING: u32 = 5;
 const BRDF_SAMPLER_BINDING: u32 = 6;
 const COLOR_SAMPLER_BINDING: u32 = 7;
 const NORMALS_SAMPLER_BINDING: u32 = 8;
-const METALLIC_ROUGHNESS_SAMPLER_BINDING: u32 = 9;
+const MATERIAL_SAMPLER_BINDING: u32 = 9;
 const OCCLUSION_SAMPLER_BINDING: u32 = 10;
 const EMISSIVE_SAMPLER_BINDING: u32 = 11;
 
@@ -665,7 +665,7 @@ fn create_per_primitive_descriptor_set_layout(device: &Device) -> vk::Descriptor
             .stage_flags(vk::ShaderStageFlags::FRAGMENT)
             .build(),
         vk::DescriptorSetLayoutBinding::builder()
-            .binding(METALLIC_ROUGHNESS_SAMPLER_BINDING)
+            .binding(MATERIAL_SAMPLER_BINDING)
             .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
             .descriptor_count(1)
             .stage_flags(vk::ShaderStageFlags::FRAGMENT)
@@ -730,7 +730,7 @@ fn create_per_primitive_descriptor_sets(
                 resources.dummy_texture,
             );
 
-            let metallic_roughness_texture = match material.get_workflow() {
+            let material_texture = match material.get_workflow() {
                 Workflow::MetallicRoughness {
                     metallic_roughness_texture,
                     ..
@@ -740,8 +740,8 @@ fn create_per_primitive_descriptor_sets(
                     ..
                 } => specular_glossiness_texture,
             };
-            let metallic_roughness_info = create_descriptor_image_info(
-                metallic_roughness_texture.map(|t| t.get_index()),
+            let material_info = create_descriptor_image_info(
+                material_texture.map(|t| t.get_index()),
                 textures,
                 resources.dummy_texture,
             );
@@ -774,9 +774,9 @@ fn create_per_primitive_descriptor_sets(
                     .build(),
                 vk::WriteDescriptorSet::builder()
                     .dst_set(set)
-                    .dst_binding(METALLIC_ROUGHNESS_SAMPLER_BINDING)
+                    .dst_binding(MATERIAL_SAMPLER_BINDING)
                     .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
-                    .image_info(&metallic_roughness_info)
+                    .image_info(&material_info)
                     .build(),
                 vk::WriteDescriptorSet::builder()
                     .dst_set(set)
