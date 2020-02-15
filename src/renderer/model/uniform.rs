@@ -113,8 +113,8 @@ impl<'a> From<Material> for MaterialUniform {
         let workflow = material.get_workflow();
 
         let roughness_glossiness = match workflow {
-            Workflow::MetallicRoughness { roughness, .. } => roughness,
-            Workflow::SpecularGlossiness { glossiness, .. } => glossiness,
+            Workflow::MetallicRoughness(workflow) => workflow.get_roughness(),
+            Workflow::SpecularGlossiness(workflow) => workflow.get_glossiness(),
         };
 
         let emissive_and_roughness_glossiness = [
@@ -125,8 +125,8 @@ impl<'a> From<Material> for MaterialUniform {
         ];
 
         let metallic_specular = match workflow {
-            Workflow::MetallicRoughness { metallic, .. } => [metallic, 0.0, 0.0],
-            Workflow::SpecularGlossiness { specular, .. } => specular,
+            Workflow::MetallicRoughness(workflow) => [workflow.get_metallic(), 0.0, 0.0],
+            Workflow::SpecularGlossiness(workflow) => workflow.get_specular(),
         };
 
         let occlusion = material.get_occlusion();
@@ -142,14 +142,8 @@ impl<'a> From<Material> for MaterialUniform {
             .map_or(NO_TEXTURE_ID, |info| info.get_channel());
 
         let metallic_roughness_texture_id = match material.get_workflow() {
-            Workflow::MetallicRoughness {
-                metallic_roughness_texture,
-                ..
-            } => metallic_roughness_texture,
-            Workflow::SpecularGlossiness {
-                specular_glossiness_texture,
-                ..
-            } => specular_glossiness_texture,
+            Workflow::MetallicRoughness(workflow) => workflow.get_metallic_roughness_texture(),
+            Workflow::SpecularGlossiness(workflow) => workflow.get_specular_glossiness_texture(),
         }
         .map_or(NO_TEXTURE_ID, |t| t.get_channel());
         let emissive_texture_id = material

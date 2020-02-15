@@ -31,16 +31,58 @@ pub struct TextureInfo {
 
 #[derive(Clone, Copy, Debug)]
 pub enum Workflow {
-    MetallicRoughness {
-        metallic: f32,
-        roughness: f32,
-        metallic_roughness_texture: Option<TextureInfo>,
-    },
-    SpecularGlossiness {
-        specular: [f32; 3],
-        glossiness: f32,
-        specular_glossiness_texture: Option<TextureInfo>,
-    },
+    MetallicRoughness(MetallicRoughnessWorkflow),
+    SpecularGlossiness(SpecularGlossinessWorkflow),
+}
+
+#[derive(Clone, Copy, Debug)]
+pub struct MetallicRoughnessWorkflow {
+    metallic: f32,
+    roughness: f32,
+    metallic_roughness_texture: Option<TextureInfo>,
+}
+
+impl MetallicRoughnessWorkflow {
+    pub fn get_metallic(&self) -> f32 {
+        self.metallic
+    }
+
+    pub fn get_roughness(&self) -> f32 {
+        self.roughness
+    }
+
+    pub fn get_metallic_roughness_texture(&self) -> Option<TextureInfo> {
+        self.metallic_roughness_texture
+    }
+
+    pub fn get_metallic_roughness_texture_index(&self) -> Option<usize> {
+        self.metallic_roughness_texture.map(|info| info.index)
+    }
+}
+
+#[derive(Clone, Copy, Debug)]
+pub struct SpecularGlossinessWorkflow {
+    specular: [f32; 3],
+    glossiness: f32,
+    specular_glossiness_texture: Option<TextureInfo>,
+}
+
+impl SpecularGlossinessWorkflow {
+    pub fn get_specular(&self) -> [f32; 3] {
+        self.specular
+    }
+
+    pub fn get_glossiness(&self) -> f32 {
+        self.glossiness
+    }
+
+    pub fn get_specular_glossiness_texture(&self) -> Option<TextureInfo> {
+        self.specular_glossiness_texture
+    }
+
+    pub fn get_specular_glossiness_texture_index(&self) -> Option<usize> {
+        self.specular_glossiness_texture.map(|info| info.index)
+    }
 }
 
 impl Material {
@@ -142,18 +184,18 @@ impl<'a> From<GltfMaterial<'a>> for Material {
         let (occlusion, occlusion_texture) = get_occlusion(material.occlusion_texture());
 
         let workflow = match material.pbr_specular_glossiness() {
-            Some(pbr) => Workflow::SpecularGlossiness {
+            Some(pbr) => Workflow::SpecularGlossiness(SpecularGlossinessWorkflow {
                 specular: pbr.specular_factor(),
                 glossiness: pbr.glossiness_factor(),
                 specular_glossiness_texture: get_texture(pbr.specular_glossiness_texture()),
-            },
+            }),
             _ => {
                 let pbr = material.pbr_metallic_roughness();
-                Workflow::MetallicRoughness {
+                Workflow::MetallicRoughness(MetallicRoughnessWorkflow {
                     metallic: pbr.metallic_factor(),
                     roughness: pbr.roughness_factor(),
                     metallic_roughness_texture: get_texture(pbr.metallic_roughness_texture()),
-                }
+                })
             }
         };
 
