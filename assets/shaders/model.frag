@@ -111,6 +111,9 @@ layout(binding = 5, set = 1) uniform samplerCube preFilteredSampler;
 layout(binding = 6, set = 1) uniform sampler2D brdfLookupSampler;
 layout(binding = 7, set = 2) uniform sampler2D colorSampler;
 layout(binding = 8, set = 2) uniform sampler2D normalsSampler;
+// This sampler contains either:
+// - metallic (b) + glossiness (g) for metallic/roughness workflow
+// - specular (rgb) + glossiness (a) for specular/glossiness workflow
 layout(binding = 9, set = 2) uniform sampler2D materialSampler;
 layout(binding = 10, set = 2) uniform sampler2D occlusionSampler;
 layout(binding = 11, set = 2) uniform sampler2D emissiveSampler;
