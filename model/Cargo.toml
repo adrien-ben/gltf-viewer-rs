@@ -18,4 +18,4 @@ rev = "abbae9b486f280ce6e331821e2454c2cfd746d5b"
 
 [dependencies.gltf]
 version = "0.15"
-features = ["KHR_lights_punctual", "KHR_materials_unlit"]
+features = ["KHR_lights_punctual", "KHR_materials_unlit", "KHR_materials_pbrSpecularGlossiness"]

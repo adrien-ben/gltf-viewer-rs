@@ -11,14 +11,12 @@ const ALPHA_MODE_BLEND: u32 = 2;
 pub struct Material {
     color: [f32; 4],
     emissive: [f32; 3],
-    roughness: f32,
-    metallic: f32,
     occlusion: f32,
     color_texture: Option<TextureInfo>,
-    metallic_roughness_texture: Option<TextureInfo>,
     emissive_texture: Option<TextureInfo>,
     normals_texture: Option<TextureInfo>,
     occlusion_texture: Option<TextureInfo>,
+    workflow: Workflow,
     alpha_mode: u32,
     alpha_cutoff: f32,
     double_sided: bool,
@@ -31,6 +29,62 @@ pub struct TextureInfo {
     channel: u32,
 }
 
+#[derive(Clone, Copy, Debug)]
+pub enum Workflow {
+    MetallicRoughness(MetallicRoughnessWorkflow),
+    SpecularGlossiness(SpecularGlossinessWorkflow),
+}
+
+#[derive(Clone, Copy, Debug)]
+pub struct MetallicRoughnessWorkflow {
+    metallic: f32,
+    roughness: f32,
+    metallic_roughness_texture: Option<TextureInfo>,
+}
+
+impl MetallicRoughnessWorkflow {
+    pub fn get_metallic(&self) -> f32 {
+        self.metallic
+    }
+
+    pub fn get_roughness(&self) -> f32 {
+        self.roughness
+    }
+
+    pub fn get_metallic_roughness_texture(&self) -> Option<TextureInfo> {
+        self.metallic_roughness_texture
+    }
+
+    pub fn get_metallic_roughness_texture_index(&self) -> Option<usize> {
+        self.metallic_roughness_texture.map(|info| info.index)
+    }
+}
+
+#[derive(Clone, Copy, Debug)]
+pub struct SpecularGlossinessWorkflow {
+    specular: [f32; 3],
+    glossiness: f32,
+    specular_glossiness_texture: Option<TextureInfo>,
+}
+
+impl SpecularGlossinessWorkflow {
+    pub fn get_specular(&self) -> [f32; 3] {
+        self.specular
+    }
+
+    pub fn get_glossiness(&self) -> f32 {
+        self.glossiness
+    }
+
+    pub fn get_specular_glossiness_texture(&self) -> Option<TextureInfo> {
+        self.specular_glossiness_texture
+    }
+
+    pub fn get_specular_glossiness_texture_index(&self) -> Option<usize> {
+        self.specular_glossiness_texture.map(|info| info.index)
+    }
+}
+
 impl Material {
     pub fn get_color(&self) -> [f32; 4] {
         self.color
@@ -38,14 +92,6 @@ impl Material {
 
     pub fn get_emissive(&self) -> [f32; 3] {
         self.emissive
-    }
-
-    pub fn get_roughness(&self) -> f32 {
-        self.roughness
-    }
-
-    pub fn get_metallic(&self) -> f32 {
-        self.metallic
     }
 
     pub fn get_occlusion(&self) -> f32 {
@@ -68,10 +114,6 @@ impl Material {
         self.color_texture
     }
 
-    pub fn get_metallic_roughness_texture(&self) -> Option<TextureInfo> {
-        self.metallic_roughness_texture
-    }
-
     pub fn get_emissive_texture(&self) -> Option<TextureInfo> {
         self.emissive_texture
     }
@@ -92,10 +134,6 @@ impl Material {
         self.color_texture.map(|info| info.index)
     }
 
-    pub fn get_metallic_roughness_texture_index(&self) -> Option<usize> {
-        self.metallic_roughness_texture.map(|info| info.index)
-    }
-
     pub fn get_emissive_texture_index(&self) -> Option<usize> {
         self.emissive_texture.map(|info| info.index)
     }
@@ -111,6 +149,10 @@ impl Material {
     pub fn is_unlit(&self) -> bool {
         self.is_unlit
     }
+
+    pub fn get_workflow(&self) -> Workflow {
+        self.workflow
+    }
 }
 
 impl TextureInfo {
@@ -125,21 +167,39 @@ impl TextureInfo {
 
 impl<'a> From<GltfMaterial<'a>> for Material {
     fn from(material: GltfMaterial) -> Material {
-        let pbr = material.pbr_metallic_roughness();
-
-        let color = pbr.base_color_factor();
+        let color = match material.pbr_specular_glossiness() {
+            Some(pbr) => pbr.diffuse_factor(),
+            _ => material.pbr_metallic_roughness().base_color_factor(),
+        };
 
         let emissive = material.emissive_factor();
-        let roughness = pbr.roughness_factor();
-        let metallic = pbr.metallic_factor();
 
-        let color_texture = get_texture(pbr.base_color_texture());
-        let metallic_roughness_texture = get_texture(pbr.metallic_roughness_texture());
+        let color_texture = match material.pbr_specular_glossiness() {
+            Some(pbr) => pbr.diffuse_texture(),
+            _ => material.pbr_metallic_roughness().base_color_texture(),
+        };
+        let color_texture = get_texture(color_texture);
         let emissive_texture = get_texture(material.emissive_texture());
         let normals_texture = get_normals_texture(material.normal_texture());
         let (occlusion, occlusion_texture) = get_occlusion(material.occlusion_texture());
-        let alpha_mode = get_alpha_mode_index(material.alpha_mode());
 
+        let workflow = match material.pbr_specular_glossiness() {
+            Some(pbr) => Workflow::SpecularGlossiness(SpecularGlossinessWorkflow {
+                specular: pbr.specular_factor(),
+                glossiness: pbr.glossiness_factor(),
+                specular_glossiness_texture: get_texture(pbr.specular_glossiness_texture()),
+            }),
+            _ => {
+                let pbr = material.pbr_metallic_roughness();
+                Workflow::MetallicRoughness(MetallicRoughnessWorkflow {
+                    metallic: pbr.metallic_factor(),
+                    roughness: pbr.roughness_factor(),
+                    metallic_roughness_texture: get_texture(pbr.metallic_roughness_texture()),
+                })
+            }
+        };
+
+        let alpha_mode = get_alpha_mode_index(material.alpha_mode());
         let alpha_cutoff = material.alpha_cutoff();
 
         let double_sided = material.double_sided();
@@ -149,14 +209,12 @@ impl<'a> From<GltfMaterial<'a>> for Material {
         Material {
             color,
             emissive,
-            roughness,
-            metallic,
             occlusion,
             color_texture,
-            metallic_roughness_texture,
             emissive_texture,
             normals_texture,
             occlusion_texture,
+            workflow,
             alpha_mode,
             alpha_cutoff,
             double_sided,

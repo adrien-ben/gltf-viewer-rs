@@ -1,6 +1,6 @@
 use super::JointsBuffer;
 use math::cgmath::{InnerSpace, Matrix4, SquareMatrix, Vector4};
-use model::{Light, Material, Model, Type, MAX_JOINTS_PER_MESH};
+use model::{Light, Material, Model, Type, Workflow, MAX_JOINTS_PER_MESH};
 use std::{mem::size_of, sync::Arc};
 use vulkan::{ash::vk, Buffer, Context};
 
@@ -11,6 +11,8 @@ const SPOT_LIGHT_TYPE: u32 = 2;
 const NO_TEXTURE_ID: u32 = std::u8::MAX as u32;
 const UNLIT_FLAG_LIT: u32 = 0;
 const UNLIT_FLAG_UNLIT: u32 = 1;
+const METALLIC_ROUGHNESS_WORKFLOW: u32 = 0;
+const SPECULAR_GLOSSINESS_WORKFLOW: u32 = 1;
 
 #[derive(Copy, Clone, Debug)]
 #[repr(C)]
@@ -78,20 +80,28 @@ impl From<(Matrix4<f32>, Light)> for LightUniform {
 #[allow(dead_code)]
 pub struct MaterialUniform {
     color: [f32; 4],
-    emissive_and_roughness: [f32; 4],
-    metallic: f32,
-    occlusion: f32,
+    // Contains the emissive factor and roughness (or glossiness) factor.
+    // - emissive: emissive_and_roughness_glossiness[0,1,2]
+    // - roughness: emissive_and_roughness_glossiness[3] (for metallic/roughness workflows)
+    // - glossiness: emissive_and_roughness_glossiness[3] (for specular/glossiness workflows)
+    emissive_and_roughness_glossiness: [f32; 4],
+    // Contains the metallic (or specular) factor and occlusion factor.
+    // - metallic: metallic_specular_and_occlusion[0] (for metallic/roughness workflows)
+    // - specular: metallic_specular_and_occlusion[0,1,2] (for specular/glossiness workflows)
+    // - occlusion: metallic_specular_and_occlusion[3]
+    metallic_specular_and_occlusion: [f32; 4],
     // Contains the texture channels for color metallic/roughness emissive and normal
     // [0-7] Color texture channel
-    // [8-15] metallic/roughness texture channel
+    // [8-15] metallic/roughness or specular/glossiness texture channel
     // [16-23] emissive texture channel
     // [24-31] normals texture channel
-    color_metallicroughness_emissive_normal_texture_channels: u32,
+    color_material_emissive_normal_texture_channels: u32,
     // Contains occlusion texture channel, alpha mode and unlit flag
     // [0-7] Occlusion texture channel
     // [8-15] Alpha mode
     // [16-23] Unlit flag
-    occlusion_texture_channel_alpha_mode_and_unlit_flag: u32,
+    // [24-31] Workflow (metallic/roughness or specular/glossiness)
+    occlusion_texture_channel_alpha_mode_unlit_flag_and_workflow: u32,
     alpha_cutoff: f32,
 }
 
@@ -100,33 +110,53 @@ impl<'a> From<Material> for MaterialUniform {
         let color = material.get_color();
         let emissive_factor = material.get_emissive();
 
-        let emissive_and_roughness = [
+        let workflow = material.get_workflow();
+
+        let roughness_glossiness = match workflow {
+            Workflow::MetallicRoughness(workflow) => workflow.get_roughness(),
+            Workflow::SpecularGlossiness(workflow) => workflow.get_glossiness(),
+        };
+
+        let emissive_and_roughness_glossiness = [
             emissive_factor[0],
             emissive_factor[1],
             emissive_factor[2],
-            material.get_roughness(),
+            roughness_glossiness,
         ];
 
-        let metallic = material.get_metallic();
+        let metallic_specular = match workflow {
+            Workflow::MetallicRoughness(workflow) => [workflow.get_metallic(), 0.0, 0.0],
+            Workflow::SpecularGlossiness(workflow) => workflow.get_specular(),
+        };
+
+        let occlusion = material.get_occlusion();
+        let metallic_specular_and_occlusion = [
+            metallic_specular[0],
+            metallic_specular[1],
+            metallic_specular[2],
+            occlusion,
+        ];
 
         let color_texture_id = material
             .get_color_texture()
             .map_or(NO_TEXTURE_ID, |info| info.get_channel());
-        let metallic_roughness_texture_id = material
-            .get_metallic_roughness_texture()
-            .map_or(NO_TEXTURE_ID, |info| info.get_channel());
+
+        let metallic_roughness_texture_id = match material.get_workflow() {
+            Workflow::MetallicRoughness(workflow) => workflow.get_metallic_roughness_texture(),
+            Workflow::SpecularGlossiness(workflow) => workflow.get_specular_glossiness_texture(),
+        }
+        .map_or(NO_TEXTURE_ID, |t| t.get_channel());
         let emissive_texture_id = material
             .get_emissive_texture()
             .map_or(NO_TEXTURE_ID, |info| info.get_channel());
         let normal_texture_id = material
             .get_normals_texture()
             .map_or(NO_TEXTURE_ID, |info| info.get_channel());
-        let color_metallicroughness_emissive_normal_texture_channels = (color_texture_id << 24)
+        let color_material_emissive_normal_texture_channels = (color_texture_id << 24)
             | (metallic_roughness_texture_id << 16)
             | (emissive_texture_id << 8)
             | normal_texture_id;
 
-        let occlusion = material.get_occlusion();
         let occlusion_texture_id = material
             .get_occlusion_texture()
             .map_or(NO_TEXTURE_ID, |info| info.get_channel());
@@ -136,18 +166,22 @@ impl<'a> From<Material> for MaterialUniform {
         } else {
             UNLIT_FLAG_LIT
         };
-        let occlusion_texture_channel_alpha_mode_and_unlit_flag =
-            (occlusion_texture_id << 24) | (alpha_mode << 16) | (unlit_flag << 8);
+        let workflow = if let Workflow::MetallicRoughness { .. } = workflow {
+            METALLIC_ROUGHNESS_WORKFLOW
+        } else {
+            SPECULAR_GLOSSINESS_WORKFLOW
+        };
+        let occlusion_texture_channel_alpha_mode_unlit_flag_and_workflow =
+            (occlusion_texture_id << 24) | (alpha_mode << 16) | (unlit_flag << 8) | workflow;
 
         let alpha_cutoff = material.get_alpha_cutoff();
 
         MaterialUniform {
             color,
-            emissive_and_roughness,
-            metallic,
-            occlusion,
-            color_metallicroughness_emissive_normal_texture_channels,
-            occlusion_texture_channel_alpha_mode_and_unlit_flag,
+            emissive_and_roughness_glossiness,
+            metallic_specular_and_occlusion,
+            color_material_emissive_normal_texture_channels,
+            occlusion_texture_channel_alpha_mode_unlit_flag_and_workflow,
             alpha_cutoff,
         }
     }

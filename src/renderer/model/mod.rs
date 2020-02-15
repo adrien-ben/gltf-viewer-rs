@@ -3,7 +3,7 @@ mod uniform;
 use super::{create_renderer_pipeline, RenderPass, RendererPipelineParameters};
 use environment::*;
 use math::cgmath::Matrix4;
-use model::{Material, Model, ModelVertex, Primitive, Texture, MAX_JOINTS_PER_MESH};
+use model::{Material, Model, ModelVertex, Primitive, Texture, Workflow, MAX_JOINTS_PER_MESH};
 use std::{cell::RefCell, mem::size_of, rc::Weak, sync::Arc};
 use uniform::*;
 use util::*;
@@ -25,7 +25,7 @@ const PRE_FILTERED_SAMPLER_BINDING: u32 = 5;
 const BRDF_SAMPLER_BINDING: u32 = 6;
 const COLOR_SAMPLER_BINDING: u32 = 7;
 const NORMALS_SAMPLER_BINDING: u32 = 8;
-const METALLIC_ROUGHNESS_SAMPLER_BINDING: u32 = 9;
+const MATERIAL_SAMPLER_BINDING: u32 = 9;
 const OCCLUSION_SAMPLER_BINDING: u32 = 10;
 const EMISSIVE_SAMPLER_BINDING: u32 = 11;
 
@@ -665,7 +665,7 @@ fn create_per_primitive_descriptor_set_layout(device: &Device) -> vk::Descriptor
             .stage_flags(vk::ShaderStageFlags::FRAGMENT)
             .build(),
         vk::DescriptorSetLayoutBinding::builder()
-            .binding(METALLIC_ROUGHNESS_SAMPLER_BINDING)
+            .binding(MATERIAL_SAMPLER_BINDING)
             .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
             .descriptor_count(1)
             .stage_flags(vk::ShaderStageFlags::FRAGMENT)
@@ -729,8 +729,15 @@ fn create_per_primitive_descriptor_sets(
                 textures,
                 resources.dummy_texture,
             );
-            let metallic_roughness_info = create_descriptor_image_info(
-                material.get_metallic_roughness_texture_index(),
+
+            let material_texture = match material.get_workflow() {
+                Workflow::MetallicRoughness(workflow) => workflow.get_metallic_roughness_texture(),
+                Workflow::SpecularGlossiness(workflow) => {
+                    workflow.get_specular_glossiness_texture()
+                }
+            };
+            let material_info = create_descriptor_image_info(
+                material_texture.map(|t| t.get_index()),
                 textures,
                 resources.dummy_texture,
             );
@@ -763,9 +770,9 @@ fn create_per_primitive_descriptor_sets(
                     .build(),
                 vk::WriteDescriptorSet::builder()
                     .dst_set(set)
-                    .dst_binding(METALLIC_ROUGHNESS_SAMPLER_BINDING)
+                    .dst_binding(MATERIAL_SAMPLER_BINDING)
                     .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
-                    .image_info(&metallic_roughness_info)
+                    .image_info(&material_info)
                     .build(),
                 vk::WriteDescriptorSet::builder()
                     .dst_set(set)
