@@ -68,6 +68,9 @@ impl Gui {
             if self.state.show_camera_details {
                 build_camera_details_window(ui, &mut self.state, self.camera);
             }
+
+            self.state.hovered = ui.is_any_item_hovered()
+                || ui.is_window_hovered_with_flags(WindowHoveredFlags::ANY_WINDOW);
         }
 
         self.winit_platform.prepare_render(&ui, window);
@@ -121,6 +124,10 @@ impl Gui {
 
     pub fn should_reset_camera(&self) -> bool {
         self.state.reset_camera
+    }
+
+    pub fn is_hovered(&self) -> bool {
+        self.state.hovered
     }
 }
 
@@ -480,6 +487,8 @@ struct State {
 
     show_camera_details: bool,
     reset_camera: bool,
+
+    hovered: bool,
 }
 
 impl State {
@@ -509,6 +518,8 @@ impl Default for State {
 
             show_camera_details: false,
             reset_camera: false,
+
+            hovered: false,
         }
     }
 }

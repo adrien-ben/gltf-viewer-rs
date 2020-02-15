@@ -285,6 +285,11 @@ impl Viewer {
         if self.gui.should_reset_camera() {
             self.camera = Default::default();
         }
+
+        if self.gui.is_hovered() {
+            return;
+        }
+        
         self.camera.update(&self.input_state);
         self.gui.set_camera(Some(self.camera));
     }
