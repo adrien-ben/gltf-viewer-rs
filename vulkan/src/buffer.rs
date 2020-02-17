@@ -85,7 +85,7 @@ impl Buffer {
                 .expect("Failed to bind buffer memory")
         };
 
-        Buffer::new(context, buffer, memory, mem_requirements.size)
+        Buffer::new(context, buffer, memory, size)
     }
 }
 
