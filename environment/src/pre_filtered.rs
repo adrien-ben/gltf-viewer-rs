@@ -25,7 +25,9 @@ pub(crate) fn create_pre_filtered_map(
 
     let max_mip_levels = (size as f32).log2().floor() as u32 + 1;
 
-    let render_pass = create_render_pass(context, vk::Format::R32G32B32A32_SFLOAT);
+    let cubemap_formap = vk::Format::R16G16B16A16_SFLOAT;
+
+    let render_pass = create_render_pass(context, cubemap_formap);
 
     let descriptors = create_descriptors(context, &cubemap);
 
@@ -90,12 +92,8 @@ pub(crate) fn create_pre_filtered_map(
     };
 
     // create cubemap
-    let pre_filtered = Texture::create_renderable_cubemap(
-        context,
-        size,
-        max_mip_levels,
-        vk::Format::R32G32B32A32_SFLOAT,
-    );
+    let pre_filtered =
+        Texture::create_renderable_cubemap(context, size, max_mip_levels, cubemap_formap);
 
     let mut views = Vec::new();
     let mut framebuffers = Vec::new();
@@ -108,7 +106,7 @@ pub(crate) fn create_pre_filtered_map(
                 let create_info = vk::ImageViewCreateInfo::builder()
                     .image(pre_filtered.image.image)
                     .view_type(vk::ImageViewType::TYPE_2D)
-                    .format(vk::Format::R32G32B32A32_SFLOAT)
+                    .format(cubemap_formap)
                     .subresource_range(vk::ImageSubresourceRange {
                         aspect_mask: vk::ImageAspectFlags::COLOR,
                         base_mip_level: lod,
