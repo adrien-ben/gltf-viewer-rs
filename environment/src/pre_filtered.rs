@@ -90,7 +90,12 @@ pub(crate) fn create_pre_filtered_map(
     };
 
     // create cubemap
-    let pre_filtered = Texture::create_renderable_cubemap(context, size, max_mip_levels);
+    let pre_filtered = Texture::create_renderable_cubemap(
+        context,
+        size,
+        max_mip_levels,
+        vk::Format::R32G32B32A32_SFLOAT,
+    );
 
     let mut views = Vec::new();
     let mut framebuffers = Vec::new();

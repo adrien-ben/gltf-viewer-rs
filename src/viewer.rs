@@ -289,7 +289,7 @@ impl Viewer {
         if self.gui.is_hovered() {
             return;
         }
-        
+
         self.camera.update(&self.input_state);
         self.gui.set_camera(Some(self.camera));
     }

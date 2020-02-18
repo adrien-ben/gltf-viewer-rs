@@ -271,7 +271,12 @@ impl Texture {
         Texture::new(Arc::clone(context), image, image_view, Some(sampler))
     }
 
-    pub fn create_renderable_cubemap(context: &Arc<Context>, size: u32, mip_levels: u32) -> Self {
+    pub fn create_renderable_cubemap(
+        context: &Arc<Context>,
+        size: u32,
+        mip_levels: u32,
+        format: vk::Format,
+    ) -> Self {
         let extent = vk::Extent2D {
             width: size,
             height: size,
@@ -284,7 +289,7 @@ impl Texture {
             ImageParameters {
                 mem_properties: vk::MemoryPropertyFlags::DEVICE_LOCAL,
                 extent,
-                format: vk::Format::R32G32B32A32_SFLOAT,
+                format,
                 layers: 6,
                 mip_levels,
                 usage: vk::ImageUsageFlags::TRANSFER_SRC

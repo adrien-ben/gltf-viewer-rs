@@ -88,12 +88,14 @@ fn create_cubemap_from_equirectangular_texture<P: AsRef<Path>>(
     let (w, h, data) = load_hdr_image(path);
     let mip_levels = (size as f32).log2().floor() as u32 + 1;
 
+    let cubemap_format = vk::Format::R16G16B16A16_SFLOAT;
+
     let texture = Texture::from_rgba_32(context, w, h, &data);
-    let cubemap = Texture::create_renderable_cubemap(context, size, mip_levels);
+    let cubemap = Texture::create_renderable_cubemap(context, size, mip_levels, cubemap_format);
 
     let skybox_model = SkyboxModel::new(context);
 
-    let render_pass = create_render_pass(context, vk::Format::R32G32B32A32_SFLOAT);
+    let render_pass = create_render_pass(context, cubemap_format);
 
     let descriptors = create_descriptors(context, &texture);
 
@@ -169,7 +171,7 @@ fn create_cubemap_from_equirectangular_texture<P: AsRef<Path>>(
             let create_info = vk::ImageViewCreateInfo::builder()
                 .image(cubemap.image.image)
                 .view_type(vk::ImageViewType::TYPE_2D)
-                .format(vk::Format::R32G32B32A32_SFLOAT)
+                .format(cubemap_format)
                 .subresource_range(vk::ImageSubresourceRange {
                     aspect_mask: vk::ImageAspectFlags::COLOR,
                     base_mip_level: 0,

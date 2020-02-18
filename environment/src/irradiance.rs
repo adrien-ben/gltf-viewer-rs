@@ -95,7 +95,8 @@ pub(crate) fn create_irradiance_map(
     };
 
     // create cubemap
-    let irradiance_map = Texture::create_renderable_cubemap(context, size, 1);
+    let irradiance_map =
+        Texture::create_renderable_cubemap(context, size, 1, vk::Format::R32G32B32A32_SFLOAT);
 
     let views = (0..6)
         .map(|i| {
