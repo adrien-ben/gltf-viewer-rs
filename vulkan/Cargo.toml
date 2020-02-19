@@ -13,5 +13,5 @@ ash = "0.29.0"
 winit = "0.19.4"
 raw-window-handle = "0.3"
 
-imgui = "0.2"
-imgui-rs-vulkan-renderer = "0.1"
+imgui = "0.3"
+imgui-rs-vulkan-renderer = "0.3"

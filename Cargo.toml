@@ -20,6 +20,10 @@ env_logger = "0.7.1"
 serde = { version = "1.0", features = ["derive"] }
 serde_yaml = "0.8"
 clap = "2.33"
-imgui = "0.2"
-imgui-winit-support = "0.2"
-imgui-rs-vulkan-renderer = "0.1"
+imgui = "0.3"
+imgui-rs-vulkan-renderer = "0.3"
+
+[dependencies.imgui-winit-support]
+version = "0.3"
+default-features = false
+features = ["winit-19"]
