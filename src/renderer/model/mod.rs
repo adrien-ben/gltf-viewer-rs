@@ -508,7 +508,7 @@ fn create_dynamic_data_descriptor_sets(
         let model_transform_buffer_info = [vk::DescriptorBufferInfo::builder()
             .buffer(model_transform_ubo.buffer)
             .offset(0)
-            .range(vk::WHOLE_SIZE)
+            .range(size_of::<Matrix4<f32>>() as _)
             .build()];
 
         let model_skin_buffer_info = [vk::DescriptorBufferInfo::builder()
