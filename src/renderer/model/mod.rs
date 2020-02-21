@@ -46,6 +46,49 @@ pub struct ModelRenderer {
     transparent_pipeline: vk::Pipeline,
 }
 
+#[derive(Debug, Clone, Copy)]
+pub enum OutputMode {
+    Final = 0,
+    Color = 1,
+    Emissive = 2,
+    Metallic = 3,
+    Specular = 4,
+    Roughness = 5,
+    Occlusion = 6,
+    Normal = 7,
+    Alpha = 8,
+    TexCoord0 = 9,
+    TexCoord1 = 10,
+}
+
+impl OutputMode {
+    pub fn all() -> [OutputMode; 11] {
+        use OutputMode::*;
+        [
+            Final, Color, Emissive, Metallic, Specular, Roughness, Occlusion, Normal, Alpha,
+            TexCoord0, TexCoord1,
+        ]
+    }
+
+    pub fn from_value(value: usize) -> Option<Self> {
+        use OutputMode::*;
+        match value {
+            0 => Some(Final),
+            1 => Some(Color),
+            2 => Some(Emissive),
+            3 => Some(Metallic),
+            4 => Some(Specular),
+            5 => Some(Roughness),
+            6 => Some(Occlusion),
+            7 => Some(Normal),
+            8 => Some(Alpha),
+            9 => Some(TexCoord0),
+            10 => Some(TexCoord1),
+            _ => None,
+        }
+    }
+}
+
 impl ModelRenderer {
     pub fn create(
         context: Arc<Context>,
@@ -55,6 +98,7 @@ impl ModelRenderer {
         environment: &Environment,
         msaa_samples: vk::SampleCountFlags,
         render_pass: &RenderPass,
+        output_mode: OutputMode,
     ) -> Self {
         let dummy_texture = VulkanTexture::from_rgba(&context, 1, 1, &[0, 0, 0, 0]);
 
@@ -82,6 +126,7 @@ impl ModelRenderer {
                 model: &model_rc.borrow(),
             },
         );
+
         let pipeline_layout = create_pipeline_layout(context.device(), &descriptors);
         let opaque_pipeline = create_opaque_pipeline(
             &context,
@@ -91,6 +136,7 @@ impl ModelRenderer {
             render_pass.get_render_pass(),
             pipeline_layout,
             &model_rc.borrow(),
+            output_mode,
         );
 
         let opaque_unculled_pipeline = create_opaque_pipeline(
@@ -101,6 +147,7 @@ impl ModelRenderer {
             render_pass.get_render_pass(),
             pipeline_layout,
             &model_rc.borrow(),
+            output_mode,
         );
 
         let transparent_pipeline = create_transparent_pipeline(
@@ -111,6 +158,7 @@ impl ModelRenderer {
             pipeline_layout,
             opaque_pipeline,
             &model_rc.borrow(),
+            output_mode,
         );
 
         Self {
@@ -134,6 +182,7 @@ impl ModelRenderer {
         swapchain_props: SwapchainProperties,
         msaa_samples: vk::SampleCountFlags,
         render_pass: &RenderPass,
+        output_mode: OutputMode,
     ) {
         let device = self.context.device();
         let model = self
@@ -155,6 +204,7 @@ impl ModelRenderer {
             render_pass.get_render_pass(),
             self.pipeline_layout,
             &model.borrow(),
+            output_mode,
         );
 
         self.opaque_unculled_pipeline = create_opaque_pipeline(
@@ -165,6 +215,7 @@ impl ModelRenderer {
             render_pass.get_render_pass(),
             self.pipeline_layout,
             &model.borrow(),
+            output_mode,
         );
 
         self.transparent_pipeline = create_transparent_pipeline(
@@ -175,6 +226,7 @@ impl ModelRenderer {
             self.pipeline_layout,
             self.opaque_pipeline,
             &model.borrow(),
+            output_mode,
         );
     }
 }
@@ -843,8 +895,10 @@ fn create_opaque_pipeline(
     render_pass: vk::RenderPass,
     layout: vk::PipelineLayout,
     model: &Model,
+    output_mode: OutputMode,
 ) -> vk::Pipeline {
-    let (specialization_info, _map_entries, _data) = create_model_frag_shader_specialization(model);
+    let (specialization_info, _map_entries, _data) =
+        create_model_frag_shader_specialization(model, output_mode);
 
     let depth_stencil_info = vk::PipelineDepthStencilStateCreateInfo::builder()
         .depth_test_enable(true)
@@ -895,8 +949,10 @@ fn create_transparent_pipeline(
     layout: vk::PipelineLayout,
     parent: vk::Pipeline,
     model: &Model,
+    output_mode: OutputMode,
 ) -> vk::Pipeline {
-    let (specialization_info, _map_entries, _data) = create_model_frag_shader_specialization(model);
+    let (specialization_info, _map_entries, _data) =
+        create_model_frag_shader_specialization(model, output_mode);
 
     let depth_stencil_info = vk::PipelineDepthStencilStateCreateInfo::builder()
         .depth_test_enable(true)
@@ -941,16 +997,24 @@ fn create_transparent_pipeline(
 
 fn create_model_frag_shader_specialization(
     model: &Model,
+    output_mode: OutputMode,
 ) -> (
     vk::SpecializationInfo,
     Vec<vk::SpecializationMapEntry>,
     Vec<u8>,
 ) {
-    let map_entries = vec![vk::SpecializationMapEntry {
-        constant_id: 0,
-        offset: 0,
-        size: size_of::<u32>(),
-    }];
+    let map_entries = vec![
+        vk::SpecializationMapEntry {
+            constant_id: 0,
+            offset: 0,
+            size: size_of::<u32>(),
+        },
+        vk::SpecializationMapEntry {
+            constant_id: 1,
+            offset: size_of::<u32>() as _,
+            size: size_of::<u32>(),
+        },
+    ];
 
     let light_count = model
         .nodes()
@@ -959,7 +1023,9 @@ fn create_model_frag_shader_specialization(
         .filter(|n| n.light_index().is_some())
         .count() as u32;
 
-    let data = Vec::from(unsafe { any_as_u8_slice(&[light_count]) });
+    let data = [light_count, output_mode as _];
+
+    let data = Vec::from(unsafe { any_as_u8_slice(&data) });
 
     let specialization_info = vk::SpecializationInfo::builder()
         .map_entries(&map_entries)

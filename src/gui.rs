@@ -1,4 +1,5 @@
 use crate::camera::Camera;
+use crate::renderer::OutputMode;
 use imgui::*;
 use imgui_winit_support::{HiDpiMode, WinitPlatform};
 use model::{metadata::*, PlaybackState};
@@ -69,6 +70,10 @@ impl Gui {
                 build_camera_details_window(ui, &mut self.state, self.camera);
             }
 
+            if self.state.show_renderer_settings {
+                build_renderer_settings_window(ui, &mut self.state);
+            }
+
             self.state.hovered = ui.is_any_item_hovered()
                 || ui.is_window_hovered_with_flags(WindowHoveredFlags::ANY_WINDOW);
         }
@@ -126,6 +131,14 @@ impl Gui {
         self.state.reset_camera
     }
 
+    pub fn get_new_renderer_output_mode(&self) -> Option<OutputMode> {
+        if self.state.output_mode_changed {
+            OutputMode::from_value(self.state.selected_output_mode)
+        } else {
+            None
+        }
+    }
+
     pub fn is_hovered(&self) -> bool {
         self.state.hovered
     }
@@ -171,6 +184,8 @@ fn build_main_menu_bar(ui: &Ui, state: &mut State) {
                 .build_with_ref(ui, &mut state.show_animation_player);
             MenuItem::new(im_str!("Camera details"))
                 .build_with_ref(ui, &mut state.show_camera_details);
+            MenuItem::new(im_str!("Renderer settings"))
+                .build_with_ref(ui, &mut state.show_renderer_settings);
         });
     });
 }
@@ -473,6 +488,30 @@ fn build_camera_details_window(ui: &Ui, state: &mut State, camera: Option<Camera
     state.show_camera_details = opened;
 }
 
+fn build_renderer_settings_window(ui: &Ui, state: &mut State) {
+    let mut opened = true;
+    Window::new(im_str!("Renderer settings"))
+        .position([20.0, 20.0], Condition::Appearing)
+        .size([280.0, 100.0], Condition::Appearing)
+        .collapsible(false)
+        .opened(&mut opened)
+        .build(ui, || {
+            let combo_labels = OutputMode::all()
+                .iter()
+                .map(|mode| im_str!("{:?}", mode))
+                .collect::<Vec<_>>();
+            let combo_labels = combo_labels.iter().map(|l| l).collect::<Vec<_>>();
+            let changed = ComboBox::new(im_str!("Output mode")).build_simple_string(
+                ui,
+                &mut state.selected_output_mode,
+                &combo_labels,
+            );
+
+            state.output_mode_changed = changed;
+        });
+    state.show_renderer_settings = opened;
+}
+
 struct State {
     show_model_descriptor: bool,
     selected_hierarchy_node: Option<NodeDetails>,
@@ -488,6 +527,10 @@ struct State {
     show_camera_details: bool,
     reset_camera: bool,
 
+    show_renderer_settings: bool,
+    selected_output_mode: usize,
+    output_mode_changed: bool,
+
     hovered: bool,
 }
 
@@ -497,6 +540,8 @@ impl State {
             show_model_descriptor: self.show_model_descriptor,
             show_animation_player: self.show_animation_player,
             show_camera_details: self.show_camera_details,
+            show_renderer_settings: self.show_renderer_settings,
+            selected_output_mode: self.selected_output_mode,
             ..Default::default()
         }
     }
@@ -518,6 +563,10 @@ impl Default for State {
 
             show_camera_details: false,
             reset_camera: false,
+
+            show_renderer_settings: false,
+            selected_output_mode: 0,
+            output_mode_changed: false,
 
             hovered: false,
         }

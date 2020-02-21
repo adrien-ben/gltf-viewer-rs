@@ -33,6 +33,7 @@ pub struct Renderer {
     model_renderer: Option<ModelRenderer>,
     post_process_renderer: PostProcessRenderer,
     gui_renderer: GuiRenderer,
+    output_mode: OutputMode,
 }
 
 impl Renderer {
@@ -81,6 +82,8 @@ impl Renderer {
         )
         .expect("Failed to create gui renderer");
 
+        let output_mode = OutputMode::Final;
+
         Self {
             context,
             depth_format,
@@ -94,6 +97,7 @@ impl Renderer {
             model_renderer: None,
             post_process_renderer,
             gui_renderer,
+            output_mode,
         }
     }
 }
@@ -215,6 +219,7 @@ impl Renderer {
             &self.environment,
             self.msaa_samples,
             &self.renderer_render_pass,
+            self.output_mode,
         );
 
         self.model_renderer = Some(model_renderer);
@@ -251,6 +256,7 @@ impl Renderer {
                 swapchain_properties,
                 self.msaa_samples,
                 &renderer_render_pass,
+                self.output_mode,
             );
         }
 
@@ -265,6 +271,18 @@ impl Renderer {
         self.renderer_render_pass = renderer_render_pass;
         self.offscreen_framebuffer = offscreen_framebuffer;
         self.post_process_renderer = post_process_renderer;
+    }
+
+    pub fn set_output_mode(&mut self, output_mode: OutputMode) {
+        self.output_mode = output_mode;
+        if let Some(renderer) = self.model_renderer.as_mut() {
+            renderer.rebuild_pipelines(
+                self.swapchain_properties,
+                self.msaa_samples,
+                &self.renderer_render_pass,
+                output_mode,
+            );
+        }
     }
 
     pub fn update_ubos(&mut self, frame_index: usize, camera: Camera) {

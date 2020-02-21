@@ -193,6 +193,10 @@ impl Viewer {
             self.load_new_model();
             self.update_model(delta_s as f32);
             self.update_camera();
+            if let Some(output_mode) = self.gui.get_new_renderer_output_mode() {
+                self.context.graphics_queue_wait_idle();
+                self.renderer.set_output_mode(output_mode);
+            }
             self.draw_frame();
         }
         unsafe { self.context.device().device_wait_idle().unwrap() };
