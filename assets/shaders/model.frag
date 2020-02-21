@@ -1,18 +1,21 @@
 #version 450
 #extension GL_ARB_separate_shader_objects : enable
 
-// #define DEBUG_COLOR 1
-// #define DEBUG_EMISSIVE 2
-// #define DEBUG_METALLIC 3
-// #define DEBUG_SPECULAR 4
-// #define DEBUG_ROUGHNESS 5
-// #define DEBUG_OCCLUSION 6
-// #define DEBUG_NORMAL 7
-// #define DEBUG_ALPHA 8
-// # define DEBUG_UVS 9
-
 // -- Constants --
 layout(constant_id = 0) const uint LIGHT_COUNT = 1;
+layout(constant_id = 1) const uint OUTPUT_MODE = 0;
+
+const uint OUTPUT_MODE_FINAL = 0;
+const uint OUTPUT_MODE_COLOR = 1;
+const uint OUTPUT_MODE_EMISSIVE = 2;
+const uint OUTPUT_MODE_METALLIC = 3;
+const uint OUTPUT_MODE_SPECULAR = 4;
+const uint OUTPUT_MODE_ROUGHNESS = 5;
+const uint OUTPUT_MODE_OCCLUSION = 6;
+const uint OUTPUT_MODE_NORMAL = 7;
+const uint OUTPUT_MODE_ALPHA = 8;
+const uint OUTPUT_MODE_UVS0 = 9;
+const uint OUTPUT_MODE_UVS1 = 10;
 
 const vec3 DIELECTRIC_SPECULAR = vec3(0.04);
 const vec3 BLACK = vec3(0.0);
@@ -104,7 +107,7 @@ layout(binding = 0, set = 0) uniform Camera {
     vec3 eye;    
 } cameraUBO;
 layout(binding = 1, set = 0) uniform Lights {
-    Light lights[LIGHT_COUNT];
+    Light lights[LIGHT_COUNT + 1];
 } lights;
 layout(binding = 4, set = 1) uniform samplerCube irradianceMapSampler;
 layout(binding = 5, set = 1) uniform samplerCube preFilteredSampler;
@@ -455,41 +458,27 @@ void main() {
 
     color += emissive + occludeAmbientColor(ambient, textureChannels);
 
-    outColor = vec4(color, alpha);
-
-#ifdef DEBUG_COLOR
-    outColor = vec4(baseColor.rgb, 1.0);
-#endif
-
-#ifdef DEBUG_EMISSIVE
-    outColor = vec4(pow(emissive, vec3(1.0/2.2)), 1.0);
-#endif
-
-#ifdef DEBUG_METALLIC
-    outColor = vec4(vec3(metallic), 1.0);
-#endif
-
-#ifdef DEBUG_SPECULAR
-    outColor = vec4(specular, 1.0);
-#endif
-
-#ifdef DEBUG_ROUGHNESS
-    outColor = vec4(vec3(roughness), 1.0);
-#endif
-
-#ifdef DEBUG_OCCLUSION
-    outColor = vec4(occludeAmbientColor(vec3(1.0), textureChannels), 1.0);
-#endif
-
-#ifdef DEBUG_NORMAL
-    outColor = vec4(n*0.5 + 0.5, 1.0);
-#endif
-
-#ifdef DEBUG_ALPHA
-     outColor = vec4(vec3(baseColor.a), 1.0);
-#endif
-
-#ifdef DEBUG_UVS
-     outColor = vec4(vec2(oTexcoords), 0.0, 1.0);
-#endif
+    if (OUTPUT_MODE == OUTPUT_MODE_FINAL) {
+        outColor = vec4(color, alpha);
+    } else if (OUTPUT_MODE == OUTPUT_MODE_COLOR) {
+        outColor = vec4(baseColor.rgb, 1.0);
+    } else if (OUTPUT_MODE == OUTPUT_MODE_EMISSIVE) {
+        outColor = vec4(pow(emissive, vec3(1.0/2.2)), 1.0);
+    } else if (OUTPUT_MODE == OUTPUT_MODE_METALLIC) {
+        outColor = vec4(vec3(metallic), 1.0);
+    } else if (OUTPUT_MODE == OUTPUT_MODE_SPECULAR) {
+        outColor = vec4(specular, 1.0);
+    } else if (OUTPUT_MODE == OUTPUT_MODE_ROUGHNESS) {
+        outColor = vec4(vec3(roughness), 1.0);
+    } else if (OUTPUT_MODE == OUTPUT_MODE_OCCLUSION) {
+        outColor = vec4(occludeAmbientColor(vec3(1.0), textureChannels), 1.0);
+    } else if (OUTPUT_MODE == OUTPUT_MODE_NORMAL) {
+        outColor = vec4(n*0.5 + 0.5, 1.0);
+    } else if (OUTPUT_MODE == OUTPUT_MODE_ALPHA) {
+        outColor = vec4(vec3(baseColor.a), 1.0);
+    } else if (OUTPUT_MODE == OUTPUT_MODE_UVS0) {
+        outColor = vec4(vec2(oTexcoords0), 0.0, 1.0);
+    } else if (OUTPUT_MODE == OUTPUT_MODE_UVS1) {
+        outColor = vec4(vec2(oTexcoords1), 0.0, 1.0);
+    }
 }
