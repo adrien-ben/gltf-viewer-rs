@@ -1,4 +1,4 @@
-use crate::{camera::*, config::*, controls::*, gui::Gui, loader::*, renderer::*};
+use crate::{camera::*, config::Config, controls::*, gui::Gui, loader::*, renderer::*};
 use ash::{version::DeviceV1_0, vk, Device};
 use environment::*;
 use model::{Model, PlaybackMode};
@@ -75,7 +75,8 @@ impl Viewer {
             &simple_render_pass,
         );
 
-        let environment = Environment::new(&context, config.env());
+        let environment =
+            Environment::new(&context, config.env().path(), config.env().resolution());
 
         let renderer = Renderer::create(
             Arc::clone(&context),

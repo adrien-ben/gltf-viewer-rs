@@ -10,6 +10,7 @@ use irradiance::create_irradiance_map;
 use math::*;
 use pre_filtered::create_pre_filtered_map;
 use std::mem::size_of;
+use std::path::Path;
 use std::sync::Arc;
 use vulkan::ash::{version::DeviceV1_0, vk};
 use vulkan::{
@@ -25,8 +26,8 @@ pub struct Environment {
 }
 
 impl Environment {
-    pub fn new<P: Into<String>>(context: &Arc<Context>, path: Option<P>) -> Self {
-        let skybox = create_skybox_cubemap(&context, path);
+    pub fn new<P: AsRef<Path>>(context: &Arc<Context>, path: P, resolution: u32) -> Self {
+        let skybox = create_skybox_cubemap(&context, path, resolution);
         let irradiance = create_irradiance_map(&context, &skybox, 32);
         let pre_filtered = create_pre_filtered_map(&context, &skybox, 512);
         let brdf_lookup = create_brdf_lookup(&context, 512);

@@ -12,72 +12,7 @@ use util::*;
 use vulkan::ash::{version::DeviceV1_0, vk};
 use vulkan::{Context, Texture};
 
-enum CubemapTexturePath {
-    SixFaces {
-        px: String,
-        nx: String,
-        py: String,
-        ny: String,
-        pz: String,
-        nz: String,
-    },
-    Equirectangular(String, u32),
-}
-
-pub(crate) fn create_skybox_cubemap<P: Into<String>>(
-    context: &Arc<Context>,
-    path: Option<P>,
-) -> Texture {
-    let path = match path {
-        Some(path) => CubemapTexturePath::Equirectangular(path.into(), 1024),
-        _ => CubemapTexturePath::SixFaces {
-            px: String::from("assets/env/px.hdr"),
-            nx: String::from("assets/env/nx.hdr"),
-            py: String::from("assets/env/py.hdr"),
-            ny: String::from("assets/env/ny.hdr"),
-            pz: String::from("assets/env/pz.hdr"),
-            nz: String::from("assets/env/nz.hdr"),
-        },
-    };
-    create_cubemap(context, path)
-}
-
-fn create_cubemap(context: &Arc<Context>, path: CubemapTexturePath) -> Texture {
-    use CubemapTexturePath::*;
-    match path {
-        Equirectangular(path, size) => {
-            create_cubemap_from_equirectangular_texture(context, path, size)
-        }
-        SixFaces {
-            px,
-            nx,
-            py,
-            ny,
-            pz,
-            nz,
-        } => {
-            let (w, h, px) = load_hdr_image(px);
-            let (_, _, nx) = load_hdr_image(nx);
-            let (_, _, py) = load_hdr_image(py);
-            let (_, _, ny) = load_hdr_image(ny);
-            let (_, _, pz) = load_hdr_image(pz);
-            let (_, _, nz) = load_hdr_image(nz);
-
-            let data_size = (w * h * 4 * 6) as usize;
-            let mut data = Vec::with_capacity(data_size);
-            data.extend_from_slice(&px);
-            data.extend_from_slice(&nx);
-            data.extend_from_slice(&py);
-            data.extend_from_slice(&ny);
-            data.extend_from_slice(&pz);
-            data.extend_from_slice(&nz);
-
-            Texture::create_cubemap_from_data(&context, w, &data)
-        }
-    }
-}
-
-fn create_cubemap_from_equirectangular_texture<P: AsRef<Path>>(
+pub(crate) fn create_skybox_cubemap<P: AsRef<Path>>(
     context: &Arc<Context>,
     path: P,
     size: u32,

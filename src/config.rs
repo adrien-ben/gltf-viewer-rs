@@ -7,7 +7,8 @@ pub struct Config {
     resolution: Resolution,
     vsync: Option<bool>,
     msaa: Option<u32>,
-    env: Option<String>,
+    #[serde(default)]
+    env: Environment,
 }
 
 impl Config {
@@ -23,8 +24,8 @@ impl Config {
         self.msaa.unwrap_or(1)
     }
 
-    pub fn env(&self) -> Option<String> {
-        self.env.as_ref().cloned()
+    pub fn env(&self) -> &Environment {
+        &self.env
     }
 }
 
@@ -34,7 +35,7 @@ impl Default for Config {
             resolution: Default::default(),
             vsync: Some(false),
             msaa: Some(64),
-            env: None,
+            env: Default::default(),
         }
     }
 }
@@ -60,6 +61,34 @@ impl Default for Resolution {
         Resolution {
             width: 120,
             height: 120,
+        }
+    }
+}
+
+#[derive(Deserialize, Clone)]
+pub struct Environment {
+    path: String,
+    resolution: Option<u32>,
+}
+
+impl Environment {
+    const SKYBOX_DEFAULT_PATH: &'static str = "assets/env/equi.hdr";
+    const SKYBOX_DEFAULT_RESOLUTION: u32 = 1024;
+
+    pub fn path(&self) -> &String {
+        &self.path
+    }
+
+    pub fn resolution(&self) -> u32 {
+        self.resolution.unwrap_or(Self::SKYBOX_DEFAULT_RESOLUTION)
+    }
+}
+
+impl Default for Environment {
+    fn default() -> Self {
+        Self {
+            path: String::from(Self::SKYBOX_DEFAULT_PATH),
+            resolution: None,
         }
     }
 }

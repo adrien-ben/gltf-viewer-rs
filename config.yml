@@ -2,12 +2,17 @@ resolution:
   width: 1024
   height: 768
 
-# Enable vertical synchronization (if supported)
+# Enable vertical synchronization (if supported). Optional(default = false)
 vsync: true
 
 # 64, 32, 16, 8, 4, 2, 1. Optional(default = 1)
 # If the requested value is not supported it will drop until one is found.
 msaa: 64
 
-# Path to an HDRi file to use as environment map
-env: assets/env/equi.hdr
+# Environment configuration. Optional(default = "assets/env/equi.hdr"@1024)
+env: 
+  # Path to an HDRi file to use as environment map.
+  path: assets/env/equi.hdr
+
+  # Resolution of the skybox. Optional(default = 1024)
+  resolution: 1024
