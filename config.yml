@@ -7,7 +7,8 @@ vsync: true
 
 # 64, 32, 16, 8, 4, 2, 1. Optional(default = 1)
 # If the requested value is not supported it will drop until one is found.
-msaa: 64
+# MSAA is VERY memory intensive !
+msaa: 1
 
 # Environment configuration. Optional(default = "assets/env/equi.hdr"@1024)
 env: 
