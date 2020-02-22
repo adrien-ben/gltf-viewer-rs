@@ -197,6 +197,11 @@ impl Viewer {
                 self.context.graphics_queue_wait_idle();
                 self.renderer.set_output_mode(output_mode);
             }
+            if let Some(tone_map_mode) = self.gui.get_new_renderer_tone_map_mode() {
+                self.context.graphics_queue_wait_idle();
+                self.renderer
+                    .set_tone_map_mode(&self.simple_render_pass, tone_map_mode);
+            }
             self.draw_frame();
         }
         unsafe { self.context.device().device_wait_idle().unwrap() };

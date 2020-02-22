@@ -48,6 +48,7 @@ using [Ash][2]. It runs on Window, Linux and MacOS.
   - [x] Model description
   - [x] Animation controller
   - [x] Camera details
+  - [x] Renderer settings
 
 ## Controls
 

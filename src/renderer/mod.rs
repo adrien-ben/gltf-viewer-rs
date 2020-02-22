@@ -34,6 +34,7 @@ pub struct Renderer {
     post_process_renderer: PostProcessRenderer,
     gui_renderer: GuiRenderer,
     output_mode: OutputMode,
+    tone_map_mode: ToneMapMode,
 }
 
 impl Renderer {
@@ -67,11 +68,13 @@ impl Renderer {
             &renderer_render_pass,
         );
 
+        let tone_map_mode = ToneMapMode::Default;
         let post_process_renderer = PostProcessRenderer::create(
             Arc::clone(&context),
             swapchain_properties,
             &simple_render_pass,
             renderer_render_pass.get_color_attachment(),
+            tone_map_mode,
         );
 
         let gui_renderer = GuiRenderer::new::<Context>(
@@ -98,6 +101,7 @@ impl Renderer {
             post_process_renderer,
             gui_renderer,
             output_mode,
+            tone_map_mode,
         }
     }
 }
@@ -265,6 +269,7 @@ impl Renderer {
             swapchain_properties,
             simple_render_pass,
             renderer_render_pass.get_color_attachment(),
+            self.tone_map_mode,
         );
 
         self.swapchain_properties = swapchain_properties;
@@ -283,6 +288,19 @@ impl Renderer {
                 output_mode,
             );
         }
+    }
+
+    pub fn set_tone_map_mode(
+        &mut self,
+        simple_render_pass: &SimpleRenderPass,
+        tone_map_mode: ToneMapMode,
+    ) {
+        self.tone_map_mode = tone_map_mode;
+        self.post_process_renderer.rebuild_pipelines(
+            self.swapchain_properties,
+            simple_render_pass,
+            tone_map_mode,
+        );
     }
 
     pub fn update_ubos(&mut self, frame_index: usize, camera: Camera) {
