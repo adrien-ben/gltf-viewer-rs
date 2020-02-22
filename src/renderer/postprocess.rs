@@ -14,12 +14,41 @@ pub struct PostProcessRenderer {
     pipeline: vk::Pipeline,
 }
 
+#[derive(Debug, Clone, Copy)]
+pub enum ToneMapMode {
+    Default = 0,
+    Uncharted,
+    HejlRichard,
+    Aces,
+    None,
+}
+
+impl ToneMapMode {
+    pub fn all() -> [ToneMapMode; 5] {
+        use ToneMapMode::*;
+        [Default, Uncharted, HejlRichard, Aces, None]
+    }
+
+    pub fn from_value(value: usize) -> Option<Self> {
+        use ToneMapMode::*;
+        match value {
+            0 => Some(Default),
+            1 => Some(Uncharted),
+            2 => Some(HejlRichard),
+            3 => Some(Aces),
+            4 => Some(None),
+            _ => Option::None,
+        }
+    }
+}
+
 impl PostProcessRenderer {
     pub fn create(
         context: Arc<Context>,
         swapchain_props: SwapchainProperties,
         render_pass: &SimpleRenderPass,
         input_image: &Texture,
+        tone_map_mode: ToneMapMode,
     ) -> Self {
         let quad_model = QuadModel::new(&context);
         let descriptors = create_descriptors(&context, input_image);
@@ -29,6 +58,7 @@ impl PostProcessRenderer {
             swapchain_props,
             render_pass.get_render_pass(),
             pipeline_layout,
+            tone_map_mode,
         );
 
         Self {
@@ -42,6 +72,27 @@ impl PostProcessRenderer {
 }
 
 impl PostProcessRenderer {
+    pub fn rebuild_pipelines(
+        &mut self,
+        swapchain_properties: SwapchainProperties,
+        render_pass: &SimpleRenderPass,
+        tone_map_mode: ToneMapMode,
+    ) {
+        let device = self.context.device();
+
+        unsafe {
+            device.destroy_pipeline(self.pipeline, None);
+        }
+
+        self.pipeline = create_pipeline(
+            &self.context,
+            swapchain_properties,
+            render_pass.get_render_pass(),
+            self.pipeline_layout,
+            tone_map_mode,
+        )
+    }
+
     pub fn cmd_draw(&self, command_buffer: vk::CommandBuffer) {
         let device = self.context.device();
         // Bind pipeline
@@ -250,7 +301,11 @@ fn create_pipeline(
     swapchain_properties: SwapchainProperties,
     render_pass: vk::RenderPass,
     layout: vk::PipelineLayout,
+    tone_map_mode: ToneMapMode,
 ) -> vk::Pipeline {
+    let (specialization_info, _map_entries, _data) =
+        create_model_frag_shader_specialization(tone_map_mode);
+
     let depth_stencil_info = vk::PipelineDepthStencilStateCreateInfo::builder()
         .depth_test_enable(false)
         .depth_write_enable(false)
@@ -278,7 +333,7 @@ fn create_pipeline(
         RendererPipelineParameters {
             shader_name: "postprocess",
             vertex_shader_specialization: None,
-            fragment_shader_specialization: None,
+            fragment_shader_specialization: Some(&specialization_info),
             swapchain_properties,
             msaa_samples: vk::SampleCountFlags::TYPE_1,
             render_pass,
@@ -290,4 +345,29 @@ fn create_pipeline(
             parent: None,
         },
     )
+}
+
+fn create_model_frag_shader_specialization(
+    tone_map_mode: ToneMapMode,
+) -> (
+    vk::SpecializationInfo,
+    Vec<vk::SpecializationMapEntry>,
+    Vec<u8>,
+) {
+    let map_entries = vec![vk::SpecializationMapEntry {
+        constant_id: 0,
+        offset: 0,
+        size: size_of::<u32>(),
+    }];
+
+    let data = [tone_map_mode as u32];
+
+    let data = Vec::from(unsafe { util::any_as_u8_slice(&data) });
+
+    let specialization_info = vk::SpecializationInfo::builder()
+        .map_entries(&map_entries)
+        .data(&data)
+        .build();
+
+    (specialization_info, map_entries, data)
 }

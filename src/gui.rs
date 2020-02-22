@@ -1,5 +1,5 @@
 use crate::camera::Camera;
-use crate::renderer::OutputMode;
+use crate::renderer::{OutputMode, ToneMapMode};
 use imgui::*;
 use imgui_winit_support::{HiDpiMode, WinitPlatform};
 use model::{metadata::*, PlaybackState};
@@ -134,6 +134,14 @@ impl Gui {
     pub fn get_new_renderer_output_mode(&self) -> Option<OutputMode> {
         if self.state.output_mode_changed {
             OutputMode::from_value(self.state.selected_output_mode)
+        } else {
+            None
+        }
+    }
+
+    pub fn get_new_renderer_tone_map_mode(&self) -> Option<ToneMapMode> {
+        if self.state.tone_map_mode_changed {
+            ToneMapMode::from_value(self.state.selected_tone_map_mode)
         } else {
             None
         }
@@ -492,22 +500,43 @@ fn build_renderer_settings_window(ui: &Ui, state: &mut State) {
     let mut opened = true;
     Window::new(im_str!("Renderer settings"))
         .position([20.0, 20.0], Condition::Appearing)
-        .size([280.0, 100.0], Condition::Appearing)
+        .always_auto_resize(true)
         .collapsible(false)
         .opened(&mut opened)
         .build(ui, || {
-            let combo_labels = OutputMode::all()
-                .iter()
-                .map(|mode| im_str!("{:?}", mode))
-                .collect::<Vec<_>>();
-            let combo_labels = combo_labels.iter().map(|l| l).collect::<Vec<_>>();
-            let changed = ComboBox::new(im_str!("Output mode")).build_simple_string(
-                ui,
-                &mut state.selected_output_mode,
-                &combo_labels,
-            );
+            {
+                ui.text("Debug");
+                ui.separator();
+                let combo_labels = OutputMode::all()
+                    .iter()
+                    .map(|mode| im_str!("{:?}", mode))
+                    .collect::<Vec<_>>();
+                let combo_labels = combo_labels.iter().map(|l| l).collect::<Vec<_>>();
+                let changed = ComboBox::new(im_str!("Output mode")).build_simple_string(
+                    ui,
+                    &mut state.selected_output_mode,
+                    &combo_labels,
+                );
 
-            state.output_mode_changed = changed;
+                state.output_mode_changed = changed;
+            }
+
+            {
+                ui.text("Post Processing");
+                ui.separator();
+                let combo_labels = ToneMapMode::all()
+                    .iter()
+                    .map(|mode| im_str!("{:?}", mode))
+                    .collect::<Vec<_>>();
+                let combo_labels = combo_labels.iter().map(|l| l).collect::<Vec<_>>();
+                let changed = ComboBox::new(im_str!("Tone Map mode")).build_simple_string(
+                    ui,
+                    &mut state.selected_tone_map_mode,
+                    &combo_labels,
+                );
+
+                state.tone_map_mode_changed = changed;
+            }
         });
     state.show_renderer_settings = opened;
 }
@@ -530,6 +559,8 @@ struct State {
     show_renderer_settings: bool,
     selected_output_mode: usize,
     output_mode_changed: bool,
+    selected_tone_map_mode: usize,
+    tone_map_mode_changed: bool,
 
     hovered: bool,
 }
@@ -542,6 +573,7 @@ impl State {
             show_camera_details: self.show_camera_details,
             show_renderer_settings: self.show_renderer_settings,
             selected_output_mode: self.selected_output_mode,
+            selected_tone_map_mode: self.selected_tone_map_mode,
             ..Default::default()
         }
     }
@@ -567,6 +599,8 @@ impl Default for State {
             show_renderer_settings: false,
             selected_output_mode: 0,
             output_mode_changed: false,
+            selected_tone_map_mode: 0,
+            tone_map_mode_changed: false,
 
             hovered: false,
         }

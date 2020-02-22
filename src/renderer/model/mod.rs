@@ -49,16 +49,16 @@ pub struct ModelRenderer {
 #[derive(Debug, Clone, Copy)]
 pub enum OutputMode {
     Final = 0,
-    Color = 1,
-    Emissive = 2,
-    Metallic = 3,
-    Specular = 4,
-    Roughness = 5,
-    Occlusion = 6,
-    Normal = 7,
-    Alpha = 8,
-    TexCoord0 = 9,
-    TexCoord1 = 10,
+    Color,
+    Emissive,
+    Metallic,
+    Specular,
+    Roughness,
+    Occlusion,
+    Normal,
+    Alpha,
+    TexCoord0,
+    TexCoord1,
 }
 
 impl OutputMode {
