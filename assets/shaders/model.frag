@@ -4,6 +4,7 @@
 // -- Constants --
 layout(constant_id = 0) const uint LIGHT_COUNT = 1;
 layout(constant_id = 1) const uint OUTPUT_MODE = 0;
+layout(constant_id = 2) const float EMISSIVE_INTENSITY = 1.0;
 
 const uint OUTPUT_MODE_FINAL = 0;
 const uint OUTPUT_MODE_COLOR = 1;
@@ -207,7 +208,7 @@ vec3 getEmissiveColor(TextureChannels textureChannels) {
         vec2 uv = getUV(textureChannels.emissive);
         emissive *= pow(texture(emissiveSampler, uv).rgb, vec3(2.2));
     }
-    return emissive;
+    return emissive * EMISSIVE_INTENSITY;
 }
 
 vec3 getNormal(TextureChannels textureChannels) {

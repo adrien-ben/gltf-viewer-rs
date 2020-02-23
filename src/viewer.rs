@@ -193,15 +193,7 @@ impl Viewer {
             self.load_new_model();
             self.update_model(delta_s as f32);
             self.update_camera();
-            if let Some(output_mode) = self.gui.get_new_renderer_output_mode() {
-                self.context.graphics_queue_wait_idle();
-                self.renderer.set_output_mode(output_mode);
-            }
-            if let Some(tone_map_mode) = self.gui.get_new_renderer_tone_map_mode() {
-                self.context.graphics_queue_wait_idle();
-                self.renderer
-                    .set_tone_map_mode(&self.simple_render_pass, tone_map_mode);
-            }
+            self.update_renderer_settings();
             self.draw_frame();
         }
         unsafe { self.context.device().device_wait_idle().unwrap() };
@@ -302,6 +294,22 @@ impl Viewer {
 
         self.camera.update(&self.input_state);
         self.gui.set_camera(Some(self.camera));
+    }
+
+    fn update_renderer_settings(&mut self) {
+        if let Some(emissive_intensity) = self.gui.get_new_emissive_intensity() {
+            self.context.graphics_queue_wait_idle();
+            self.renderer.set_emissive_intensity(emissive_intensity);
+        }
+        if let Some(tone_map_mode) = self.gui.get_new_renderer_tone_map_mode() {
+            self.context.graphics_queue_wait_idle();
+            self.renderer
+                .set_tone_map_mode(&self.simple_render_pass, tone_map_mode);
+        }
+        if let Some(output_mode) = self.gui.get_new_renderer_output_mode() {
+            self.context.graphics_queue_wait_idle();
+            self.renderer.set_output_mode(output_mode);
+        }
     }
 
     fn draw_frame(&mut self) {

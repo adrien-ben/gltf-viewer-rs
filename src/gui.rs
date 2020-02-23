@@ -131,9 +131,9 @@ impl Gui {
         self.state.reset_camera
     }
 
-    pub fn get_new_renderer_output_mode(&self) -> Option<OutputMode> {
-        if self.state.output_mode_changed {
-            OutputMode::from_value(self.state.selected_output_mode)
+    pub fn get_new_emissive_intensity(&self) -> Option<f32> {
+        if self.state.emissive_intensity_changed {
+            Some(self.state.emissive_intensity)
         } else {
             None
         }
@@ -142,6 +142,14 @@ impl Gui {
     pub fn get_new_renderer_tone_map_mode(&self) -> Option<ToneMapMode> {
         if self.state.tone_map_mode_changed {
             ToneMapMode::from_value(self.state.selected_tone_map_mode)
+        } else {
+            None
+        }
+    }
+
+    pub fn get_new_renderer_output_mode(&self) -> Option<OutputMode> {
+        if self.state.output_mode_changed {
+            OutputMode::from_value(self.state.selected_output_mode)
         } else {
             None
         }
@@ -505,37 +513,41 @@ fn build_renderer_settings_window(ui: &Ui, state: &mut State) {
         .opened(&mut opened)
         .build(ui, || {
             {
-                ui.text("Debug");
+                ui.text("Settings");
                 ui.separator();
-                let combo_labels = OutputMode::all()
-                    .iter()
-                    .map(|mode| im_str!("{:?}", mode))
-                    .collect::<Vec<_>>();
-                let combo_labels = combo_labels.iter().map(|l| l).collect::<Vec<_>>();
-                let changed = ComboBox::new(im_str!("Output mode")).build_simple_string(
-                    ui,
-                    &mut state.selected_output_mode,
-                    &combo_labels,
-                );
 
-                state.output_mode_changed = changed;
+                let emissive_intensity_changed =
+                    Slider::new(im_str!("Emissive intensity"), 1.0f32..=50.0)
+                        .build(ui, &mut state.emissive_intensity);
+                state.emissive_intensity_changed = emissive_intensity_changed;
             }
 
             {
                 ui.text("Post Processing");
                 ui.separator();
+
                 let combo_labels = ToneMapMode::all()
                     .iter()
                     .map(|mode| im_str!("{:?}", mode))
                     .collect::<Vec<_>>();
                 let combo_labels = combo_labels.iter().map(|l| l).collect::<Vec<_>>();
-                let changed = ComboBox::new(im_str!("Tone Map mode")).build_simple_string(
-                    ui,
-                    &mut state.selected_tone_map_mode,
-                    &combo_labels,
-                );
+                let tone_map_mode_changed = ComboBox::new(im_str!("Tone Map mode"))
+                    .build_simple_string(ui, &mut state.selected_tone_map_mode, &combo_labels);
+                state.tone_map_mode_changed = tone_map_mode_changed;
+            }
 
-                state.tone_map_mode_changed = changed;
+            {
+                ui.text("Debug");
+                ui.separator();
+
+                let combo_labels = OutputMode::all()
+                    .iter()
+                    .map(|mode| im_str!("{:?}", mode))
+                    .collect::<Vec<_>>();
+                let combo_labels = combo_labels.iter().map(|l| l).collect::<Vec<_>>();
+                let output_mode_changed = ComboBox::new(im_str!("Output mode"))
+                    .build_simple_string(ui, &mut state.selected_output_mode, &combo_labels);
+                state.output_mode_changed = output_mode_changed;
             }
         });
     state.show_renderer_settings = opened;
@@ -561,6 +573,8 @@ struct State {
     output_mode_changed: bool,
     selected_tone_map_mode: usize,
     tone_map_mode_changed: bool,
+    emissive_intensity: f32,
+    emissive_intensity_changed: bool,
 
     hovered: bool,
 }
@@ -574,6 +588,7 @@ impl State {
             show_renderer_settings: self.show_renderer_settings,
             selected_output_mode: self.selected_output_mode,
             selected_tone_map_mode: self.selected_tone_map_mode,
+            emissive_intensity: self.emissive_intensity,
             ..Default::default()
         }
     }
@@ -601,6 +616,8 @@ impl Default for State {
             output_mode_changed: false,
             selected_tone_map_mode: 0,
             tone_map_mode_changed: false,
+            emissive_intensity: 1.0,
+            emissive_intensity_changed: false,
 
             hovered: false,
         }

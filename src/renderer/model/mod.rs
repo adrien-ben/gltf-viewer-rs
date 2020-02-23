@@ -99,6 +99,7 @@ impl ModelRenderer {
         msaa_samples: vk::SampleCountFlags,
         render_pass: &RenderPass,
         output_mode: OutputMode,
+        emissive_intensity: f32,
     ) -> Self {
         let dummy_texture = VulkanTexture::from_rgba(&context, 1, 1, &[0, 0, 0, 0]);
 
@@ -137,6 +138,7 @@ impl ModelRenderer {
             pipeline_layout,
             &model_rc.borrow(),
             output_mode,
+            emissive_intensity,
         );
 
         let opaque_unculled_pipeline = create_opaque_pipeline(
@@ -148,6 +150,7 @@ impl ModelRenderer {
             pipeline_layout,
             &model_rc.borrow(),
             output_mode,
+            emissive_intensity,
         );
 
         let transparent_pipeline = create_transparent_pipeline(
@@ -159,6 +162,7 @@ impl ModelRenderer {
             opaque_pipeline,
             &model_rc.borrow(),
             output_mode,
+            emissive_intensity,
         );
 
         Self {
@@ -183,6 +187,7 @@ impl ModelRenderer {
         msaa_samples: vk::SampleCountFlags,
         render_pass: &RenderPass,
         output_mode: OutputMode,
+        emissive_intensity: f32,
     ) {
         let device = self.context.device();
         let model = self
@@ -205,6 +210,7 @@ impl ModelRenderer {
             self.pipeline_layout,
             &model.borrow(),
             output_mode,
+            emissive_intensity,
         );
 
         self.opaque_unculled_pipeline = create_opaque_pipeline(
@@ -216,6 +222,7 @@ impl ModelRenderer {
             self.pipeline_layout,
             &model.borrow(),
             output_mode,
+            emissive_intensity,
         );
 
         self.transparent_pipeline = create_transparent_pipeline(
@@ -227,6 +234,7 @@ impl ModelRenderer {
             self.opaque_pipeline,
             &model.borrow(),
             output_mode,
+            emissive_intensity,
         );
     }
 }
@@ -896,9 +904,10 @@ fn create_opaque_pipeline(
     layout: vk::PipelineLayout,
     model: &Model,
     output_mode: OutputMode,
+    emissive_intensity: f32,
 ) -> vk::Pipeline {
     let (specialization_info, _map_entries, _data) =
-        create_model_frag_shader_specialization(model, output_mode);
+        create_model_frag_shader_specialization(model, output_mode, emissive_intensity);
 
     let depth_stencil_info = vk::PipelineDepthStencilStateCreateInfo::builder()
         .depth_test_enable(true)
@@ -950,9 +959,10 @@ fn create_transparent_pipeline(
     parent: vk::Pipeline,
     model: &Model,
     output_mode: OutputMode,
+    emissive_intensity: f32,
 ) -> vk::Pipeline {
     let (specialization_info, _map_entries, _data) =
-        create_model_frag_shader_specialization(model, output_mode);
+        create_model_frag_shader_specialization(model, output_mode, emissive_intensity);
 
     let depth_stencil_info = vk::PipelineDepthStencilStateCreateInfo::builder()
         .depth_test_enable(true)
@@ -998,6 +1008,7 @@ fn create_transparent_pipeline(
 fn create_model_frag_shader_specialization(
     model: &Model,
     output_mode: OutputMode,
+    emissive_intensity: f32,
 ) -> (
     vk::SpecializationInfo,
     Vec<vk::SpecializationMapEntry>,
@@ -1014,6 +1025,11 @@ fn create_model_frag_shader_specialization(
             offset: size_of::<u32>() as _,
             size: size_of::<u32>(),
         },
+        vk::SpecializationMapEntry {
+            constant_id: 2,
+            offset: (2 * size_of::<u32>()) as _,
+            size: size_of::<f32>(),
+        },
     ];
 
     let light_count = model
@@ -1024,8 +1040,8 @@ fn create_model_frag_shader_specialization(
         .count() as u32;
 
     let data = [light_count, output_mode as _];
-
-    let data = Vec::from(unsafe { any_as_u8_slice(&data) });
+    let mut data = Vec::from(unsafe { any_as_u8_slice(&data) });
+    data.extend_from_slice(unsafe { any_as_u8_slice(&[emissive_intensity]) });
 
     let specialization_info = vk::SpecializationInfo::builder()
         .map_entries(&map_entries)

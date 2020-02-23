@@ -34,6 +34,7 @@ pub struct Renderer {
     post_process_renderer: PostProcessRenderer,
     gui_renderer: GuiRenderer,
     output_mode: OutputMode,
+    emissive_intensity: f32,
     tone_map_mode: ToneMapMode,
 }
 
@@ -101,6 +102,7 @@ impl Renderer {
             post_process_renderer,
             gui_renderer,
             output_mode,
+            emissive_intensity: 1.0,
             tone_map_mode,
         }
     }
@@ -224,6 +226,7 @@ impl Renderer {
             self.msaa_samples,
             &self.renderer_render_pass,
             self.output_mode,
+            self.emissive_intensity,
         );
 
         self.model_renderer = Some(model_renderer);
@@ -261,6 +264,7 @@ impl Renderer {
                 self.msaa_samples,
                 &renderer_render_pass,
                 self.output_mode,
+                self.emissive_intensity,
             );
         }
 
@@ -278,14 +282,15 @@ impl Renderer {
         self.post_process_renderer = post_process_renderer;
     }
 
-    pub fn set_output_mode(&mut self, output_mode: OutputMode) {
-        self.output_mode = output_mode;
+    pub fn set_emissive_intensity(&mut self, emissive_intensity: f32) {
+        self.emissive_intensity = emissive_intensity;
         if let Some(renderer) = self.model_renderer.as_mut() {
             renderer.rebuild_pipelines(
                 self.swapchain_properties,
                 self.msaa_samples,
                 &self.renderer_render_pass,
-                output_mode,
+                self.output_mode,
+                emissive_intensity,
             );
         }
     }
@@ -301,6 +306,19 @@ impl Renderer {
             simple_render_pass,
             tone_map_mode,
         );
+    }
+
+    pub fn set_output_mode(&mut self, output_mode: OutputMode) {
+        self.output_mode = output_mode;
+        if let Some(renderer) = self.model_renderer.as_mut() {
+            renderer.rebuild_pipelines(
+                self.swapchain_properties,
+                self.msaa_samples,
+                &self.renderer_render_pass,
+                output_mode,
+                self.emissive_intensity,
+            );
+        }
     }
 
     pub fn update_ubos(&mut self, frame_index: usize, camera: Camera) {
