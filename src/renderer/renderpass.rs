@@ -105,13 +105,19 @@ fn create_render_pass(
         _ => vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
     };
 
+    let color_store_op = if msaa_samples == vk::SampleCountFlags::TYPE_1 {
+        vk::AttachmentStoreOp::STORE
+    } else {
+        vk::AttachmentStoreOp::DONT_CARE
+    };
+
     let mut attachment_descs = vec![
         // Color attachment
         vk::AttachmentDescription::builder()
             .format(vk::Format::R32G32B32A32_SFLOAT)
             .samples(msaa_samples)
             .load_op(vk::AttachmentLoadOp::CLEAR)
-            .store_op(vk::AttachmentStoreOp::STORE)
+            .store_op(color_store_op)
             .initial_layout(vk::ImageLayout::UNDEFINED)
             .final_layout(color_final_layout)
             .build(),
