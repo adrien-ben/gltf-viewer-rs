@@ -16,4 +16,4 @@ env:
   path: assets/env/equi.hdr
 
   # Resolution of the skybox. Optional(default = 1024)
-  resolution: 4096
+  resolution: 1024
