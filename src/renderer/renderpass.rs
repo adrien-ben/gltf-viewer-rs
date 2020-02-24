@@ -1,6 +1,7 @@
 use super::{Context, Image, ImageParameters, Texture};
 use std::sync::Arc;
-use vulkan::ash::{version::DeviceV1_0, vk, Device};
+use vulkan::ash::{version::DeviceV1_0, vk};
+use vulkan::CreateRenderpass2;
 
 pub struct RenderPass {
     context: Arc<Context>,
@@ -33,7 +34,8 @@ impl RenderPass {
                 extent,
             )),
         };
-        let render_pass = create_render_pass(context.device(), depth_format, msaa_samples);
+        let render_pass =
+            create_render_pass(context.create_renderpass_2(), depth_format, msaa_samples);
 
         Self {
             context,
@@ -95,7 +97,7 @@ impl Drop for RenderPass {
 }
 
 fn create_render_pass(
-    device: &Device,
+    create_renderpass_2: &CreateRenderpass2,
     depth_format: vk::Format,
     msaa_samples: vk::SampleCountFlags,
 ) -> vk::RenderPass {
@@ -113,7 +115,7 @@ fn create_render_pass(
 
     let mut attachment_descs = vec![
         // Color attachment
-        vk::AttachmentDescription::builder()
+        vk::AttachmentDescription2KHR::builder()
             .format(vk::Format::R32G32B32A32_SFLOAT)
             .samples(msaa_samples)
             .load_op(vk::AttachmentLoadOp::CLEAR)
@@ -122,7 +124,7 @@ fn create_render_pass(
             .final_layout(color_final_layout)
             .build(),
         // Depth attachment
-        vk::AttachmentDescription::builder()
+        vk::AttachmentDescription2KHR::builder()
             .format(depth_format)
             .samples(msaa_samples)
             .load_op(vk::AttachmentLoadOp::CLEAR)
@@ -136,7 +138,7 @@ fn create_render_pass(
     if msaa_samples != vk::SampleCountFlags::TYPE_1 {
         // Resolve attachment
         attachment_descs.push(
-            vk::AttachmentDescription::builder()
+            vk::AttachmentDescription2KHR::builder()
                 .format(vk::Format::R32G32B32A32_SFLOAT)
                 .samples(vk::SampleCountFlags::TYPE_1)
                 .load_op(vk::AttachmentLoadOp::DONT_CARE)
@@ -149,23 +151,23 @@ fn create_render_pass(
         );
     }
 
-    let render_color_attachment_refs = [vk::AttachmentReference::builder()
+    let render_color_attachment_refs = [vk::AttachmentReference2KHR::builder()
         .attachment(0)
         .layout(vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL)
         .build()];
 
-    let depth_attachment_ref = vk::AttachmentReference::builder()
+    let depth_attachment_ref = vk::AttachmentReference2KHR::builder()
         .attachment(1)
         .layout(vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL);
 
-    let resolve_attachment_refs = [vk::AttachmentReference::builder()
+    let resolve_attachment_refs = [vk::AttachmentReference2KHR::builder()
         .attachment(2)
         .layout(vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL)
         .build()];
 
     // Subpasses
     let subpasses = {
-        let mut subpass_desc = vk::SubpassDescription::builder()
+        let mut subpass_desc = vk::SubpassDescription2KHR::builder()
             .pipeline_bind_point(vk::PipelineBindPoint::GRAPHICS)
             .color_attachments(&render_color_attachment_refs)
             .depth_stencil_attachment(&depth_attachment_ref);
@@ -177,7 +179,7 @@ fn create_render_pass(
 
     // Dependencies
     let subpass_deps = [
-        vk::SubpassDependency::builder()
+        vk::SubpassDependency2KHR::builder()
             .src_subpass(vk::SUBPASS_EXTERNAL)
             .dst_subpass(0)
             .src_stage_mask(vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT)
@@ -187,7 +189,7 @@ fn create_render_pass(
                 vk::AccessFlags::COLOR_ATTACHMENT_READ | vk::AccessFlags::COLOR_ATTACHMENT_WRITE,
             )
             .build(),
-        vk::SubpassDependency::builder()
+        vk::SubpassDependency2KHR::builder()
             .src_subpass(0)
             .dst_subpass(vk::SUBPASS_EXTERNAL)
             .src_stage_mask(vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT)
@@ -197,14 +199,14 @@ fn create_render_pass(
             .build(),
     ];
 
-    let render_pass_info = vk::RenderPassCreateInfo::builder()
+    let render_pass_info = vk::RenderPassCreateInfo2KHR::builder()
         .attachments(&attachment_descs)
         .subpasses(&subpasses)
         .dependencies(&subpass_deps);
 
     unsafe {
-        device
-            .create_render_pass(&render_pass_info, None)
+        create_renderpass_2
+            .create_render_pass2_khr(&render_pass_info, None)
             .expect("Failed to create render pass")
     }
 }
