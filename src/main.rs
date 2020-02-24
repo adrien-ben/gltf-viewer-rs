@@ -21,9 +21,11 @@ fn main() -> Result<(), Box<dyn Error>> {
         .value_of("config")
         .map_or(Ok(Default::default()), config::load_config)?;
 
+    let enable_debug = matches.is_present("debug");
+
     let file_path = matches.value_of("file").map(Path::new);
 
-    Viewer::new(config, file_path).run();
+    Viewer::new(config, enable_debug, file_path).run();
 
     Ok(())
 }
@@ -48,5 +50,13 @@ fn create_app<'a, 'b>() -> App<'a, 'b> {
                 .value_name("FILE")
                 .help("Set the path to gltf model to view")
                 .takes_value(true),
+        )
+        .arg(
+            Arg::with_name("debug")
+                .short("d")
+                .long("debug")
+                .value_name("DEBUG")
+                .help("Enable vulkan debug printing")
+                .takes_value(false),
         )
 }

@@ -86,11 +86,14 @@ RUST_LOG=gltf_viewer_rs=warn,vulkan=warn cargo run -- --config config.yml --file
 
 ### Validation layers
 
-Building the project with the debug profile will enable Vulkan's debug report. You can set up validation layers by running the following commands
+You can set up validation layers by running the following commands.
 
 ```sh
 export VK_LAYER_PATH=$VULKAN_SDK/Bin
 export VK_INSTANCE_LAYERS=VK_LAYER_KHRONOS_validation
+
+# Then running the app with the --debug (-d) flag.
+RUST_LOG=gltf_viewer_rs=warn cargo run -- --debug
 ```
 
 ## Known issues

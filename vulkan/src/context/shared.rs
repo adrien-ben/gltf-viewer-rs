@@ -29,16 +29,20 @@ pub struct SharedContext {
 }
 
 impl SharedContext {
-    pub fn new(window: &Window) -> Self {
+    pub fn new(window: &Window, enable_debug: bool) -> Self {
         let entry = Entry::new().expect("Failed to create entry.");
-        let instance = create_instance(&entry);
+        let instance = create_instance(&entry, enable_debug);
 
         let surface = Surface::new(&entry, &instance);
         let surface_khr = unsafe {
             surface::create_surface(&entry, &instance, &window).expect("Failed to create surface")
         };
 
-        let debug_report_callback = setup_debug_messenger(&entry, &instance);
+        let debug_report_callback = if enable_debug {
+            Some(setup_debug_messenger(&entry, &instance))
+        } else {
+            None
+        };
 
         let (physical_device, queue_families_indices) =
             pick_physical_device(&instance, &surface, surface_khr);
@@ -64,7 +68,7 @@ impl SharedContext {
     }
 }
 
-fn create_instance(entry: &Entry) -> Instance {
+fn create_instance(entry: &Entry, enable_debug: bool) -> Instance {
     let app_name = CString::new("Vulkan Application").unwrap();
     let engine_name = CString::new("No Engine").unwrap();
     let app_info = vk::ApplicationInfo::builder()
@@ -75,7 +79,7 @@ fn create_instance(entry: &Entry) -> Instance {
         .api_version(ash::vk_make_version!(1, 0, 0));
 
     let mut extension_names = surface::required_extension_names();
-    if ENABLE_DEBUG_CALLBACK {
+    if enable_debug {
         extension_names.push(DebugReport::name().as_ptr());
     }
 

@@ -13,8 +13,8 @@ pub struct Context {
 }
 
 impl Context {
-    pub fn new(window: &Window) -> Self {
-        let shared_context = Arc::new(SharedContext::new(window));
+    pub fn new(window: &Window, enable_debug: bool) -> Self {
+        let shared_context = Arc::new(SharedContext::new(window, enable_debug));
         let general_command_pool = create_command_pool(
             &shared_context.device(),
             shared_context.queue_families_indices,

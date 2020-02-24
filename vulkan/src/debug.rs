@@ -5,11 +5,6 @@ use std::{
     os::raw::{c_char, c_void},
 };
 
-#[cfg(debug_assertions)]
-pub const ENABLE_DEBUG_CALLBACK: bool = true;
-#[cfg(not(debug_assertions))]
-pub const ENABLE_DEBUG_CALLBACK: bool = false;
-
 unsafe extern "system" fn vulkan_debug_callback(
     flag: vk::DebugReportFlagsEXT,
     typ: vk::DebugReportObjectTypeEXT,
@@ -38,10 +33,7 @@ unsafe extern "system" fn vulkan_debug_callback(
 pub fn setup_debug_messenger(
     entry: &Entry,
     instance: &Instance,
-) -> Option<(DebugReport, vk::DebugReportCallbackEXT)> {
-    if !ENABLE_DEBUG_CALLBACK {
-        return None;
-    }
+) -> (DebugReport, vk::DebugReportCallbackEXT) {
     let create_info = vk::DebugReportCallbackCreateInfoEXT::builder()
         .flags(vk::DebugReportFlagsEXT::all())
         .pfn_callback(Some(vulkan_debug_callback));
@@ -51,5 +43,5 @@ pub fn setup_debug_messenger(
             .create_debug_report_callback(&create_info, None)
             .expect("Failed to create debig report callback")
     };
-    Some((debug_report, debug_report_callback))
+    (debug_report, debug_report_callback)
 }

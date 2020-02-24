@@ -34,7 +34,7 @@ pub struct Viewer {
 }
 
 impl Viewer {
-    pub fn new<P: AsRef<Path>>(config: Config, path: Option<P>) -> Self {
+    pub fn new<P: AsRef<Path>>(config: Config, enable_debug: bool, path: Option<P>) -> Self {
         log::debug!("Creating application.");
 
         let resolution = [config.resolution().width(), config.resolution().height()];
@@ -51,7 +51,7 @@ impl Viewer {
 
         let mut gui = Gui::new(&window);
 
-        let context = Arc::new(Context::new(&window));
+        let context = Arc::new(Context::new(&window, enable_debug));
 
         let swapchain_support_details = SwapchainSupportDetails::new(
             context.physical_device(),
