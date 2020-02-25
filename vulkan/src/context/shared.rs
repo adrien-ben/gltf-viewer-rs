@@ -1,4 +1,4 @@
-use super::super::{debug::*, surface, swapchain::*};
+use crate::{debug::*, extensions::*, surface, swapchain::*};
 use ash::{
     extensions::{
         ext::DebugReport,
@@ -26,6 +26,7 @@ pub struct SharedContext {
     pub queue_families_indices: QueueFamiliesIndices,
     graphics_queue: vk::Queue,
     present_queue: vk::Queue,
+    create_renderpass_2: CreateRenderpass2,
 }
 
 impl SharedContext {
@@ -53,6 +54,8 @@ impl SharedContext {
             queue_families_indices,
         );
 
+        let create_renderpass_2 = CreateRenderpass2::new(&instance, &device);
+
         Self {
             _entry: entry,
             instance,
@@ -64,6 +67,7 @@ impl SharedContext {
             queue_families_indices,
             graphics_queue,
             present_queue,
+            create_renderpass_2,
         }
     }
 }
@@ -79,6 +83,7 @@ fn create_instance(entry: &Entry, enable_debug: bool) -> Instance {
         .api_version(ash::vk_make_version!(1, 0, 0));
 
     let mut extension_names = surface::required_extension_names();
+    extension_names.push(vk::KhrGetPhysicalDeviceProperties2Fn::name().as_ptr());
     if enable_debug {
         extension_names.push(DebugReport::name().as_ptr());
     }
@@ -176,8 +181,13 @@ fn check_device_extension_support(instance: &Instance, device: vk::PhysicalDevic
     true
 }
 
-fn get_required_device_extensions() -> [&'static CStr; 1] {
-    [SwapchainLoader::name()]
+fn get_required_device_extensions() -> [&'static CStr; 4] {
+    [
+        SwapchainLoader::name(),
+        CreateRenderpass2::name(),
+        vk::KhrMaintenance2Fn::name(),
+        vk::KhrMultiviewFn::name(),
+    ]
 }
 
 /// Find a queue family with at least one graphics queue and one with
@@ -311,6 +321,10 @@ impl SharedContext {
 
     pub fn present_queue(&self) -> vk::Queue {
         self.present_queue
+    }
+
+    pub fn create_renderpass_2(&self) -> &CreateRenderpass2 {
+        &self.create_renderpass_2
     }
 }
 

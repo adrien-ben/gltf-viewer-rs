@@ -50,6 +50,14 @@ using [Ash][2]. It runs on Window, Linux and MacOS.
   - [x] Camera details
   - [x] Renderer settings
 
+## Requirements
+
+- Vulkan 1.0
+- Vulkan device extensions
+  - VK_KHR_create_renderpass2
+
+> You can check your Vulkan feature set using Sascha Willems' [Vulkan Caps Viewer][6]
+
 ## Controls
 
 - Left click and move to rotate camera around origin
@@ -114,6 +122,7 @@ HDRi textures have been downloaded from [hdriheaven][5].
 [3]: https://github.com/SaschaWillems/Vulkan
 [4]: https://github.com/matheowis/HDRI-to-CubeMap
 [5]: https://hdrihaven.com/
+[6]: https://vulkan.gpuinfo.org/download.php
 
 ## Screenshots
 
