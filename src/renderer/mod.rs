@@ -1,11 +1,14 @@
 mod model;
 mod postprocess;
-mod renderpass;
 mod skybox;
 
 extern crate model as model_crate;
 
-pub use self::{model::*, postprocess::*, renderpass::*, skybox::*};
+use self::model::gbufferpass::{GBufferPass, GBufferRenderPass};
+pub use self::model::lightpass::{LightPass, LightRenderPass, OutputMode};
+use self::model::{ModelData, ModelRenderer};
+pub use self::{postprocess::*, skybox::*};
+
 use super::camera::{Camera, CameraUBO};
 use ash::{version::DeviceV1_0, vk};
 use environment::Environment;
@@ -16,7 +19,7 @@ use model_crate::Model;
 use std::borrow::Borrow;
 use std::cell::RefCell;
 use std::mem::size_of;
-use std::rc::Weak;
+use std::rc::Rc;
 use std::sync::Arc;
 use vulkan::*;
 
@@ -27,9 +30,11 @@ pub struct Renderer {
     swapchain_properties: SwapchainProperties,
     environment: Environment,
     camera_uniform_buffers: Vec<Buffer>,
-    renderer_render_pass: RenderPass,
-    offscreen_framebuffer: vk::Framebuffer,
+    light_render_pass: LightRenderPass,
+    lightpass_framebuffer: vk::Framebuffer,
     skybox_renderer: SkyboxRenderer,
+    gbuffer_render_pass: GBufferRenderPass,
+    gbuffer_framebuffer: vk::Framebuffer,
     model_renderer: Option<ModelRenderer>,
     post_process_renderer: PostProcessRenderer,
     gui_renderer: GuiRenderer,
@@ -51,14 +56,14 @@ impl Renderer {
         let camera_uniform_buffers =
             create_camera_uniform_buffers(&context, swapchain_properties.image_count);
 
-        let renderer_render_pass = RenderPass::create(
+        let light_render_pass = LightRenderPass::create(
             Arc::clone(&context),
             swapchain_properties.extent,
             depth_format,
             msaa_samples,
         );
 
-        let offscreen_framebuffer = renderer_render_pass.create_framebuffer();
+        let lightpass_framebuffer = light_render_pass.create_framebuffer();
 
         let skybox_renderer = SkyboxRenderer::create(
             Arc::clone(&context),
@@ -66,15 +71,23 @@ impl Renderer {
             swapchain_properties,
             &environment,
             msaa_samples,
-            &renderer_render_pass,
+            &light_render_pass,
         );
+
+        let gbuffer_render_pass = GBufferRenderPass::create(
+            Arc::clone(&context),
+            swapchain_properties.extent,
+            depth_format,
+        );
+
+        let gbuffer_framebuffer = gbuffer_render_pass.create_framebuffer();
 
         let tone_map_mode = ToneMapMode::Default;
         let post_process_renderer = PostProcessRenderer::create(
             Arc::clone(&context),
             swapchain_properties,
             &simple_render_pass,
-            renderer_render_pass.get_color_attachment(),
+            light_render_pass.get_color_attachment(),
             tone_map_mode,
         );
 
@@ -95,9 +108,11 @@ impl Renderer {
             swapchain_properties,
             environment,
             camera_uniform_buffers,
-            renderer_render_pass,
-            offscreen_framebuffer,
+            light_render_pass,
+            lightpass_framebuffer,
             skybox_renderer,
+            gbuffer_render_pass,
+            gbuffer_framebuffer,
             model_renderer: None,
             post_process_renderer,
             gui_renderer,
@@ -135,6 +150,48 @@ impl Renderer {
     ) {
         let device = self.context.device();
 
+        // GBuffer pass
+        {
+            let clear_values = [
+                vk::ClearValue {
+                    color: vk::ClearColorValue {
+                        float32: [0.0, 0.0, 0.0, 1.0],
+                    },
+                },
+                vk::ClearValue {
+                    depth_stencil: vk::ClearDepthStencilValue {
+                        depth: 1.0,
+                        stencil: 0,
+                    },
+                },
+            ];
+            let render_pass_begin_info = vk::RenderPassBeginInfo::builder()
+                .render_pass(self.gbuffer_render_pass.get_render_pass())
+                .framebuffer(self.gbuffer_framebuffer)
+                .render_area(vk::Rect2D {
+                    offset: vk::Offset2D { x: 0, y: 0 },
+                    extent: swapchain_properties.extent,
+                })
+                .clear_values(&clear_values);
+
+            unsafe {
+                device.cmd_begin_render_pass(
+                    command_buffer,
+                    &render_pass_begin_info,
+                    vk::SubpassContents::INLINE,
+                )
+            };
+        }
+
+        if let Some(renderer) = self.model_renderer.as_ref() {
+            renderer
+                .gbuffer_pass
+                .cmd_draw(command_buffer, frame_index, &renderer.data);
+        }
+
+        // End render pass
+        unsafe { device.cmd_end_render_pass(command_buffer) };
+
         // begin render pass
         {
             let clear_values = [
@@ -151,8 +208,8 @@ impl Renderer {
                 },
             ];
             let render_pass_begin_info = vk::RenderPassBeginInfo::builder()
-                .render_pass(self.renderer_render_pass.get_render_pass())
-                .framebuffer(self.offscreen_framebuffer)
+                .render_pass(self.light_render_pass.get_render_pass())
+                .framebuffer(self.lightpass_framebuffer)
                 .render_area(vk::Rect2D {
                     offset: vk::Offset2D { x: 0, y: 0 },
                     extent: swapchain_properties.extent,
@@ -170,8 +227,10 @@ impl Renderer {
 
         self.skybox_renderer.cmd_draw(command_buffer, frame_index);
 
-        if let Some(model_renderer) = self.model_renderer.as_ref() {
-            model_renderer.cmd_draw(command_buffer, frame_index);
+        if let Some(renderer) = self.model_renderer.as_ref() {
+            renderer
+                .light_pass
+                .cmd_draw(command_buffer, frame_index, &renderer.data);
         }
 
         // End render pass
@@ -214,22 +273,40 @@ impl Renderer {
         unsafe { device.cmd_end_render_pass(command_buffer) };
     }
 
-    pub fn set_model(&mut self, model: Weak<RefCell<Model>>) {
+    pub fn set_model(&mut self, model: &Rc<RefCell<Model>>) {
         self.model_renderer.take();
 
-        let model_renderer = ModelRenderer::create(
+        let model_data = ModelData::create(
             Arc::clone(&self.context),
-            model,
+            Rc::downgrade(model),
+            self.swapchain_properties,
+        );
+
+        let gbuffer_pass = GBufferPass::create(
+            Arc::clone(&self.context),
+            &model_data,
+            &self.camera_uniform_buffers,
+            self.swapchain_properties,
+            &self.gbuffer_render_pass,
+        );
+
+        let light_pass = LightPass::create(
+            Arc::clone(&self.context),
+            &model_data,
             &self.camera_uniform_buffers,
             self.swapchain_properties,
             &self.environment,
             self.msaa_samples,
-            &self.renderer_render_pass,
+            &self.light_render_pass,
             self.output_mode,
             self.emissive_intensity,
         );
 
-        self.model_renderer = Some(model_renderer);
+        self.model_renderer = Some(ModelRenderer {
+            data: model_data,
+            gbuffer_pass,
+            light_pass,
+        });
     }
 
     pub fn on_new_swapchain(
@@ -240,55 +317,73 @@ impl Renderer {
         unsafe {
             self.context
                 .device()
-                .destroy_framebuffer(self.offscreen_framebuffer, None)
-        };
+                .destroy_framebuffer(self.lightpass_framebuffer, None);
+            self.context
+                .device()
+                .destroy_framebuffer(self.gbuffer_framebuffer, None);
+        }
 
-        let renderer_render_pass = RenderPass::create(
+        let gbuffer_render_pass = GBufferRenderPass::create(
+            Arc::clone(&self.context),
+            swapchain_properties.extent,
+            self.depth_format,
+        );
+
+        let gbuffer_framebuffer = gbuffer_render_pass.create_framebuffer();
+
+        let light_render_pass = LightRenderPass::create(
             Arc::clone(&self.context),
             swapchain_properties.extent,
             self.depth_format,
             self.msaa_samples,
         );
 
-        let offscreen_framebuffer = renderer_render_pass.create_framebuffer();
+        let lightpass_framebuffer = light_render_pass.create_framebuffer();
 
         self.skybox_renderer.rebuild_pipeline(
             swapchain_properties,
             self.msaa_samples,
-            &renderer_render_pass,
+            &light_render_pass,
         );
 
-        if let Some(model_renderer) = self.model_renderer.as_mut() {
-            model_renderer.rebuild_pipelines(
+        if let Some(renderer) = self.model_renderer.as_mut() {
+            renderer
+                .gbuffer_pass
+                .rebuild_pipelines(swapchain_properties, &gbuffer_render_pass);
+            renderer.light_pass.rebuild_pipelines(
+                &renderer.data,
                 swapchain_properties,
                 self.msaa_samples,
-                &renderer_render_pass,
+                &light_render_pass,
                 self.output_mode,
                 self.emissive_intensity,
-            );
+            )
         }
 
         let post_process_renderer = PostProcessRenderer::create(
             Arc::clone(&self.context),
             swapchain_properties,
             simple_render_pass,
-            renderer_render_pass.get_color_attachment(),
+            light_render_pass.get_color_attachment(),
             self.tone_map_mode,
         );
 
         self.swapchain_properties = swapchain_properties;
-        self.renderer_render_pass = renderer_render_pass;
-        self.offscreen_framebuffer = offscreen_framebuffer;
+        self.gbuffer_render_pass = gbuffer_render_pass;
+        self.gbuffer_framebuffer = gbuffer_framebuffer;
+        self.light_render_pass = light_render_pass;
+        self.lightpass_framebuffer = lightpass_framebuffer;
         self.post_process_renderer = post_process_renderer;
     }
 
     pub fn set_emissive_intensity(&mut self, emissive_intensity: f32) {
         self.emissive_intensity = emissive_intensity;
         if let Some(renderer) = self.model_renderer.as_mut() {
-            renderer.rebuild_pipelines(
+            renderer.light_pass.rebuild_pipelines(
+                &renderer.data,
                 self.swapchain_properties,
                 self.msaa_samples,
-                &self.renderer_render_pass,
+                &self.light_render_pass,
                 self.output_mode,
                 emissive_intensity,
             );
@@ -311,10 +406,11 @@ impl Renderer {
     pub fn set_output_mode(&mut self, output_mode: OutputMode) {
         self.output_mode = output_mode;
         if let Some(renderer) = self.model_renderer.as_mut() {
-            renderer.rebuild_pipelines(
+            renderer.light_pass.rebuild_pipelines(
+                &renderer.data,
                 self.swapchain_properties,
                 self.msaa_samples,
-                &self.renderer_render_pass,
+                &self.light_render_pass,
                 output_mode,
                 self.emissive_intensity,
             );
@@ -344,7 +440,7 @@ impl Renderer {
 
         // model
         if let Some(renderer) = self.model_renderer.as_mut() {
-            renderer.update_buffers(frame_index)
+            renderer.data.update_buffers(frame_index);
         }
     }
 }
@@ -357,8 +453,11 @@ impl Drop for Renderer {
         unsafe {
             self.context
                 .device()
-                .destroy_framebuffer(self.offscreen_framebuffer, None)
-        };
+                .destroy_framebuffer(self.lightpass_framebuffer, None);
+            self.context
+                .device()
+                .destroy_framebuffer(self.gbuffer_framebuffer, None);
+        }
     }
 }
 

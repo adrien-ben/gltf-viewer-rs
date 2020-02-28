@@ -250,7 +250,7 @@ impl Viewer {
 
             self.context.graphics_queue_wait_idle();
             let model = Rc::new(RefCell::new(model));
-            self.renderer.set_model(Rc::downgrade(&model));
+            self.renderer.set_model(&model);
             self.model = Some(model);
         }
     }

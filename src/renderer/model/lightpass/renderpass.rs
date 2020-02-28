@@ -1,7 +1,7 @@
-use super::{Context, Image, ImageParameters, Texture};
 use std::sync::Arc;
 use vulkan::ash::{version::DeviceV1_0, vk};
 use vulkan::CreateRenderpass2;
+use vulkan::{Context, Image, ImageParameters, Texture};
 
 const COLOR_FORMAT: vk::Format = vk::Format::R32G32B32A32_SFLOAT;
 
