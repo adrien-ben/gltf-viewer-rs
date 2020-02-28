@@ -370,7 +370,8 @@ fn create_pipeline(
     create_renderer_pipeline::<ModelVertex>(
         context,
         RendererPipelineParameters {
-            shader_name: "gbuffer",
+            vertex_shader_name: "gbuffer",
+            fragment_shader_name: "gbuffer",
             vertex_shader_specialization: None,
             fragment_shader_specialization: None,
             swapchain_properties,

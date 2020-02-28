@@ -121,6 +121,7 @@ layout(binding = 8, set = 2) uniform sampler2D normalsSampler;
 layout(binding = 9, set = 2) uniform sampler2D materialSampler;
 layout(binding = 10, set = 2) uniform sampler2D occlusionSampler;
 layout(binding = 11, set = 2) uniform sampler2D emissiveSampler;
+layout(binding = 12, set = 3) uniform sampler2D aoMapSampler;
 
 // Output
 layout(location = 0) out vec4 outColor;
@@ -227,12 +228,13 @@ vec3 getNormal(TextureChannels textureChannels) {
 }
 
 vec3 occludeAmbientColor(vec3 ambientColor, TextureChannels textureChannels) {
+    float aoMapSample = texture(aoMapSampler, gl_FragCoord.xy).r;
     float sampledOcclusion = 0.0;
     if (textureChannels.occlusion != NO_TEXTURE_ID) {
         vec2 uv = getUV(textureChannels.occlusion);
         sampledOcclusion = texture(occlusionSampler, uv).r;
     }
-    return mix(ambientColor, ambientColor * sampledOcclusion, material.metallicSpecularAndOcclusion.a);
+    return mix(ambientColor, ambientColor * sampledOcclusion, material.metallicSpecularAndOcclusion.a) * aoMapSample;
 }
 
 uint getAlphaMode() {

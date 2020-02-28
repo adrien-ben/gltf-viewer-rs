@@ -1,14 +1,11 @@
-use super::{create_renderer_pipeline, RendererPipelineParameters};
+use super::{create_renderer_pipeline, fullscreen::*, RendererPipelineParameters};
 use std::{mem::size_of, sync::Arc};
 use vulkan::ash::{version::DeviceV1_0, vk, Device};
-use vulkan::{
-    create_device_local_buffer_with_data, Buffer, Context, Descriptors, SimpleRenderPass,
-    SwapchainProperties, Texture, Vertex,
-};
+use vulkan::{Context, Descriptors, SimpleRenderPass, SwapchainProperties, Texture};
 
-pub struct PostProcessRenderer {
+/// Tone mapping and gamma correction pass
+pub struct FinalPass {
     context: Arc<Context>,
-    quad_model: QuadModel,
     descriptors: Descriptors,
     pipeline_layout: vk::PipelineLayout,
     pipeline: vk::Pipeline,
@@ -42,7 +39,7 @@ impl ToneMapMode {
     }
 }
 
-impl PostProcessRenderer {
+impl FinalPass {
     pub fn create(
         context: Arc<Context>,
         swapchain_props: SwapchainProperties,
@@ -50,7 +47,6 @@ impl PostProcessRenderer {
         input_image: &Texture,
         tone_map_mode: ToneMapMode,
     ) -> Self {
-        let quad_model = QuadModel::new(&context);
         let descriptors = create_descriptors(&context, input_image);
         let pipeline_layout = create_pipeline_layout(context.device(), descriptors.layout());
         let pipeline = create_pipeline(
@@ -61,9 +57,8 @@ impl PostProcessRenderer {
             tone_map_mode,
         );
 
-        Self {
+        FinalPass {
             context,
-            quad_model,
             descriptors,
             pipeline_layout,
             pipeline,
@@ -71,7 +66,21 @@ impl PostProcessRenderer {
     }
 }
 
-impl PostProcessRenderer {
+impl FinalPass {
+    pub fn set_input_image(&mut self, input_image: &Texture) {
+        unsafe {
+            self.context
+                .device()
+                .free_descriptor_sets(self.descriptors.pool(), self.descriptors.sets());
+        }
+        self.descriptors.set_sets(create_descriptor_sets(
+            &self.context,
+            self.descriptors.pool(),
+            self.descriptors.layout(),
+            input_image,
+        ));
+    }
+
     pub fn rebuild_pipelines(
         &mut self,
         swapchain_properties: SwapchainProperties,
@@ -93,7 +102,7 @@ impl PostProcessRenderer {
         )
     }
 
-    pub fn cmd_draw(&self, command_buffer: vk::CommandBuffer) {
+    pub fn cmd_draw(&self, command_buffer: vk::CommandBuffer, quad_model: &QuadModel) {
         let device = self.context.device();
         // Bind pipeline
         unsafe {
@@ -106,15 +115,10 @@ impl PostProcessRenderer {
 
         // Bind buffers
         unsafe {
-            device.cmd_bind_vertex_buffers(
-                command_buffer,
-                0,
-                &[self.quad_model.vertices.buffer],
-                &[0],
-            );
+            device.cmd_bind_vertex_buffers(command_buffer, 0, &[quad_model.vertices.buffer], &[0]);
             device.cmd_bind_index_buffer(
                 command_buffer,
-                self.quad_model.indices.buffer,
+                quad_model.indices.buffer,
                 0,
                 vk::IndexType::UINT16,
             );
@@ -137,73 +141,13 @@ impl PostProcessRenderer {
     }
 }
 
-impl Drop for PostProcessRenderer {
+impl Drop for FinalPass {
     fn drop(&mut self) {
         let device = self.context.device();
         unsafe {
             device.destroy_pipeline(self.pipeline, None);
             device.destroy_pipeline_layout(self.pipeline_layout, None);
         }
-    }
-}
-
-#[derive(Clone, Copy)]
-#[allow(dead_code)]
-struct QuadVertex {
-    position: [f32; 2],
-    coords: [f32; 2],
-}
-
-impl Vertex for QuadVertex {
-    fn get_bindings_descriptions() -> Vec<vk::VertexInputBindingDescription> {
-        vec![vk::VertexInputBindingDescription {
-            binding: 0,
-            stride: size_of::<QuadVertex>() as _,
-            input_rate: vk::VertexInputRate::VERTEX,
-        }]
-    }
-
-    fn get_attributes_descriptions() -> Vec<vk::VertexInputAttributeDescription> {
-        vec![
-            vk::VertexInputAttributeDescription {
-                location: 0,
-                binding: 0,
-                format: vk::Format::R32G32_SFLOAT,
-                offset: 0,
-            },
-            vk::VertexInputAttributeDescription {
-                location: 1,
-                binding: 0,
-                format: vk::Format::R32G32_SFLOAT,
-                offset: 8,
-            },
-        ]
-    }
-}
-
-struct QuadModel {
-    vertices: Buffer,
-    indices: Buffer,
-}
-
-impl QuadModel {
-    fn new(context: &Arc<Context>) -> Self {
-        let indices: [u16; 6] = [0, 1, 2, 2, 3, 0];
-        let indices = create_device_local_buffer_with_data::<u8, _>(
-            context,
-            vk::BufferUsageFlags::INDEX_BUFFER,
-            &indices,
-        );
-        let vertices: [f32; 16] = [
-            -1.0, 1.0, 0.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, -1.0, 1.0, 0.0, -1.0, -1.0, 0.0, 0.0,
-        ];
-        let vertices = create_device_local_buffer_with_data::<u8, _>(
-            context,
-            vk::BufferUsageFlags::VERTEX_BUFFER,
-            &vertices,
-        );
-
-        Self { vertices, indices }
     }
 }
 
@@ -239,7 +183,8 @@ fn create_descriptor_pool(device: &Device) -> vk::DescriptorPool {
 
     let create_info = vk::DescriptorPoolCreateInfo::builder()
         .pool_sizes(&pool_sizes)
-        .max_sets(descriptor_count);
+        .max_sets(descriptor_count)
+        .flags(vk::DescriptorPoolCreateFlags::FREE_DESCRIPTOR_SET);
 
     unsafe { device.create_descriptor_pool(&create_info, None).unwrap() }
 }
@@ -331,7 +276,8 @@ fn create_pipeline(
     create_renderer_pipeline::<QuadVertex>(
         context,
         RendererPipelineParameters {
-            shader_name: "postprocess",
+            vertex_shader_name: "fullscreen",
+            fragment_shader_name: "final",
             vertex_shader_specialization: None,
             fragment_shader_specialization: Some(&specialization_info),
             swapchain_properties,

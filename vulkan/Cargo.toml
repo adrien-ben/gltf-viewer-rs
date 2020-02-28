@@ -10,7 +10,7 @@ edition = "2018"
 log = "0.4"
 env_logger = "0.7.1"
 ash = "0.29.0"
-winit = "0.19.4"
+winit = "0.19.5"
 
 imgui = "0.3"
 imgui-rs-vulkan-renderer = "0.3"

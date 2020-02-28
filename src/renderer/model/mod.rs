@@ -25,6 +25,12 @@ pub struct ModelData {
     light_buffers: Vec<Buffer>,
 }
 
+pub struct ModelRenderer {
+    pub data: ModelData,
+    pub gbuffer_pass: GBufferPass,
+    pub light_pass: LightPass,
+}
+
 impl ModelData {
     pub fn create(
         context: Arc<Context>,
@@ -117,10 +123,4 @@ impl ModelData {
             }
         }
     }
-}
-
-pub struct ModelRenderer {
-    pub data: ModelData,
-    pub gbuffer_pass: GBufferPass,
-    pub light_pass: LightPass,
 }

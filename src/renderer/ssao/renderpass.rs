@@ -2,39 +2,32 @@ use std::sync::Arc;
 use vulkan::ash::{version::DeviceV1_0, vk, Device};
 use vulkan::{Context, Image, ImageParameters, Texture};
 
-const NORMALS_FORMAT: vk::Format = vk::Format::R32G32B32A32_SFLOAT;
+const AO_MAP_FORMAT: vk::Format = vk::Format::R8G8B8A8_UNORM;
 
 pub struct RenderPass {
     context: Arc<Context>,
     extent: vk::Extent2D,
-    normals_attachment: Texture,
-    depth_attachment: Texture,
+    ao_attachment: Texture,
     render_pass: vk::RenderPass,
 }
 
 impl RenderPass {
-    pub fn create(context: Arc<Context>, extent: vk::Extent2D, depth_format: vk::Format) -> Self {
-        let normals_attachment = create_normals_texture(&context, NORMALS_FORMAT, extent);
-        let depth_attachment = create_depth_texture(&context, depth_format, extent);
-        let render_pass = create_render_pass(context.device(), depth_format);
+    pub fn create(context: Arc<Context>, extent: vk::Extent2D) -> Self {
+        let ao_attachment = create_ao_texture(&context, AO_MAP_FORMAT, extent);
+        let render_pass = create_render_pass(context.device());
 
         Self {
             context,
             extent,
-            normals_attachment,
-            depth_attachment,
+            ao_attachment,
             render_pass,
         }
     }
 }
 
 impl RenderPass {
-    pub fn get_normals_attachment(&self) -> &Texture {
-        &self.normals_attachment
-    }
-
-    pub fn get_depth_attachment(&self) -> &Texture {
-        &self.depth_attachment
+    pub fn get_ao_attachment(&self) -> &Texture {
+        &self.ao_attachment
     }
 
     pub fn get_render_pass(&self) -> vk::RenderPass {
@@ -44,11 +37,7 @@ impl RenderPass {
 
 impl RenderPass {
     pub fn create_framebuffer(&self) -> vk::Framebuffer {
-        let attachments = {
-            let normals = self.normals_attachment.view;
-            let depth = self.depth_attachment.view;
-            [normals, depth]
-        };
+        let attachments = [self.ao_attachment.view];
 
         let framebuffer_info = vk::FramebufferCreateInfo::builder()
             .render_pass(self.render_pass)
@@ -75,26 +64,15 @@ impl Drop for RenderPass {
     }
 }
 
-fn create_render_pass(device: &Device, depth_format: vk::Format) -> vk::RenderPass {
+fn create_render_pass(device: &Device) -> vk::RenderPass {
     // Attachements
     let attachment_descs = [
         // Color attachment
         vk::AttachmentDescription::builder()
-            .format(NORMALS_FORMAT)
+            .format(AO_MAP_FORMAT)
             .samples(vk::SampleCountFlags::TYPE_1)
             .load_op(vk::AttachmentLoadOp::CLEAR)
             .store_op(vk::AttachmentStoreOp::STORE)
-            .initial_layout(vk::ImageLayout::UNDEFINED)
-            .final_layout(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL)
-            .build(),
-        // Depth attachment
-        vk::AttachmentDescription::builder()
-            .format(depth_format)
-            .samples(vk::SampleCountFlags::TYPE_1)
-            .load_op(vk::AttachmentLoadOp::CLEAR)
-            .store_op(vk::AttachmentStoreOp::STORE)
-            .stencil_load_op(vk::AttachmentLoadOp::DONT_CARE)
-            .stencil_store_op(vk::AttachmentStoreOp::DONT_CARE)
             .initial_layout(vk::ImageLayout::UNDEFINED)
             .final_layout(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL)
             .build(),
@@ -105,16 +83,11 @@ fn create_render_pass(device: &Device, depth_format: vk::Format) -> vk::RenderPa
         .layout(vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL)
         .build()];
 
-    let depth_attachment_ref = vk::AttachmentReference::builder()
-        .attachment(1)
-        .layout(vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL);
-
     // Subpasses
     let subpasses = {
         let subpass_desc = vk::SubpassDescription::builder()
             .pipeline_bind_point(vk::PipelineBindPoint::GRAPHICS)
-            .color_attachments(&render_color_attachment_refs)
-            .depth_stencil_attachment(&depth_attachment_ref);
+            .color_attachments(&render_color_attachment_refs);
         [subpass_desc.build()]
     };
 
@@ -152,11 +125,7 @@ fn create_render_pass(device: &Device, depth_format: vk::Format) -> vk::RenderPa
     }
 }
 
-fn create_normals_texture(
-    context: &Arc<Context>,
-    format: vk::Format,
-    extent: vk::Extent2D,
-) -> Texture {
+fn create_ao_texture(context: &Arc<Context>, format: vk::Format, extent: vk::Extent2D) -> Texture {
     let image = Image::create(
         Arc::clone(context),
         ImageParameters {
@@ -175,39 +144,6 @@ fn create_normals_texture(
     );
 
     let view = image.create_view(vk::ImageViewType::TYPE_2D, vk::ImageAspectFlags::COLOR);
-    let sampler = Some(create_sampler(context));
-
-    Texture::new(Arc::clone(context), image, view, sampler)
-}
-
-/// Create the depth buffer texture (image, memory and view).
-///
-/// This function also transitions the image to be ready to be used
-/// as a depth/stencil attachement.
-fn create_depth_texture(
-    context: &Arc<Context>,
-    format: vk::Format,
-    extent: vk::Extent2D,
-) -> Texture {
-    let image = Image::create(
-        Arc::clone(context),
-        ImageParameters {
-            mem_properties: vk::MemoryPropertyFlags::DEVICE_LOCAL,
-            extent,
-            sample_count: vk::SampleCountFlags::TYPE_1,
-            format,
-            usage: vk::ImageUsageFlags::DEPTH_STENCIL_ATTACHMENT | vk::ImageUsageFlags::SAMPLED,
-            ..Default::default()
-        },
-    );
-
-    image.transition_image_layout(
-        vk::ImageLayout::UNDEFINED,
-        vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
-    );
-
-    let view = image.create_view(vk::ImageViewType::TYPE_2D, vk::ImageAspectFlags::DEPTH);
-
     let sampler = Some(create_sampler(context));
 
     Texture::new(Arc::clone(context), image, view, sampler)

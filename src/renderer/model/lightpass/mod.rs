@@ -15,6 +15,7 @@ use vulkan::{Buffer, Context, SwapchainProperties, Texture as VulkanTexture};
 const DYNAMIC_DATA_SET_INDEX: u32 = 0;
 const STATIC_DATA_SET_INDEX: u32 = 1;
 const PER_PRIMITIVE_DATA_SET_INDEX: u32 = 2;
+const INPUT_SET_INDEX: u32 = 3;
 
 const CAMERA_UBO_BINDING: u32 = 0;
 const LIGHT_UBO_BINDING: u32 = 1;
@@ -28,6 +29,7 @@ const NORMALS_SAMPLER_BINDING: u32 = 8;
 const MATERIAL_SAMPLER_BINDING: u32 = 9;
 const OCCLUSION_SAMPLER_BINDING: u32 = 10;
 const EMISSIVE_SAMPLER_BINDING: u32 = 11;
+const AO_MAP_SAMPLER_BINDING: u32 = 12;
 
 pub struct LightPass {
     context: Arc<Context>,
@@ -89,6 +91,7 @@ impl LightPass {
         camera_buffers: &[Buffer],
         swapchain_props: SwapchainProperties,
         environment: &Environment,
+        ao_map: &VulkanTexture,
         msaa_samples: vk::SampleCountFlags,
         render_pass: &LightRenderPass,
         output_mode: OutputMode,
@@ -110,8 +113,10 @@ impl LightPass {
                 light_buffers: &model_data.light_buffers,
                 dummy_texture: &dummy_texture,
                 environment,
+
                 model: &model_rc.borrow(),
             },
+            ao_map,
         );
 
         let pipeline_layout = create_pipeline_layout(context.device(), &descriptors);
@@ -160,6 +165,20 @@ impl LightPass {
             opaque_unculled_pipeline,
             transparent_pipeline,
         }
+    }
+
+    pub fn set_ao_map(&mut self, ao_map: &VulkanTexture) {
+        unsafe {
+            self.context
+                .device()
+                .free_descriptor_sets(self.descriptors.pool, &[self.descriptors.input_set]);
+        }
+        self.descriptors.input_set = create_input_descriptor_set(
+            &self.context,
+            self.descriptors.pool,
+            self.descriptors.input_layout,
+            ao_map,
+        );
     }
 
     pub fn rebuild_pipelines(
@@ -256,6 +275,18 @@ impl LightPass {
             )
         };
 
+        // Bind input data
+        unsafe {
+            device.cmd_bind_descriptor_sets(
+                command_buffer,
+                vk::PipelineBindPoint::GRAPHICS,
+                self.pipeline_layout,
+                INPUT_SET_INDEX,
+                &[self.descriptors.input_set],
+                &[],
+            )
+        };
+
         // Draw opaque primitives
         register_model_draw_commands(
             &self.context,
@@ -341,6 +372,8 @@ pub struct Descriptors {
     static_data_set: vk::DescriptorSet,
     per_primitive_layout: vk::DescriptorSetLayout,
     per_primitive_sets: Vec<vk::DescriptorSet>,
+    input_layout: vk::DescriptorSetLayout,
+    input_set: vk::DescriptorSet,
 }
 
 impl Drop for Descriptors {
@@ -348,6 +381,7 @@ impl Drop for Descriptors {
         let device = self.context.device();
         unsafe {
             device.destroy_descriptor_pool(self.pool, None);
+            device.destroy_descriptor_set_layout(self.input_layout, None);
             device.destroy_descriptor_set_layout(self.dynamic_data_layout, None);
             device.destroy_descriptor_set_layout(self.static_data_layout, None);
             device.destroy_descriptor_set_layout(self.per_primitive_layout, None);
@@ -355,7 +389,11 @@ impl Drop for Descriptors {
     }
 }
 
-fn create_descriptors(context: &Arc<Context>, resources: DescriptorsResources) -> Descriptors {
+fn create_descriptors(
+    context: &Arc<Context>,
+    resources: DescriptorsResources,
+    ao_map: &VulkanTexture,
+) -> Descriptors {
     let pool = create_descriptor_pool(context.device(), resources);
 
     let dynamic_data_layout = create_dynamic_data_descriptor_set_layout(context.device());
@@ -370,6 +408,9 @@ fn create_descriptors(context: &Arc<Context>, resources: DescriptorsResources) -
     let per_primitive_sets =
         create_per_primitive_descriptor_sets(context, pool, per_primitive_layout, resources);
 
+    let input_layout = create_input_descriptor_set_layout(context.device());
+    let input_set = create_input_descriptor_set(context, pool, input_layout, ao_map);
+
     Descriptors {
         context: Arc::clone(context),
         pool,
@@ -379,6 +420,8 @@ fn create_descriptors(context: &Arc<Context>, resources: DescriptorsResources) -
         static_data_set,
         per_primitive_layout,
         per_primitive_sets,
+        input_layout,
+        input_set,
     }
 }
 
@@ -386,6 +429,10 @@ fn create_descriptor_pool(
     device: &Device,
     descriptors_resources: DescriptorsResources,
 ) -> vk::DescriptorPool {
+    const GLOBAL_TEXTURES_COUNT: u32 = 4; // irradiance, prefiltered, brdf lut, ao
+    const STATIC_SETS_COUNT: u32 = 1;
+    const INPUT_SETS_COUNT: u32 = 1;
+
     let descriptor_count = descriptors_resources.camera_buffers.len() as u32;
     let primitive_count = descriptors_resources.model.primitive_count() as u32;
     let textures_desc_count = primitive_count * 5;
@@ -401,13 +448,14 @@ fn create_descriptor_pool(
         },
         vk::DescriptorPoolSize {
             ty: vk::DescriptorType::COMBINED_IMAGE_SAMPLER,
-            descriptor_count: textures_desc_count + 3,
+            descriptor_count: textures_desc_count + GLOBAL_TEXTURES_COUNT,
         },
     ];
 
     let create_info = vk::DescriptorPoolCreateInfo::builder()
         .pool_sizes(&pool_sizes)
-        .max_sets(descriptor_count + 1 + primitive_count);
+        .max_sets(descriptor_count + STATIC_SETS_COUNT + INPUT_SETS_COUNT + primitive_count)
+        .flags(vk::DescriptorPoolCreateFlags::FREE_DESCRIPTOR_SET);
 
     unsafe { device.create_descriptor_pool(&create_info, None).unwrap() }
 }
@@ -781,6 +829,62 @@ fn create_per_primitive_descriptor_sets(
     sets
 }
 
+fn create_input_descriptor_set_layout(device: &Device) -> vk::DescriptorSetLayout {
+    let bindings = [vk::DescriptorSetLayoutBinding::builder()
+        .binding(AO_MAP_SAMPLER_BINDING)
+        .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
+        .descriptor_count(1)
+        .stage_flags(vk::ShaderStageFlags::FRAGMENT)
+        .build()];
+
+    let layout_info = vk::DescriptorSetLayoutCreateInfo::builder().bindings(&bindings);
+
+    unsafe {
+        device
+            .create_descriptor_set_layout(&layout_info, None)
+            .unwrap()
+    }
+}
+
+fn create_input_descriptor_set(
+    context: &Arc<Context>,
+    pool: vk::DescriptorPool,
+    layout: vk::DescriptorSetLayout,
+    ao_map: &VulkanTexture,
+) -> vk::DescriptorSet {
+    let layouts = [layout];
+    let allocate_info = vk::DescriptorSetAllocateInfo::builder()
+        .descriptor_pool(pool)
+        .set_layouts(&layouts);
+    let set = unsafe {
+        context
+            .device()
+            .allocate_descriptor_sets(&allocate_info)
+            .unwrap()[0]
+    };
+
+    let ao_map_info = [vk::DescriptorImageInfo::builder()
+        .image_layout(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL)
+        .image_view(ao_map.view)
+        .sampler(ao_map.sampler.unwrap())
+        .build()];
+
+    let descriptor_writes = [vk::WriteDescriptorSet::builder()
+        .dst_set(set)
+        .dst_binding(AO_MAP_SAMPLER_BINDING)
+        .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
+        .image_info(&ao_map_info)
+        .build()];
+
+    unsafe {
+        context
+            .device()
+            .update_descriptor_sets(&descriptor_writes, &[])
+    }
+
+    set
+}
+
 fn create_descriptor_image_info(
     index: Option<usize>,
     textures: &[Texture],
@@ -804,6 +908,7 @@ fn create_pipeline_layout(device: &Device, descriptors: &Descriptors) -> vk::Pip
         descriptors.dynamic_data_layout,
         descriptors.static_data_layout,
         descriptors.per_primitive_layout,
+        descriptors.input_layout,
     ];
     let push_constant_range = [vk::PushConstantRange {
         stage_flags: vk::ShaderStageFlags::FRAGMENT,
@@ -856,7 +961,8 @@ fn create_opaque_pipeline(
     create_renderer_pipeline::<ModelVertex>(
         context,
         RendererPipelineParameters {
-            shader_name: "model",
+            vertex_shader_name: "model",
+            fragment_shader_name: "model",
             vertex_shader_specialization: None,
             fragment_shader_specialization: Some(&specialization_info),
             swapchain_properties,
@@ -911,7 +1017,8 @@ fn create_transparent_pipeline(
     create_renderer_pipeline::<ModelVertex>(
         context,
         RendererPipelineParameters {
-            shader_name: "model",
+            vertex_shader_name: "model",
+            fragment_shader_name: "model",
             vertex_shader_specialization: None,
             fragment_shader_specialization: Some(&specialization_info),
             swapchain_properties,
