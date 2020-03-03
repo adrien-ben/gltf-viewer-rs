@@ -54,14 +54,15 @@ pub enum OutputMode {
     Alpha,
     TexCoord0,
     TexCoord1,
+    Ssao,
 }
 
 impl OutputMode {
-    pub fn all() -> [OutputMode; 11] {
+    pub fn all() -> [OutputMode; 12] {
         use OutputMode::*;
         [
             Final, Color, Emissive, Metallic, Specular, Roughness, Occlusion, Normal, Alpha,
-            TexCoord0, TexCoord1,
+            TexCoord0, TexCoord1, Ssao,
         ]
     }
 
@@ -79,6 +80,7 @@ impl OutputMode {
             8 => Some(Alpha),
             9 => Some(TexCoord0),
             10 => Some(TexCoord1),
+            11 => Some(Ssao),
             _ => None,
         }
     }

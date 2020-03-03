@@ -9,6 +9,25 @@ pub struct Texture {
     pub sampler: Option<vk::Sampler>,
 }
 
+#[derive(Copy, Clone, Debug)]
+pub struct SamplerParameters {
+    pub mag_filter: vk::Filter,
+    pub min_filter: vk::Filter,
+    pub anisotropy_enabled: bool,
+    pub max_anisotropy: f32,
+}
+
+impl Default for SamplerParameters {
+    fn default() -> Self {
+        Self {
+            mag_filter: vk::Filter::LINEAR,
+            min_filter: vk::Filter::LINEAR,
+            anisotropy_enabled: false,
+            max_anisotropy: 0.0,
+        }
+    }
+}
+
 impl Texture {
     pub fn new(
         context: Arc<Context>,
@@ -115,8 +134,19 @@ impl Texture {
         (texture, buffer)
     }
 
-    pub fn from_rgba_32(context: &Arc<Context>, width: u32, height: u32, data: &[f32]) -> Self {
-        let max_mip_levels = ((width.min(height) as f32).log2().floor() + 1.0) as u32;
+    pub fn from_rgba_32(
+        context: &Arc<Context>,
+        width: u32,
+        height: u32,
+        with_mipmaps: bool,
+        data: &[f32],
+        sampler_parameters: Option<SamplerParameters>,
+    ) -> Self {
+        let max_mip_levels = if with_mipmaps {
+            ((width.min(height) as f32).log2().floor() + 1.0) as u32
+        } else {
+            1
+        };
         let extent = vk::Extent2D { width, height };
         let image_size = (data.len() * size_of::<f32>()) as vk::DeviceSize;
         let device = context.device();
@@ -133,6 +163,14 @@ impl Texture {
             mem_copy(ptr, &data);
         }
 
+        let usage = if with_mipmaps {
+            vk::ImageUsageFlags::TRANSFER_SRC
+                | vk::ImageUsageFlags::TRANSFER_DST
+                | vk::ImageUsageFlags::SAMPLED
+        } else {
+            vk::ImageUsageFlags::TRANSFER_DST | vk::ImageUsageFlags::SAMPLED
+        };
+
         let image = Image::create(
             Arc::clone(context),
             ImageParameters {
@@ -140,9 +178,7 @@ impl Texture {
                 extent,
                 format: vk::Format::R32G32B32A32_SFLOAT,
                 mip_levels: max_mip_levels,
-                usage: vk::ImageUsageFlags::TRANSFER_SRC
-                    | vk::ImageUsageFlags::TRANSFER_DST
-                    | vk::ImageUsageFlags::SAMPLED,
+                usage,
                 ..Default::default()
             },
         );
@@ -157,20 +193,28 @@ impl Texture {
 
             image.copy_buffer(&buffer, extent);
 
-            image.generate_mipmaps(extent);
+            if with_mipmaps {
+                image.generate_mipmaps(extent);
+            } else {
+                image.transition_image_layout(
+                    vk::ImageLayout::TRANSFER_DST_OPTIMAL,
+                    vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
+                );
+            }
         }
 
         let image_view = image.create_view(vk::ImageViewType::TYPE_2D, vk::ImageAspectFlags::COLOR);
 
         let sampler = {
+            let params = sampler_parameters.unwrap_or_default();
             let sampler_info = vk::SamplerCreateInfo::builder()
-                .mag_filter(vk::Filter::LINEAR)
-                .min_filter(vk::Filter::LINEAR)
+                .mag_filter(params.mag_filter)
+                .min_filter(params.min_filter)
                 .address_mode_u(vk::SamplerAddressMode::REPEAT)
                 .address_mode_v(vk::SamplerAddressMode::REPEAT)
                 .address_mode_w(vk::SamplerAddressMode::REPEAT)
-                .anisotropy_enable(true)
-                .max_anisotropy(16.0)
+                .anisotropy_enable(params.anisotropy_enabled)
+                .max_anisotropy(params.max_anisotropy)
                 .border_color(vk::BorderColor::FLOAT_OPAQUE_BLACK)
                 .unnormalized_coordinates(false)
                 .compare_enable(false)

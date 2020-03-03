@@ -17,6 +17,7 @@ const uint OUTPUT_MODE_NORMAL = 7;
 const uint OUTPUT_MODE_ALPHA = 8;
 const uint OUTPUT_MODE_UVS0 = 9;
 const uint OUTPUT_MODE_UVS1 = 10;
+const uint OUTPUT_MODE_SSAO = 11;
 
 const vec3 DIELECTRIC_SPECULAR = vec3(0.04);
 const vec3 BLACK = vec3(0.0);
@@ -105,6 +106,7 @@ layout(push_constant) uniform MaterialUniform {
 layout(binding = 0, set = 0) uniform Camera {
     mat4 view;
     mat4 proj;
+    mat4 invertedProj;
     vec3 eye;    
 } cameraUBO;
 layout(binding = 1, set = 0) uniform Lights {
@@ -227,8 +229,14 @@ vec3 getNormal(TextureChannels textureChannels) {
     return normal;
 }
 
+vec3 sampleAOMap() {
+    ivec2 size = textureSize(aoMapSampler, 0);
+    vec2 coords = vec2(float(gl_FragCoord.x) / float(size.x), float(gl_FragCoord.y) / float(size.y));
+    return texture(aoMapSampler, coords).rgb;
+}
+
 vec3 occludeAmbientColor(vec3 ambientColor, TextureChannels textureChannels) {
-    float aoMapSample = texture(aoMapSampler, gl_FragCoord.xy).r;
+    float aoMapSample = sampleAOMap().r;
     float sampledOcclusion = 0.0;
     if (textureChannels.occlusion != NO_TEXTURE_ID) {
         vec2 uv = getUV(textureChannels.occlusion);
@@ -483,5 +491,7 @@ void main() {
         outColor = vec4(vec2(oTexcoords0), 0.0, 1.0);
     } else if (OUTPUT_MODE == OUTPUT_MODE_UVS1) {
         outColor = vec4(vec2(oTexcoords1), 0.0, 1.0);
+    } else if (OUTPUT_MODE == OUTPUT_MODE_SSAO) {
+        outColor = vec4(sampleAOMap(), 1.0);
     }
 }

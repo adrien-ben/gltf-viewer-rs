@@ -486,14 +486,14 @@ impl Viewer {
 
     fn has_window_been_minimized(&self) -> bool {
         match self.window.get_inner_size() {
-            Some(LogicalSize { width, height}) if width == 0.0 || height == 0.0 => true,
+            Some(LogicalSize { width, height }) if width == 0.0 || height == 0.0 => true,
             _ => false,
         }
     }
 
     fn has_window_been_maximized(&self) -> bool {
         match self.window.get_inner_size() {
-            Some(LogicalSize { width, height}) if width > 0.0 && height > 0.0 => true,
+            Some(LogicalSize { width, height }) if width > 0.0 && height > 0.0 => true,
             _ => false,
         }
     }

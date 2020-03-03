@@ -10,7 +10,7 @@ use std::sync::Arc;
 use std::time::Instant;
 use util::*;
 use vulkan::ash::{version::DeviceV1_0, vk};
-use vulkan::{Context, Texture};
+use vulkan::{Context, SamplerParameters, Texture};
 
 pub(crate) fn create_skybox_cubemap<P: AsRef<Path>>(
     context: &Arc<Context>,
@@ -25,7 +25,12 @@ pub(crate) fn create_skybox_cubemap<P: AsRef<Path>>(
 
     let cubemap_format = vk::Format::R16G16B16A16_SFLOAT;
 
-    let texture = Texture::from_rgba_32(context, w, h, &data);
+    let sampler_parameters = SamplerParameters {
+        anisotropy_enabled: true,
+        max_anisotropy: 16.0,
+        ..Default::default()
+    };
+    let texture = Texture::from_rgba_32(context, w, h, true, &data, Some(sampler_parameters));
     let cubemap = Texture::create_renderable_cubemap(context, size, mip_levels, cubemap_format);
 
     let skybox_model = SkyboxModel::new(context);

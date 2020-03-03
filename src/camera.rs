@@ -87,11 +87,22 @@ impl Default for Camera {
 pub struct CameraUBO {
     view: Matrix4<f32>,
     proj: Matrix4<f32>,
+    inverted_proj: Matrix4<f32>,
     eye: Point3<f32>,
 }
 
 impl CameraUBO {
-    pub fn new(view: Matrix4<f32>, proj: Matrix4<f32>, eye: Point3<f32>) -> Self {
-        Self { view, proj, eye }
+    pub fn new(
+        view: Matrix4<f32>,
+        proj: Matrix4<f32>,
+        inverted_proj: Matrix4<f32>,
+        eye: Point3<f32>,
+    ) -> Self {
+        Self {
+            view,
+            proj,
+            inverted_proj,
+            eye,
+        }
     }
 }

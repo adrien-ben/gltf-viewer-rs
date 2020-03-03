@@ -13,6 +13,7 @@ layout(location = 7) in vec4 vColors;
 layout(binding = 0, set = 0) uniform CameraUBO {
      mat4 view;
      mat4 proj;
+     mat4 invertedProj;
      vec3 eye;
 } cameraUBO;
 
@@ -24,7 +25,7 @@ layout(binding = 2, set = 0) uniform SkinUBO {
     mat4 jointMatrices[512];
 } skin;
 
-layout(location = 0) out vec3 oNormals;
+layout(location = 0) out vec3 oViewSpaceNormal;
 
 void main() {
     mat4 world = transform.matrix;
@@ -35,6 +36,6 @@ void main() {
             + vWeights.w * skin.jointMatrices[vJoints.w];
     }
 
-    oNormals = normalize((world * vec4(vNormals, 0.0)).xyz);
+    oViewSpaceNormal = normalize((cameraUBO.view * world * vec4(vNormals, 0.0)).xyz);
     gl_Position = cameraUBO.proj * cameraUBO.view * world * vec4(vPositions, 1.0);
 }

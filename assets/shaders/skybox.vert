@@ -6,6 +6,7 @@ layout(location = 0) in vec3 vPositions;
 layout(binding = 0) uniform CameraUBO {
      mat4 view;
      mat4 proj;
+     mat4 invertedProj;
      vec3 eye;
 } cameraUBO;
 

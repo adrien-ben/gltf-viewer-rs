@@ -13,6 +13,7 @@ layout(location = 7) in vec4 vColors;
 layout(binding = 0, set = 0) uniform CameraUBO {
      mat4 view;
      mat4 proj;
+     mat4 invertedProj;
      vec3 eye;
 } cameraUBO;
 
