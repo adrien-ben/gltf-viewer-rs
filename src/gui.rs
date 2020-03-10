@@ -139,6 +139,22 @@ impl Gui {
         }
     }
 
+    pub fn get_new_ssao_kernel_size(&self) -> Option<u32> {
+        if self.state.ssao_kernel_size_changed {
+            Some(self.state.ssao_kernel_size)
+        } else {
+            None
+        }
+    }
+
+    pub fn get_new_ssao_radius(&self) -> Option<f32> {
+        if self.state.ssao_radius_changed {
+            Some(self.state.ssao_radius)
+        } else {
+            None
+        }
+    }
+
     pub fn get_new_renderer_tone_map_mode(&self) -> Option<ToneMapMode> {
         if self.state.tone_map_mode_changed {
             ToneMapMode::from_value(self.state.selected_tone_map_mode)
@@ -520,6 +536,22 @@ fn build_renderer_settings_window(ui: &Ui, state: &mut State) {
                     Slider::new(im_str!("Emissive intensity"), 1.0f32..=50.0)
                         .build(ui, &mut state.emissive_intensity);
                 state.emissive_intensity_changed = emissive_intensity_changed;
+
+                let ssao_kernel_32_selected =
+                    ui.radio_button_bool(im_str!("32"), state.ssao_kernel_size == 32);
+                if ssao_kernel_32_selected {
+                    state.ssao_kernel_size = 32;
+                }
+                let ssao_kernel_64_selected =
+                    ui.radio_button_bool(im_str!("64"), state.ssao_kernel_size == 64);
+                if ssao_kernel_64_selected {
+                    state.ssao_kernel_size = 64;
+                }
+                state.ssao_kernel_size_changed = ssao_kernel_32_selected || ssao_kernel_64_selected;
+
+                let ssao_radius_changed = Slider::new(im_str!("SSAO Radius"), 0.01f32..=1.0)
+                    .build(ui, &mut state.ssao_radius);
+                state.ssao_radius_changed = ssao_radius_changed;
             }
 
             {
@@ -575,6 +607,10 @@ struct State {
     tone_map_mode_changed: bool,
     emissive_intensity: f32,
     emissive_intensity_changed: bool,
+    ssao_radius: f32,
+    ssao_radius_changed: bool,
+    ssao_kernel_size: u32,
+    ssao_kernel_size_changed: bool,
 
     hovered: bool,
 }
@@ -589,6 +625,8 @@ impl State {
             selected_output_mode: self.selected_output_mode,
             selected_tone_map_mode: self.selected_tone_map_mode,
             emissive_intensity: self.emissive_intensity,
+            ssao_radius: self.ssao_radius,
+            ssao_kernel_size: self.ssao_kernel_size,
             ..Default::default()
         }
     }
@@ -618,6 +656,10 @@ impl Default for State {
             tone_map_mode_changed: false,
             emissive_intensity: 1.0,
             emissive_intensity_changed: false,
+            ssao_radius: 0.5,
+            ssao_radius_changed: false,
+            ssao_kernel_size: 32,
+            ssao_kernel_size_changed: false,
 
             hovered: false,
         }

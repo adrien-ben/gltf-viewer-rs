@@ -4,7 +4,7 @@
 layout(location = 0) in vec2 vPos;
 layout(location = 1) in vec2 vCoords;
 
-layout(binding = 4, set = 1) uniform CameraUBO {
+layout(binding = 4, set = 2) uniform CameraUBO {
      mat4 view;
      mat4 proj;
      mat4 invertedProj;

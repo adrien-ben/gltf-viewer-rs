@@ -16,11 +16,11 @@ layout(binding = 0, set = 0) uniform sampler2D normalsSampler;
 layout(binding = 1, set = 0) uniform sampler2D depthSampler;
 layout(binding = 2, set = 0) uniform sampler2D noiseSampler;
 
-layout(binding = 3, set = 0) uniform SSAOKernel {
+layout(binding = 3, set = 1) uniform SSAOKernel {
 	vec4 samples[SSAO_KERNEL_SIZE];
 } ssaoKernel;
 
-layout(binding = 4, set = 1) uniform CameraUBO {
+layout(binding = 4, set = 2) uniform CameraUBO {
      mat4 view;
      mat4 proj;
      mat4 invertedProj;

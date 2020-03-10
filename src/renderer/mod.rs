@@ -27,6 +27,9 @@ use std::rc::Rc;
 use std::sync::Arc;
 use vulkan::*;
 
+const DEFAULT_SSAO_KERNEL_SIZE: u32 = 32;
+const DEFAULT_SSAO_RADIUS: f32 = 0.5;
+
 // TODO: at some point I'll need to put vulkan's render passes and frame buffers into the pass structure
 // TODO: try and remember why I did not
 pub struct Renderer {
@@ -102,6 +105,8 @@ impl Renderer {
             gbuffer_render_pass.get_normals_attachment(),
             gbuffer_render_pass.get_depth_attachment(),
             &camera_uniform_buffers,
+            DEFAULT_SSAO_KERNEL_SIZE,
+            DEFAULT_SSAO_RADIUS,
         );
 
         let quad_model = QuadModel::new(&context);
@@ -502,6 +507,18 @@ impl Renderer {
                 self.emissive_intensity,
             );
         }
+    }
+
+    pub fn set_ssao_kernel_size(&mut self, size: u32) {
+        self.ssao_pass.set_ssao_kernel_size(size);
+        self.ssao_pass
+            .rebuild_pipelines(self.swapchain_properties, &self.ssao_render_pass);
+    }
+
+    pub fn set_ssao_radius(&mut self, radius: f32) {
+        self.ssao_pass.set_ssao_radius(radius);
+        self.ssao_pass
+            .rebuild_pipelines(self.swapchain_properties, &self.ssao_render_pass);
     }
 
     pub fn update_ubos(&mut self, frame_index: usize, camera: Camera) {

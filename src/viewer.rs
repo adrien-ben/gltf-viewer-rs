@@ -301,6 +301,14 @@ impl Viewer {
             self.context.graphics_queue_wait_idle();
             self.renderer.set_emissive_intensity(emissive_intensity);
         }
+        if let Some(ssao_kernel_size) = self.gui.get_new_ssao_kernel_size() {
+            self.context.graphics_queue_wait_idle();
+            self.renderer.set_ssao_kernel_size(ssao_kernel_size);
+        }
+        if let Some(ssao_radius) = self.gui.get_new_ssao_radius() {
+            self.context.graphics_queue_wait_idle();
+            self.renderer.set_ssao_radius(ssao_radius);
+        }
         if let Some(tone_map_mode) = self.gui.get_new_renderer_tone_map_mode() {
             self.context.graphics_queue_wait_idle();
             self.renderer
