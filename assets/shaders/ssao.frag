@@ -5,7 +5,7 @@ layout (constant_id = 0) const int SSAO_KERNEL_SIZE = 64;
 layout (constant_id = 1) const float SSAO_RADIUS = 0.2;
 
 const float NEAR_CLIP = 0.01;
-const float FAR_CLIP = 10.0;
+const float FAR_CLIP = 100.0;
 const float PROJ_A = FAR_CLIP / (FAR_CLIP - NEAR_CLIP);
 const float PROJ_B = (-FAR_CLIP * NEAR_CLIP) / (FAR_CLIP - NEAR_CLIP);
 
@@ -46,7 +46,7 @@ void main() {
     ivec2 noiseSize = textureSize(noiseSampler, 0);
     ivec2 screenSize = textureSize(depthSampler, 0);
     vec2 noiseScale = vec2(float(screenSize.x) / float(noiseSize.x), float(screenSize.y) / float(noiseSize.y));
-    vec3 randomVec = texture(noiseSampler, oCoords * noiseScale).xyz * 2.0 - 1.0;
+    vec3 randomVec = texture(noiseSampler, oCoords * noiseScale).xyz;
 
     // View space TBN matrix
     vec3 tangent   = normalize(randomVec - normal * dot(randomVec, normal));

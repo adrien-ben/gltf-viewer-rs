@@ -2,7 +2,7 @@ use crate::controls::*;
 use math::cgmath::{InnerSpace, Matrix4, Point3, Vector3};
 use math::clamp;
 
-const MIN_ORBITAL_CAMERA_DISTANCE: f32 = 0.05;
+const MIN_ORBITAL_CAMERA_DISTANCE: f32 = 0.5;
 const TARGET_MOVEMENT_SPEED: f32 = 0.003;
 
 #[derive(Clone, Copy)]
@@ -76,7 +76,7 @@ impl Default for Camera {
         Camera {
             theta: 0.0_f32.to_radians(),
             phi: 90.0_f32.to_radians(),
-            r: 1.0,
+            r: 10.0,
             target: Point3::new(0.0, 0.0, 0.0),
         }
     }

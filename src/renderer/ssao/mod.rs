@@ -66,18 +66,17 @@ impl SSAOPass {
                 noise.extend_from_slice(&v);
             });
 
-            let sampler_parameters = SamplerParameters {
-                mag_filter: vk::Filter::NEAREST,
-                min_filter: vk::Filter::NEAREST,
-                ..Default::default()
-            };
             Texture::from_rgba_32(
                 &context,
                 NOISE_SIZE,
                 NOISE_SIZE,
                 false,
                 &noise,
-                Some(sampler_parameters),
+                Some(SamplerParameters {
+                    mag_filter: vk::Filter::NEAREST,
+                    min_filter: vk::Filter::NEAREST,
+                    ..Default::default()
+                }),
             )
         };
 
