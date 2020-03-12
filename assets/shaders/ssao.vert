@@ -16,6 +16,6 @@ layout(location = 1) out vec3 oViewRay;
 
 void main() {
     oCoords = vCoords;
-    oViewRay = normalize((cameraUBO.invertedProj * vec4(vPos.x, vPos.y, 0.0, 1.0))).xyz;
+    oViewRay = (cameraUBO.invertedProj * vec4(vPos.x, vPos.y, 0.0, 1.0)).xyz;
     gl_Position = vec4(vPos.x, vPos.y, 0.0, 1.0);
 }

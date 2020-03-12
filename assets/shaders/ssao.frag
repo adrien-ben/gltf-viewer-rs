@@ -36,8 +36,7 @@ float linearDepth(vec2 uv) {
 
 void main() {
     // View-space position
-    vec3 viewRay = normalize(oViewRay);
-    vec3 position = viewRay * linearDepth(oCoords);
+    vec3 position = oViewRay * linearDepth(oCoords);
 
     // View-space normal
     vec3 normal = normalize(texture(normalsSampler, oCoords).xyz * 2.0 - 1.0);
