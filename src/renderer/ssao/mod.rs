@@ -608,8 +608,12 @@ fn create_pipeline(
     ssao_radius: f32,
     ssao_strength: f32,
 ) -> vk::Pipeline {
-    let (specialization_info, _map_entries, _data) =
-        create_ssao_frag_shader_specialization(kernel_size, ssao_radius, ssao_strength);
+    let (specialization_info, _map_entries, _data) = create_ssao_frag_shader_specialization(
+        kernel_size,
+        ssao_radius,
+        ssao_strength,
+        swapchain_properties.extent,
+    );
 
     let depth_stencil_info = vk::PipelineDepthStencilStateCreateInfo::builder()
         .depth_test_enable(false)
@@ -657,6 +661,7 @@ fn create_ssao_frag_shader_specialization(
     saao_samples_count: u32,
     ssao_radius: f32,
     ssao_strength: f32,
+    extent: vk::Extent2D,
 ) -> (
     vk::SpecializationInfo,
     Vec<vk::SpecializationMapEntry>,
@@ -678,8 +683,26 @@ fn create_ssao_frag_shader_specialization(
         // Strength
         vk::SpecializationMapEntry {
             constant_id: 2,
-            offset: (size_of::<u32>() + size_of::<f32>()) as _,
+            offset: (2 * size_of::<u32>()) as _,
             size: size_of::<f32>(),
+        },
+        // Noise texture size
+        vk::SpecializationMapEntry {
+            constant_id: 3,
+            offset: (3 * size_of::<u32>()) as _,
+            size: size_of::<u32>(),
+        },
+        // SSAO Width
+        vk::SpecializationMapEntry {
+            constant_id: 4,
+            offset: (4 * size_of::<u32>()) as _,
+            size: size_of::<u32>(),
+        },
+        // SSAO Height
+        vk::SpecializationMapEntry {
+            constant_id: 5,
+            offset: (5 * size_of::<u32>()) as _,
+            size: size_of::<u32>(),
         },
     ];
 
@@ -687,6 +710,9 @@ fn create_ssao_frag_shader_specialization(
     data.extend_from_slice(unsafe { any_as_u8_slice(&saao_samples_count) });
     data.extend_from_slice(unsafe { any_as_u8_slice(&ssao_radius) });
     data.extend_from_slice(unsafe { any_as_u8_slice(&ssao_strength) });
+    data.extend_from_slice(unsafe { any_as_u8_slice(&NOISE_SIZE) });
+    data.extend_from_slice(unsafe { any_as_u8_slice(&extent.width) });
+    data.extend_from_slice(unsafe { any_as_u8_slice(&extent.height) });
 
     let specialization_info = vk::SpecializationInfo::builder()
         .map_entries(&map_entries)

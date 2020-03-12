@@ -107,7 +107,9 @@ layout(binding = 0, set = 0) uniform Camera {
     mat4 view;
     mat4 proj;
     mat4 invertedProj;
-    vec3 eye;    
+    vec4 eye;
+    float zNear;
+    float zFar;
 } cameraUBO;
 layout(binding = 1, set = 0) uniform Lights {
     Light lights[LIGHT_COUNT + 1];
@@ -447,7 +449,7 @@ void main() {
     vec3 emissive = getEmissiveColor(textureChannels);
 
     vec3 n = getNormal(textureChannels);
-    vec3 v = normalize(cameraUBO.eye - oPositions);
+    vec3 v = normalize(cameraUBO.eye.xyz - oPositions);
 
     vec3 color = vec3(0.0);
 

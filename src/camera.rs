@@ -89,6 +89,9 @@ pub struct CameraUBO {
     proj: Matrix4<f32>,
     inverted_proj: Matrix4<f32>,
     eye: Point3<f32>,
+    padding: f32,
+    z_near: f32,
+    z_far: f32,
 }
 
 impl CameraUBO {
@@ -97,12 +100,17 @@ impl CameraUBO {
         proj: Matrix4<f32>,
         inverted_proj: Matrix4<f32>,
         eye: Point3<f32>,
+        z_near: f32,
+        z_far: f32,
     ) -> Self {
         Self {
             view,
             proj,
             inverted_proj,
             eye,
+            padding: 0.0,
+            z_near,
+            z_far,
         }
     }
 }

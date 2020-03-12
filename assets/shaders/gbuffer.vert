@@ -11,10 +11,12 @@ layout(location = 6) in uvec4 vJoints;
 layout(location = 7) in vec4 vColors;
 
 layout(binding = 0, set = 0) uniform CameraUBO {
-     mat4 view;
-     mat4 proj;
-     mat4 invertedProj;
-     vec3 eye;
+    mat4 view;
+    mat4 proj;
+    mat4 invertedProj;
+    vec4 eye;
+    float zNear;
+    float zFar;
 } cameraUBO;
 
 layout(binding = 1, set = 0) uniform TransformUBO {

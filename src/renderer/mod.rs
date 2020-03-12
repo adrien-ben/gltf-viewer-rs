@@ -533,14 +533,17 @@ impl Renderer {
                 camera.target(),
                 Vector3::new(0.0, 1.0, 0.0),
             );
-            let proj = math::perspective(Deg(45.0), aspect, 0.01, 100.0);
+
+            const Z_NEAR: f32 = 0.01;
+            const Z_FAR: f32 = 100.0;
+            let proj = math::perspective(Deg(45.0), aspect, Z_NEAR, Z_FAR);
             let inverted_proj = proj.invert().unwrap();
 
-            let ubos = [CameraUBO::new(view, proj, inverted_proj, camera.position())];
+            let ubo = CameraUBO::new(view, proj, inverted_proj, camera.position(), Z_NEAR, Z_FAR);
             let buffer = &mut self.camera_uniform_buffers[frame_index];
             unsafe {
                 let data_ptr = buffer.map_memory();
-                mem_copy(data_ptr, &ubos);
+                mem_copy(data_ptr, &[ubo]);
             }
         }
 

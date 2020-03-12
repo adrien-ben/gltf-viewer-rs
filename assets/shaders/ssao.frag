@@ -1,14 +1,12 @@
 #version 450
 #extension GL_ARB_separate_shader_objects : enable
 
-layout (constant_id = 0) const int SSAO_KERNEL_SIZE = 32;
+layout (constant_id = 0) const uint SSAO_KERNEL_SIZE = 32;
 layout (constant_id = 1) const float SSAO_RADIUS = 0.2;
 layout (constant_id = 2) const float SSAO_STRENGTH = 1.0;
-
-const float NEAR_CLIP = 0.01;
-const float FAR_CLIP = 100.0;
-const float PROJ_A = FAR_CLIP / (FAR_CLIP - NEAR_CLIP);
-const float PROJ_B = (-FAR_CLIP * NEAR_CLIP) / (FAR_CLIP - NEAR_CLIP);
+layout (constant_id = 3) const uint NOISE_TEXTURE_SIZE = 8;
+layout (constant_id = 4) const uint SSAO_WIDTH = 1024;
+layout (constant_id = 5) const uint SSAO_HEIGHT = 768;
 
 layout(location = 0) in vec2 oCoords;
 layout(location = 1) in vec3 oViewRay;
@@ -22,16 +20,21 @@ layout(binding = 3, set = 1) uniform SSAOKernel {
 } ssaoKernel;
 
 layout(binding = 4, set = 2) uniform CameraUBO {
-     mat4 view;
-     mat4 proj;
-     mat4 invertedProj;
-     vec3 eye;
+    mat4 view;
+    mat4 proj;
+    mat4 invertedProj;
+    vec4 eye;
+    float zNear;
+    float zFar;
 } cameraUBO;
 
 layout(location = 0) out vec4 finalColor;
 
 float linearDepth(vec2 uv) {
-    return PROJ_B / (texture(depthSampler, uv).r - PROJ_A);
+    float near = cameraUBO.zNear;
+    float far = cameraUBO.zFar;
+    float depth = texture(depthSampler, uv).r;
+    return (near * far) / (far + depth * (near - far));
 }
 
 void main() {
@@ -42,10 +45,7 @@ void main() {
     vec3 normal = normalize(texture(normalsSampler, oCoords).xyz * 2.0 - 1.0);
 
     // View space random vector
-    // TODO: compute these on the cpu and pass them as specialized constants
-    ivec2 noiseSize = textureSize(noiseSampler, 0);
-    ivec2 screenSize = textureSize(depthSampler, 0);
-    vec2 noiseScale = vec2(float(screenSize.x) / float(noiseSize.x), float(screenSize.y) / float(noiseSize.y));
+    vec2 noiseScale = vec2(float(SSAO_WIDTH) / float(NOISE_TEXTURE_SIZE), float(SSAO_HEIGHT) / float(NOISE_TEXTURE_SIZE));
     vec3 randomVec = texture(noiseSampler, oCoords * noiseScale).xyz;
 
     // View space TBN matrix
