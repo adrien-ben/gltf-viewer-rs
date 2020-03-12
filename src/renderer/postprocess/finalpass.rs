@@ -1,4 +1,4 @@
-use super::{create_renderer_pipeline, fullscreen::*, RendererPipelineParameters};
+use crate::renderer::{create_renderer_pipeline, fullscreen::*, RendererPipelineParameters};
 use std::{mem::size_of, sync::Arc};
 use vulkan::ash::{version::DeviceV1_0, vk, Device};
 use vulkan::{Context, Descriptors, SimpleRenderPass, SwapchainProperties, Texture};

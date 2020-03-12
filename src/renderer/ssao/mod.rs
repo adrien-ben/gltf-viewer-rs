@@ -1,6 +1,6 @@
 mod renderpass;
 
-use super::fullscreen::{QuadModel, QuadVertex};
+use super::fullscreen::*;
 use super::{create_renderer_pipeline, RendererPipelineParameters};
 use math::{
     cgmath::{InnerSpace, Vector3, Vector4},

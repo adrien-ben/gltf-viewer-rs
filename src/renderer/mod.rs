@@ -10,7 +10,7 @@ use self::fullscreen::QuadModel;
 use self::model::gbufferpass::{GBufferPass, GBufferRenderPass};
 pub use self::model::lightpass::{LightPass, LightRenderPass, OutputMode};
 use self::model::{ModelData, ModelRenderer};
-use self::ssao::{SSAOPass, SSAORenderPass};
+use self::ssao::*;
 pub use self::{postprocess::*, skybox::*};
 
 use super::camera::{Camera, CameraUBO};
@@ -45,6 +45,9 @@ pub struct Renderer {
     ssao_render_pass: SSAORenderPass,
     ssao_framebuffer: vk::Framebuffer,
     ssao_pass: SSAOPass,
+    ssao_blur_render_pass: BlurRenderPass,
+    ssao_blur_framebuffer: vk::Framebuffer,
+    ssao_blur_pass: BlurPass,
     quad_model: QuadModel,
     final_pass: FinalPass,
     gui_renderer: GuiRenderer,
@@ -104,6 +107,16 @@ impl Renderer {
             &camera_uniform_buffers,
         );
 
+        let ssao_blur_render_pass =
+            BlurRenderPass::create(Arc::clone(&context), swapchain_properties.extent);
+        let ssao_blur_framebuffer = ssao_blur_render_pass.create_framebuffer();
+        let ssao_blur_pass = BlurPass::create(
+            Arc::clone(&context),
+            swapchain_properties,
+            &ssao_blur_render_pass,
+            ssao_render_pass.get_ao_attachment(),
+        );
+
         let quad_model = QuadModel::new(&context);
 
         let tone_map_mode = ToneMapMode::Default;
@@ -141,6 +154,9 @@ impl Renderer {
             ssao_render_pass,
             ssao_framebuffer,
             ssao_pass,
+            ssao_blur_render_pass,
+            ssao_blur_framebuffer,
+            ssao_blur_pass,
             quad_model,
             final_pass,
             gui_renderer,
@@ -253,6 +269,38 @@ impl Renderer {
             unsafe { device.cmd_end_render_pass(command_buffer) };
         }
 
+        // SSAO Blur Pass
+        {
+            {
+                let clear_values = [vk::ClearValue {
+                    color: vk::ClearColorValue {
+                        float32: [0.0, 0.0, 0.0, 1.0],
+                    },
+                }];
+                let render_pass_begin_info = vk::RenderPassBeginInfo::builder()
+                    .render_pass(self.ssao_blur_render_pass.get_render_pass())
+                    .framebuffer(self.ssao_blur_framebuffer)
+                    .render_area(vk::Rect2D {
+                        offset: vk::Offset2D { x: 0, y: 0 },
+                        extent: swapchain_properties.extent,
+                    })
+                    .clear_values(&clear_values);
+
+                unsafe {
+                    device.cmd_begin_render_pass(
+                        command_buffer,
+                        &render_pass_begin_info,
+                        vk::SubpassContents::INLINE,
+                    )
+                };
+            }
+
+            self.ssao_blur_pass
+                .cmd_draw(command_buffer, &self.quad_model);
+
+            unsafe { device.cmd_end_render_pass(command_buffer) };
+        }
+
         // Scene Pass
         {
             {
@@ -359,7 +407,7 @@ impl Renderer {
             &self.camera_uniform_buffers,
             self.swapchain_properties,
             &self.environment,
-            &self.ssao_render_pass.get_ao_attachment(),
+            self.ssao_blur_render_pass.get_output_attachment(),
             self.msaa_samples,
             &self.light_render_pass,
             self.output_mode,
@@ -382,6 +430,9 @@ impl Renderer {
             self.context
                 .device()
                 .destroy_framebuffer(self.lightpass_framebuffer, None);
+            self.context
+                .device()
+                .destroy_framebuffer(self.ssao_blur_framebuffer, None);
             self.context
                 .device()
                 .destroy_framebuffer(self.ssao_framebuffer, None);
@@ -409,6 +460,15 @@ impl Renderer {
         self.ssao_pass
             .rebuild_pipelines(swapchain_properties, &ssao_render_pass);
 
+        // SSAO Blur
+        let ssao_blur_render_pass =
+            BlurRenderPass::create(Arc::clone(&self.context), swapchain_properties.extent);
+        let ssao_blur_framebuffer = ssao_blur_render_pass.create_framebuffer();
+        self.ssao_blur_pass
+            .set_input_image(ssao_render_pass.get_ao_attachment());
+        self.ssao_blur_pass
+            .rebuild_pipelines(swapchain_properties, &ssao_blur_render_pass);
+
         // Light
         let light_render_pass = LightRenderPass::create(
             Arc::clone(&self.context),
@@ -433,7 +493,7 @@ impl Renderer {
 
             renderer
                 .light_pass
-                .set_ao_map(ssao_render_pass.get_ao_attachment());
+                .set_ao_map(ssao_blur_render_pass.get_output_attachment());
 
             renderer.light_pass.rebuild_pipelines(
                 &renderer.data,
@@ -459,6 +519,8 @@ impl Renderer {
         self.gbuffer_framebuffer = gbuffer_framebuffer;
         self.ssao_render_pass = ssao_render_pass;
         self.ssao_framebuffer = ssao_framebuffer;
+        self.ssao_blur_render_pass = ssao_blur_render_pass;
+        self.ssao_blur_framebuffer = ssao_blur_framebuffer;
         self.light_render_pass = light_render_pass;
         self.lightpass_framebuffer = lightpass_framebuffer;
     }
@@ -563,6 +625,9 @@ impl Drop for Renderer {
             self.context
                 .device()
                 .destroy_framebuffer(self.lightpass_framebuffer, None);
+            self.context
+                .device()
+                .destroy_framebuffer(self.ssao_blur_framebuffer, None);
             self.context
                 .device()
                 .destroy_framebuffer(self.ssao_framebuffer, None);
