@@ -2,7 +2,7 @@ use std::sync::Arc;
 use vulkan::ash::{version::DeviceV1_0, vk, Device};
 use vulkan::{Context, Image, ImageParameters, Texture};
 
-const AO_MAP_FORMAT: vk::Format = vk::Format::R8G8B8A8_UNORM;
+const AO_MAP_FORMAT: vk::Format = vk::Format::R8_UNORM;
 
 pub struct RenderPass {
     context: Arc<Context>,

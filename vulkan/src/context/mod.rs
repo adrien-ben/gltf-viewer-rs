@@ -1,7 +1,6 @@
 mod shared;
 
 use self::shared::*;
-use crate::extensions::*;
 use ash::{extensions::khr::Surface, version::DeviceV1_0, vk, Device, Instance};
 use imgui_rs_vulkan_renderer::RendererVkContext;
 use std::sync::Arc;
@@ -102,10 +101,6 @@ impl Context {
 
     pub fn present_queue(&self) -> vk::Queue {
         self.shared_context.present_queue()
-    }
-
-    pub fn create_renderpass_2(&self) -> &CreateRenderpass2 {
-        &self.shared_context.create_renderpass_2()
     }
 
     pub fn general_command_pool(&self) -> vk::CommandPool {

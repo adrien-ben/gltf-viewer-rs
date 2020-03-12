@@ -231,14 +231,14 @@ vec3 getNormal(TextureChannels textureChannels) {
     return normal;
 }
 
-vec3 sampleAOMap() {
+float sampleAOMap() {
     ivec2 size = textureSize(aoMapSampler, 0);
     vec2 coords = vec2(float(gl_FragCoord.x) / float(size.x), float(gl_FragCoord.y) / float(size.y));
-    return texture(aoMapSampler, coords).rgb;
+    return texture(aoMapSampler, coords).r;
 }
 
 vec3 occludeAmbientColor(vec3 ambientColor, TextureChannels textureChannels) {
-    float aoMapSample = sampleAOMap().r;
+    float aoMapSample = sampleAOMap();
     float sampledOcclusion = 0.0;
     if (textureChannels.occlusion != NO_TEXTURE_ID) {
         vec2 uv = getUV(textureChannels.occlusion);
@@ -494,6 +494,7 @@ void main() {
     } else if (OUTPUT_MODE == OUTPUT_MODE_UVS1) {
         outColor = vec4(vec2(oTexcoords1), 0.0, 1.0);
     } else if (OUTPUT_MODE == OUTPUT_MODE_SSAO) {
-        outColor = vec4(sampleAOMap(), 1.0);
+        float ao = sampleAOMap();
+        outColor = vec4(vec3(ao), 1.0);
     }
 }

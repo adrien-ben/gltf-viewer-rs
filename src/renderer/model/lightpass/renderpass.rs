@@ -1,6 +1,5 @@
 use std::sync::Arc;
-use vulkan::ash::{version::DeviceV1_0, vk};
-use vulkan::CreateRenderpass2;
+use vulkan::ash::{version::DeviceV1_0, vk, Device};
 use vulkan::{Context, Image, ImageParameters, Texture};
 
 const COLOR_FORMAT: vk::Format = vk::Format::R32G32B32A32_SFLOAT;
@@ -10,13 +9,8 @@ pub struct RenderPass {
     extent: vk::Extent2D,
     color_attachment: Texture,
     depth_attachment: Texture,
-    resolve_attachments: Option<ResolveAttachments>,
+    color_resolve_attachment: Option<Texture>,
     render_pass: vk::RenderPass,
-}
-
-struct ResolveAttachments {
-    color_resolve: Texture,
-    depth_resolve: Texture,
 }
 
 impl RenderPass {
@@ -28,26 +22,18 @@ impl RenderPass {
     ) -> Self {
         let color_attachment = create_color_texture(&context, COLOR_FORMAT, extent, msaa_samples);
         let depth_attachment = create_depth_texture(&context, depth_format, extent, msaa_samples);
-        let resolve_attachments = match msaa_samples {
+        let color_resolve_attachment = match msaa_samples {
             vk::SampleCountFlags::TYPE_1 => None,
-            _ => {
-                let color_resolve = create_color_resolve_texture(&context, COLOR_FORMAT, extent);
-                let depth_resolve = create_depth_resolve_texture(&context, depth_format, extent);
-                Some(ResolveAttachments {
-                    color_resolve,
-                    depth_resolve,
-                })
-            }
+            _ => Some(create_color_resolve_texture(&context, COLOR_FORMAT, extent)),
         };
-        let render_pass =
-            create_render_pass(context.create_renderpass_2(), depth_format, msaa_samples);
+        let render_pass = create_render_pass(context.device(), depth_format, msaa_samples);
 
         Self {
             context,
             extent,
             color_attachment,
             depth_attachment,
-            resolve_attachments,
+            color_resolve_attachment,
             render_pass,
         }
     }
@@ -55,15 +41,9 @@ impl RenderPass {
 
 impl RenderPass {
     pub fn get_color_attachment(&self) -> &Texture {
-        self.resolve_attachments
+        self.color_resolve_attachment
             .as_ref()
-            .map_or(&self.color_attachment, |a| &a.color_resolve)
-    }
-
-    pub fn _get_depth_attachment(&self) -> &Texture {
-        self.resolve_attachments
-            .as_ref()
-            .map_or(&self.depth_attachment, |a| &a.depth_resolve)
+            .map_or(&self.color_attachment, |a| &a)
     }
 
     pub fn get_render_pass(&self) -> vk::RenderPass {
@@ -76,13 +56,8 @@ impl RenderPass {
         let attachments = {
             let color = self.color_attachment.view;
             let depth = self.depth_attachment.view;
-            match self.resolve_attachments.as_ref() {
-                Some(resolve) => vec![
-                    color,
-                    depth,
-                    resolve.color_resolve.view,
-                    resolve.depth_resolve.view,
-                ],
+            match self.color_resolve_attachment.as_ref() {
+                Some(color_resolve) => vec![color, depth, color_resolve.view],
                 _ => vec![color, depth],
             }
         };
@@ -113,7 +88,7 @@ impl Drop for RenderPass {
 }
 
 fn create_render_pass(
-    create_renderpass_2: &CreateRenderpass2,
+    device: &Device,
     depth_format: vk::Format,
     msaa_samples: vk::SampleCountFlags,
 ) -> vk::RenderPass {
@@ -122,10 +97,6 @@ fn create_render_pass(
         vk::SampleCountFlags::TYPE_1 => vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
         _ => vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
     };
-    let depth_final_layout = match msaa_samples {
-        vk::SampleCountFlags::TYPE_1 => vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
-        _ => vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
-    };
 
     let color_store_op = if msaa_samples == vk::SampleCountFlags::TYPE_1 {
         vk::AttachmentStoreOp::STORE
@@ -133,15 +104,9 @@ fn create_render_pass(
         vk::AttachmentStoreOp::DONT_CARE
     };
 
-    let depth_store_op = if msaa_samples == vk::SampleCountFlags::TYPE_1 {
-        vk::AttachmentStoreOp::STORE
-    } else {
-        vk::AttachmentStoreOp::DONT_CARE
-    };
-
     let mut attachment_descs = vec![
         // Color attachment
-        vk::AttachmentDescription2KHR::builder()
+        vk::AttachmentDescription::builder()
             .format(COLOR_FORMAT)
             .samples(msaa_samples)
             .load_op(vk::AttachmentLoadOp::CLEAR)
@@ -150,34 +115,22 @@ fn create_render_pass(
             .final_layout(color_final_layout)
             .build(),
         // Depth attachment
-        vk::AttachmentDescription2KHR::builder()
+        vk::AttachmentDescription::builder()
             .format(depth_format)
             .samples(msaa_samples)
             .load_op(vk::AttachmentLoadOp::CLEAR)
-            .store_op(depth_store_op)
+            .store_op(vk::AttachmentStoreOp::DONT_CARE)
             .stencil_load_op(vk::AttachmentLoadOp::DONT_CARE)
             .stencil_store_op(vk::AttachmentStoreOp::DONT_CARE)
             .initial_layout(vk::ImageLayout::UNDEFINED)
-            .final_layout(depth_final_layout)
+            .final_layout(vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL)
             .build(),
     ];
     if msaa_samples != vk::SampleCountFlags::TYPE_1 {
         // Resolve attachment
         attachment_descs.push(
-            vk::AttachmentDescription2KHR::builder()
+            vk::AttachmentDescription::builder()
                 .format(COLOR_FORMAT)
-                .samples(vk::SampleCountFlags::TYPE_1)
-                .load_op(vk::AttachmentLoadOp::DONT_CARE)
-                .store_op(vk::AttachmentStoreOp::STORE)
-                .stencil_load_op(vk::AttachmentLoadOp::DONT_CARE)
-                .stencil_store_op(vk::AttachmentStoreOp::DONT_CARE)
-                .initial_layout(vk::ImageLayout::UNDEFINED)
-                .final_layout(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL)
-                .build(),
-        );
-        attachment_descs.push(
-            vk::AttachmentDescription2KHR::builder()
-                .format(depth_format)
                 .samples(vk::SampleCountFlags::TYPE_1)
                 .load_op(vk::AttachmentLoadOp::DONT_CARE)
                 .store_op(vk::AttachmentStoreOp::STORE)
@@ -189,46 +142,35 @@ fn create_render_pass(
         );
     }
 
-    let render_color_attachment_refs = [vk::AttachmentReference2KHR::builder()
+    let render_color_attachment_refs = [vk::AttachmentReference::builder()
         .attachment(0)
         .layout(vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL)
         .build()];
 
-    let depth_attachment_ref = vk::AttachmentReference2KHR::builder()
+    let depth_attachment_ref = vk::AttachmentReference::builder()
         .attachment(1)
         .layout(vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL);
 
-    let resolve_attachment_refs = [vk::AttachmentReference2KHR::builder()
+    let resolve_attachment_refs = [vk::AttachmentReference::builder()
         .attachment(2)
         .layout(vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL)
         .build()];
 
-    let depth_resolve_attachment_ref = vk::AttachmentReference2KHR::builder()
-        .attachment(3)
-        .layout(vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL);
-
-    let mut depth_stencil_resolve = vk::SubpassDescriptionDepthStencilResolveKHR::builder()
-        .depth_resolve_mode(vk::ResolveModeFlagsKHR::AVERAGE)
-        .stencil_resolve_mode(vk::ResolveModeFlagsKHR::NONE)
-        .depth_stencil_resolve_attachment(&depth_resolve_attachment_ref);
-
     // Subpasses
     let subpasses = {
-        let mut subpass_desc = vk::SubpassDescription2KHR::builder()
+        let mut subpass_desc = vk::SubpassDescription::builder()
             .pipeline_bind_point(vk::PipelineBindPoint::GRAPHICS)
             .color_attachments(&render_color_attachment_refs)
             .depth_stencil_attachment(&depth_attachment_ref);
         if msaa_samples != vk::SampleCountFlags::TYPE_1 {
-            subpass_desc = subpass_desc
-                .resolve_attachments(&resolve_attachment_refs)
-                .push_next(&mut depth_stencil_resolve);
+            subpass_desc = subpass_desc.resolve_attachments(&resolve_attachment_refs)
         }
         [subpass_desc.build()]
     };
 
     // Dependencies
     let subpass_deps = [
-        vk::SubpassDependency2KHR::builder()
+        vk::SubpassDependency::builder()
             .src_subpass(vk::SUBPASS_EXTERNAL)
             .dst_subpass(0)
             .src_stage_mask(vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT)
@@ -238,7 +180,7 @@ fn create_render_pass(
                 vk::AccessFlags::COLOR_ATTACHMENT_READ | vk::AccessFlags::COLOR_ATTACHMENT_WRITE,
             )
             .build(),
-        vk::SubpassDependency2KHR::builder()
+        vk::SubpassDependency::builder()
             .src_subpass(0)
             .dst_subpass(vk::SUBPASS_EXTERNAL)
             .src_stage_mask(vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT)
@@ -248,14 +190,14 @@ fn create_render_pass(
             .build(),
     ];
 
-    let render_pass_info = vk::RenderPassCreateInfo2KHR::builder()
+    let render_pass_info = vk::RenderPassCreateInfo::builder()
         .attachments(&attachment_descs)
         .subpasses(&subpasses)
         .dependencies(&subpass_deps);
 
     unsafe {
-        create_renderpass_2
-            .create_render_pass2_khr(&render_pass_info, None)
+        device
+            .create_render_pass(&render_pass_info, None)
             .expect("Failed to create render pass")
     }
 }
@@ -397,32 +339,4 @@ fn create_sampler(context: &Arc<Context>) -> vk::Sampler {
             .create_sampler(&sampler_info, None)
             .expect("Failed to create sampler")
     }
-}
-
-fn create_depth_resolve_texture(
-    context: &Arc<Context>,
-    format: vk::Format,
-    extent: vk::Extent2D,
-) -> Texture {
-    let image = Image::create(
-        Arc::clone(context),
-        ImageParameters {
-            mem_properties: vk::MemoryPropertyFlags::DEVICE_LOCAL,
-            extent,
-            format,
-            usage: vk::ImageUsageFlags::DEPTH_STENCIL_ATTACHMENT | vk::ImageUsageFlags::SAMPLED,
-            ..Default::default()
-        },
-    );
-
-    image.transition_image_layout(
-        vk::ImageLayout::UNDEFINED,
-        vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
-    );
-
-    let view = image.create_view(vk::ImageViewType::TYPE_2D, vk::ImageAspectFlags::DEPTH);
-
-    let sampler = create_sampler(context);
-
-    Texture::new(Arc::clone(context), image, view, Some(sampler))
 }

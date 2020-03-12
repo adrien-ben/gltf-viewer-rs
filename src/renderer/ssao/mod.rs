@@ -18,6 +18,9 @@ use vulkan::{
 };
 
 const NOISE_SIZE: u32 = 8;
+const DEFAULT_KERNEL_SIZE: u32 = 32;
+const DEFAULT_RADIUS: f32 = 0.15;
+const DEFAULT_STRENGTH: f32 = 1.0;
 
 const STATIC_SET_INDEX: u32 = 0;
 const DYNAMIC_SET_INDEX: u32 = 1;
@@ -27,10 +30,6 @@ const DEPTH_SAMPLER_BINDING: u32 = 1;
 const NOISE_SAMPLER_BINDING: u32 = 2;
 const KERNEL_UBO_BINDING: u32 = 3;
 const CAMERA_UBO_BINDING: u32 = 4;
-
-const DEFAULT_KERNEL_SIZE: u32 = 32;
-const DEFAULT_RADIUS: f32 = 0.5;
-const DEFAULT_STRENGTH: f32 = 1.0;
 
 pub struct SSAOPass {
     context: Arc<Context>,
@@ -608,12 +607,8 @@ fn create_pipeline(
     ssao_radius: f32,
     ssao_strength: f32,
 ) -> vk::Pipeline {
-    let (specialization_info, _map_entries, _data) = create_ssao_frag_shader_specialization(
-        kernel_size,
-        ssao_radius,
-        ssao_strength,
-        swapchain_properties.extent,
-    );
+    let (specialization_info, _map_entries, _data) =
+        create_ssao_frag_shader_specialization(kernel_size, ssao_radius, ssao_strength);
 
     let depth_stencil_info = vk::PipelineDepthStencilStateCreateInfo::builder()
         .depth_test_enable(false)
@@ -661,7 +656,6 @@ fn create_ssao_frag_shader_specialization(
     saao_samples_count: u32,
     ssao_radius: f32,
     ssao_strength: f32,
-    extent: vk::Extent2D,
 ) -> (
     vk::SpecializationInfo,
     Vec<vk::SpecializationMapEntry>,
@@ -686,33 +680,12 @@ fn create_ssao_frag_shader_specialization(
             offset: (2 * size_of::<u32>()) as _,
             size: size_of::<f32>(),
         },
-        // Noise texture size
-        vk::SpecializationMapEntry {
-            constant_id: 3,
-            offset: (3 * size_of::<u32>()) as _,
-            size: size_of::<u32>(),
-        },
-        // SSAO Width
-        vk::SpecializationMapEntry {
-            constant_id: 4,
-            offset: (4 * size_of::<u32>()) as _,
-            size: size_of::<u32>(),
-        },
-        // SSAO Height
-        vk::SpecializationMapEntry {
-            constant_id: 5,
-            offset: (5 * size_of::<u32>()) as _,
-            size: size_of::<u32>(),
-        },
     ];
 
     let mut data = Vec::new();
     data.extend_from_slice(unsafe { any_as_u8_slice(&saao_samples_count) });
     data.extend_from_slice(unsafe { any_as_u8_slice(&ssao_radius) });
     data.extend_from_slice(unsafe { any_as_u8_slice(&ssao_strength) });
-    data.extend_from_slice(unsafe { any_as_u8_slice(&NOISE_SIZE) });
-    data.extend_from_slice(unsafe { any_as_u8_slice(&extent.width) });
-    data.extend_from_slice(unsafe { any_as_u8_slice(&extent.height) });
 
     let specialization_info = vk::SpecializationInfo::builder()
         .map_entries(&map_entries)

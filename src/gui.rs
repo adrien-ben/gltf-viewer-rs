@@ -674,7 +674,7 @@ impl Default for State {
             tone_map_mode_changed: false,
             emissive_intensity: 1.0,
             emissive_intensity_changed: false,
-            ssao_radius: 0.5,
+            ssao_radius: 0.15,
             ssao_radius_changed: false,
             ssao_strength: 1.0,
             ssao_strength_changed: false,

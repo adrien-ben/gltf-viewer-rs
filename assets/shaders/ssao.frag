@@ -2,11 +2,8 @@
 #extension GL_ARB_separate_shader_objects : enable
 
 layout (constant_id = 0) const uint SSAO_KERNEL_SIZE = 32;
-layout (constant_id = 1) const float SSAO_RADIUS = 0.2;
+layout (constant_id = 1) const float SSAO_RADIUS = 0.15;
 layout (constant_id = 2) const float SSAO_STRENGTH = 1.0;
-layout (constant_id = 3) const uint NOISE_TEXTURE_SIZE = 8;
-layout (constant_id = 4) const uint SSAO_WIDTH = 1024;
-layout (constant_id = 5) const uint SSAO_HEIGHT = 768;
 
 layout(location = 0) in vec2 oCoords;
 layout(location = 1) in vec3 oViewRay;
@@ -28,7 +25,7 @@ layout(binding = 4, set = 2) uniform CameraUBO {
     float zFar;
 } cameraUBO;
 
-layout(location = 0) out vec4 finalColor;
+layout(location = 0) out float finalColor;
 
 float linearDepth(vec2 uv) {
     float near = cameraUBO.zNear;
@@ -45,7 +42,9 @@ void main() {
     vec3 normal = normalize(texture(normalsSampler, oCoords).xyz * 2.0 - 1.0);
 
     // View space random vector
-    vec2 noiseScale = vec2(float(SSAO_WIDTH) / float(NOISE_TEXTURE_SIZE), float(SSAO_HEIGHT) / float(NOISE_TEXTURE_SIZE));
+    ivec2 ssaoSize = textureSize(depthSampler, 0);
+    ivec2 noiseSize = textureSize(noiseSampler, 0);
+    vec2 noiseScale = vec2(float(ssaoSize.x) / float(noiseSize.x), float(ssaoSize.y) / float(noiseSize.y));
     vec3 randomVec = texture(noiseSampler, oCoords * noiseScale).xyz;
 
     // View space TBN matrix
@@ -75,5 +74,5 @@ void main() {
     }
     occlusion = 1.0 - (occlusion / float(SSAO_KERNEL_SIZE));
     
-    finalColor = vec4(vec3(pow(occlusion, SSAO_STRENGTH)), 1.0);
+    finalColor = pow(occlusion, SSAO_STRENGTH);
 }

@@ -41,8 +41,8 @@ using [Ash][2]. It runs on Window, Linux and MacOS.
 - [ ] Post processing
   - [x] Gamma correction
   - [x] Tone mapping
+  - [x] Ambient occlusion
   - [ ] Bloom
-  - [ ] Ambient occlusion
   - [ ] Depth of field
 - [x] Imgui integration
   - [x] Model description
@@ -53,8 +53,6 @@ using [Ash][2]. It runs on Window, Linux and MacOS.
 ## Requirements
 
 - Vulkan 1.0
-- Vulkan device extensions
-  - VK_KHR_create_renderpass2
 
 > You can check your Vulkan feature set using Sascha Willems' [Vulkan Caps Viewer][6]
 
