@@ -28,6 +28,10 @@ const NOISE_SAMPLER_BINDING: u32 = 2;
 const KERNEL_UBO_BINDING: u32 = 3;
 const CAMERA_UBO_BINDING: u32 = 4;
 
+const DEFAULT_KERNEL_SIZE: u32 = 32;
+const DEFAULT_RADIUS: f32 = 0.5;
+const DEFAULT_STRENGTH: f32 = 1.0;
+
 pub struct SSAOPass {
     context: Arc<Context>,
     kernel_buffer: Buffer,
@@ -37,6 +41,7 @@ pub struct SSAOPass {
     pipeline: vk::Pipeline,
     kernel_size: u32,
     ssao_radius: f32,
+    ssao_strength: f32,
 }
 
 impl SSAOPass {
@@ -47,10 +52,8 @@ impl SSAOPass {
         normals: &Texture,
         depth: &Texture,
         camera_buffers: &[Buffer],
-        kernel_size: u32,
-        ssao_radius: f32,
     ) -> Self {
-        let kernel_buffer = create_kernel_buffer(&context, kernel_size);
+        let kernel_buffer = create_kernel_buffer(&context, DEFAULT_KERNEL_SIZE);
 
         let noise_texture = {
             let size = NOISE_SIZE * NOISE_SIZE;
@@ -94,8 +97,9 @@ impl SSAOPass {
             swapchain_props,
             render_pass.get_render_pass(),
             pipeline_layout,
-            kernel_size,
-            ssao_radius,
+            DEFAULT_KERNEL_SIZE,
+            DEFAULT_RADIUS,
+            DEFAULT_STRENGTH,
         );
 
         SSAOPass {
@@ -105,8 +109,9 @@ impl SSAOPass {
             descriptors,
             pipeline_layout,
             pipeline,
-            kernel_size,
-            ssao_radius,
+            kernel_size: DEFAULT_KERNEL_SIZE,
+            ssao_radius: DEFAULT_RADIUS,
+            ssao_strength: DEFAULT_STRENGTH,
         }
     }
 }
@@ -171,6 +176,10 @@ impl SSAOPass {
         self.ssao_radius = radius;
     }
 
+    pub fn set_ssao_strength(&mut self, strength: f32) {
+        self.ssao_strength = strength;
+    }
+
     pub fn rebuild_pipelines(
         &mut self,
         swapchain_properties: SwapchainProperties,
@@ -189,6 +198,7 @@ impl SSAOPass {
             self.pipeline_layout,
             self.kernel_size,
             self.ssao_radius,
+            self.ssao_strength,
         )
     }
 
@@ -596,9 +606,10 @@ fn create_pipeline(
     layout: vk::PipelineLayout,
     kernel_size: u32,
     ssao_radius: f32,
+    ssao_strength: f32,
 ) -> vk::Pipeline {
     let (specialization_info, _map_entries, _data) =
-        create_ssao_frag_shader_specialization(kernel_size, ssao_radius);
+        create_ssao_frag_shader_specialization(kernel_size, ssao_radius, ssao_strength);
 
     let depth_stencil_info = vk::PipelineDepthStencilStateCreateInfo::builder()
         .depth_test_enable(false)
@@ -645,20 +656,29 @@ fn create_pipeline(
 fn create_ssao_frag_shader_specialization(
     saao_samples_count: u32,
     ssao_radius: f32,
+    ssao_strength: f32,
 ) -> (
     vk::SpecializationInfo,
     Vec<vk::SpecializationMapEntry>,
     Vec<u8>,
 ) {
     let map_entries = vec![
+        // Kernel size
         vk::SpecializationMapEntry {
             constant_id: 0,
             offset: 0,
             size: size_of::<u32>(),
         },
+        // Radius
         vk::SpecializationMapEntry {
             constant_id: 1,
             offset: size_of::<u32>() as _,
+            size: size_of::<f32>(),
+        },
+        // Strength
+        vk::SpecializationMapEntry {
+            constant_id: 2,
+            offset: (size_of::<u32>() + size_of::<f32>()) as _,
             size: size_of::<f32>(),
         },
     ];
@@ -666,6 +686,7 @@ fn create_ssao_frag_shader_specialization(
     let mut data = Vec::new();
     data.extend_from_slice(unsafe { any_as_u8_slice(&saao_samples_count) });
     data.extend_from_slice(unsafe { any_as_u8_slice(&ssao_radius) });
+    data.extend_from_slice(unsafe { any_as_u8_slice(&ssao_strength) });
 
     let specialization_info = vk::SpecializationInfo::builder()
         .map_entries(&map_entries)

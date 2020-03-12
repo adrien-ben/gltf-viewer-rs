@@ -155,6 +155,14 @@ impl Gui {
         }
     }
 
+    pub fn get_new_ssao_strength(&self) -> Option<f32> {
+        if self.state.ssao_strength_changed {
+            Some(self.state.ssao_strength)
+        } else {
+            None
+        }
+    }
+
     pub fn get_new_renderer_tone_map_mode(&self) -> Option<ToneMapMode> {
         if self.state.tone_map_mode_changed {
             ToneMapMode::from_value(self.state.selected_tone_map_mode)
@@ -542,16 +550,23 @@ fn build_renderer_settings_window(ui: &Ui, state: &mut State) {
                 if ssao_kernel_32_selected {
                     state.ssao_kernel_size = 32;
                 }
+                ui.same_line(0.0);
                 let ssao_kernel_64_selected =
                     ui.radio_button_bool(im_str!("64"), state.ssao_kernel_size == 64);
                 if ssao_kernel_64_selected {
                     state.ssao_kernel_size = 64;
                 }
                 state.ssao_kernel_size_changed = ssao_kernel_32_selected || ssao_kernel_64_selected;
+                ui.same_line(0.0);
+                ui.text("SSAO Kernel Samples");
 
                 let ssao_radius_changed = Slider::new(im_str!("SSAO Radius"), 0.01f32..=1.0)
                     .build(ui, &mut state.ssao_radius);
                 state.ssao_radius_changed = ssao_radius_changed;
+
+                let ssao_strength_changed = Slider::new(im_str!("SSAO Strength"), 0.5..=3.0f32)
+                    .build(ui, &mut state.ssao_strength);
+                state.ssao_strength_changed = ssao_strength_changed;
             }
 
             {
@@ -609,6 +624,8 @@ struct State {
     emissive_intensity_changed: bool,
     ssao_radius: f32,
     ssao_radius_changed: bool,
+    ssao_strength: f32,
+    ssao_strength_changed: bool,
     ssao_kernel_size: u32,
     ssao_kernel_size_changed: bool,
 
@@ -626,6 +643,7 @@ impl State {
             selected_tone_map_mode: self.selected_tone_map_mode,
             emissive_intensity: self.emissive_intensity,
             ssao_radius: self.ssao_radius,
+            ssao_strength: self.ssao_strength,
             ssao_kernel_size: self.ssao_kernel_size,
             ..Default::default()
         }
@@ -658,6 +676,8 @@ impl Default for State {
             emissive_intensity_changed: false,
             ssao_radius: 0.5,
             ssao_radius_changed: false,
+            ssao_strength: 1.0,
+            ssao_strength_changed: false,
             ssao_kernel_size: 32,
             ssao_kernel_size_changed: false,
 

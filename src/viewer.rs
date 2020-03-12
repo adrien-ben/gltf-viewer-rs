@@ -309,6 +309,10 @@ impl Viewer {
             self.context.graphics_queue_wait_idle();
             self.renderer.set_ssao_radius(ssao_radius);
         }
+        if let Some(ssao_strength) = self.gui.get_new_ssao_strength() {
+            self.context.graphics_queue_wait_idle();
+            self.renderer.set_ssao_strength(ssao_strength);
+        }
         if let Some(tone_map_mode) = self.gui.get_new_renderer_tone_map_mode() {
             self.context.graphics_queue_wait_idle();
             self.renderer

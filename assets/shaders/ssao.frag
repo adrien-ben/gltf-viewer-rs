@@ -1,8 +1,9 @@
 #version 450
 #extension GL_ARB_separate_shader_objects : enable
 
-layout (constant_id = 0) const int SSAO_KERNEL_SIZE = 64;
+layout (constant_id = 0) const int SSAO_KERNEL_SIZE = 32;
 layout (constant_id = 1) const float SSAO_RADIUS = 0.2;
+layout (constant_id = 2) const float SSAO_STRENGTH = 1.0;
 
 const float NEAR_CLIP = 0.01;
 const float FAR_CLIP = 100.0;
@@ -49,14 +50,14 @@ void main() {
     vec3 randomVec = texture(noiseSampler, oCoords * noiseScale).xyz;
 
     // View space TBN matrix
-    vec3 tangent   = normalize(randomVec - normal * dot(randomVec, normal));
+    vec3 tangent = normalize(randomVec - normal * dot(randomVec, normal));
     vec3 bitangent = cross(normal, tangent);
-    mat3 tbn       = mat3(tangent, bitangent, normal);
+    mat3 tbn = mat3(tangent, bitangent, normal);
 
     // Occlusion computation
     float occlusion = 0.0;
     const float bias = 0.01f;
-    for (int i = 0; i < SSAO_KERNEL_SIZE; ++i) {
+    for (int i = 0; i < SSAO_KERNEL_SIZE; i++) {
         // get sample position:
         vec3 kSample = tbn * ssaoKernel.samples[i].xyz;
         kSample = kSample * SSAO_RADIUS + position;
@@ -75,5 +76,5 @@ void main() {
     }
     occlusion = 1.0 - (occlusion / float(SSAO_KERNEL_SIZE));
     
-    finalColor = vec4(vec3(occlusion), 1.0);
+    finalColor = vec4(vec3(pow(occlusion, SSAO_STRENGTH)), 1.0);
 }
