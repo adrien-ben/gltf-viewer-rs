@@ -1,7 +1,7 @@
 mod renderpass;
 
 use crate::renderer::{create_renderer_pipeline, fullscreen::*, RendererPipelineParameters};
-pub use renderpass::RenderPass as BlurRenderPass;
+use renderpass::RenderPass;
 use std::sync::Arc;
 use vulkan::ash::{version::DeviceV1_0, vk, Device};
 use vulkan::{Context, Descriptors, SwapchainProperties, Texture};
@@ -9,6 +9,9 @@ use vulkan::{Context, Descriptors, SwapchainProperties, Texture};
 /// Blur pass
 pub struct BlurPass {
     context: Arc<Context>,
+    extent: vk::Extent2D,
+    render_pass: RenderPass,
+    framebuffer: vk::Framebuffer,
     descriptors: Descriptors,
     pipeline_layout: vk::PipelineLayout,
     pipeline: vk::Pipeline,
@@ -18,9 +21,11 @@ impl BlurPass {
     pub fn create(
         context: Arc<Context>,
         swapchain_props: SwapchainProperties,
-        render_pass: &BlurRenderPass,
         input_image: &Texture,
     ) -> Self {
+        let render_pass = RenderPass::create(Arc::clone(&context), swapchain_props.extent);
+        let framebuffer = render_pass.create_framebuffer();
+
         let descriptors = create_descriptors(&context, input_image);
         let pipeline_layout = create_pipeline_layout(context.device(), descriptors.layout());
         let pipeline = create_pipeline(
@@ -32,6 +37,9 @@ impl BlurPass {
 
         BlurPass {
             context,
+            extent: swapchain_props.extent,
+            render_pass,
+            framebuffer,
             descriptors,
             pipeline_layout,
             pipeline,
@@ -54,11 +62,19 @@ impl BlurPass {
         ));
     }
 
-    pub fn rebuild_pipelines(
-        &mut self,
-        swapchain_properties: SwapchainProperties,
-        render_pass: &BlurRenderPass,
-    ) {
+    pub fn set_extent(&mut self, extent: vk::Extent2D) {
+        unsafe {
+            self.context
+                .device()
+                .destroy_framebuffer(self.framebuffer, None);
+        }
+
+        self.extent = extent;
+        self.render_pass = RenderPass::create(Arc::clone(&self.context), extent);
+        self.framebuffer = self.render_pass.create_framebuffer();
+    }
+
+    pub fn rebuild_pipelines(&mut self, swapchain_properties: SwapchainProperties) {
         let device = self.context.device();
 
         unsafe {
@@ -68,13 +84,38 @@ impl BlurPass {
         self.pipeline = create_pipeline(
             &self.context,
             swapchain_properties,
-            render_pass.get_render_pass(),
+            self.render_pass.get_render_pass(),
             self.pipeline_layout,
         )
     }
 
     pub fn cmd_draw(&self, command_buffer: vk::CommandBuffer, quad_model: &QuadModel) {
         let device = self.context.device();
+
+        {
+            let clear_values = [vk::ClearValue {
+                color: vk::ClearColorValue {
+                    float32: [0.0, 0.0, 0.0, 1.0],
+                },
+            }];
+            let render_pass_begin_info = vk::RenderPassBeginInfo::builder()
+                .render_pass(self.render_pass.get_render_pass())
+                .framebuffer(self.framebuffer)
+                .render_area(vk::Rect2D {
+                    offset: vk::Offset2D { x: 0, y: 0 },
+                    extent: self.extent,
+                })
+                .clear_values(&clear_values);
+
+            unsafe {
+                device.cmd_begin_render_pass(
+                    command_buffer,
+                    &render_pass_begin_info,
+                    vk::SubpassContents::INLINE,
+                )
+            };
+        }
+
         // Bind pipeline
         unsafe {
             device.cmd_bind_pipeline(
@@ -109,6 +150,15 @@ impl BlurPass {
 
         // Draw
         unsafe { device.cmd_draw_indexed(command_buffer, 6, 1, 0, 0, 1) };
+
+        unsafe { device.cmd_end_render_pass(command_buffer) };
+    }
+}
+
+/// Getters
+impl BlurPass {
+    pub fn get_output(&self) -> &Texture {
+        self.render_pass.get_output_attachment()
     }
 }
 
@@ -116,6 +166,7 @@ impl Drop for BlurPass {
     fn drop(&mut self) {
         let device = self.context.device();
         unsafe {
+            device.destroy_framebuffer(self.framebuffer, None);
             device.destroy_pipeline(self.pipeline, None);
             device.destroy_pipeline_layout(self.pipeline_layout, None);
         }

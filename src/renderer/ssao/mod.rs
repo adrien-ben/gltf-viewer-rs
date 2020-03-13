@@ -7,7 +7,7 @@ use math::{
     lerp::Lerp,
     rand,
 };
-pub use renderpass::RenderPass as SSAORenderPass;
+use renderpass::RenderPass;
 use std::mem::size_of;
 use std::sync::Arc;
 use util::any_as_u8_slice;
@@ -33,6 +33,9 @@ const CAMERA_UBO_BINDING: u32 = 4;
 
 pub struct SSAOPass {
     context: Arc<Context>,
+    extent: vk::Extent2D,
+    render_pass: RenderPass,
+    framebuffer: vk::Framebuffer,
     kernel_buffer: Buffer,
     noise_texture: Texture,
     descriptors: Descriptors,
@@ -47,11 +50,13 @@ impl SSAOPass {
     pub fn create(
         context: Arc<Context>,
         swapchain_props: SwapchainProperties,
-        render_pass: &SSAORenderPass,
         normals: &Texture,
         depth: &Texture,
         camera_buffers: &[Buffer],
     ) -> Self {
+        let render_pass = RenderPass::create(Arc::clone(&context), swapchain_props.extent);
+        let framebuffer = render_pass.create_framebuffer();
+
         let kernel_buffer = create_kernel_buffer(&context, DEFAULT_KERNEL_SIZE);
 
         let noise_texture = {
@@ -103,6 +108,9 @@ impl SSAOPass {
 
         SSAOPass {
             context,
+            extent: swapchain_props.extent,
+            render_pass,
+            framebuffer,
             kernel_buffer,
             noise_texture,
             descriptors,
@@ -179,11 +187,19 @@ impl SSAOPass {
         self.ssao_strength = strength;
     }
 
-    pub fn rebuild_pipelines(
-        &mut self,
-        swapchain_properties: SwapchainProperties,
-        render_pass: &SSAORenderPass,
-    ) {
+    pub fn set_extent(&mut self, extent: vk::Extent2D) {
+        unsafe {
+            self.context
+                .device()
+                .destroy_framebuffer(self.framebuffer, None);
+        }
+
+        self.extent = extent;
+        self.render_pass = RenderPass::create(Arc::clone(&self.context), extent);
+        self.framebuffer = self.render_pass.create_framebuffer();
+    }
+
+    pub fn rebuild_pipelines(&mut self, swapchain_properties: SwapchainProperties) {
         let device = self.context.device();
 
         unsafe {
@@ -193,7 +209,7 @@ impl SSAOPass {
         self.pipeline = create_pipeline(
             &self.context,
             swapchain_properties,
-            render_pass.get_render_pass(),
+            self.render_pass.get_render_pass(),
             self.pipeline_layout,
             self.kernel_size,
             self.ssao_radius,
@@ -208,6 +224,31 @@ impl SSAOPass {
         frame_index: usize,
     ) {
         let device = self.context.device();
+
+        {
+            let clear_values = [vk::ClearValue {
+                color: vk::ClearColorValue {
+                    float32: [0.0, 0.0, 0.0, 1.0],
+                },
+            }];
+            let render_pass_begin_info = vk::RenderPassBeginInfo::builder()
+                .render_pass(self.render_pass.get_render_pass())
+                .framebuffer(self.framebuffer)
+                .render_area(vk::Rect2D {
+                    offset: vk::Offset2D { x: 0, y: 0 },
+                    extent: self.extent,
+                })
+                .clear_values(&clear_values);
+
+            unsafe {
+                device.cmd_begin_render_pass(
+                    command_buffer,
+                    &render_pass_begin_info,
+                    vk::SubpassContents::INLINE,
+                )
+            };
+        }
+
         // Bind pipeline
         unsafe {
             device.cmd_bind_pipeline(
@@ -266,6 +307,15 @@ impl SSAOPass {
 
         // Draw
         unsafe { device.cmd_draw_indexed(command_buffer, 6, 1, 0, 0, 1) };
+
+        unsafe { device.cmd_end_render_pass(command_buffer) };
+    }
+}
+
+/// Getters
+impl SSAOPass {
+    pub fn get_output(&self) -> &Texture {
+        self.render_pass.get_ao_attachment()
     }
 }
 
@@ -273,6 +323,7 @@ impl Drop for SSAOPass {
     fn drop(&mut self) {
         let device = self.context.device();
         unsafe {
+            device.destroy_framebuffer(self.framebuffer, None);
             device.destroy_pipeline(self.pipeline, None);
             device.destroy_pipeline_layout(self.pipeline_layout, None);
         }

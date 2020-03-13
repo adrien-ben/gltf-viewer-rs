@@ -42,11 +42,7 @@ pub struct Renderer {
     gbuffer_render_pass: GBufferRenderPass,
     gbuffer_framebuffer: vk::Framebuffer,
     model_renderer: Option<ModelRenderer>,
-    ssao_render_pass: SSAORenderPass,
-    ssao_framebuffer: vk::Framebuffer,
     ssao_pass: SSAOPass,
-    ssao_blur_render_pass: BlurRenderPass,
-    ssao_blur_framebuffer: vk::Framebuffer,
     ssao_blur_pass: BlurPass,
     quad_model: QuadModel,
     final_pass: FinalPass,
@@ -96,26 +92,18 @@ impl Renderer {
 
         let gbuffer_framebuffer = gbuffer_render_pass.create_framebuffer();
 
-        let ssao_render_pass =
-            SSAORenderPass::create(Arc::clone(&context), swapchain_properties.extent);
-        let ssao_framebuffer = ssao_render_pass.create_framebuffer();
         let ssao_pass = SSAOPass::create(
             Arc::clone(&context),
             swapchain_properties,
-            &ssao_render_pass,
             gbuffer_render_pass.get_normals_attachment(),
             gbuffer_render_pass.get_depth_attachment(),
             &camera_uniform_buffers,
         );
 
-        let ssao_blur_render_pass =
-            BlurRenderPass::create(Arc::clone(&context), swapchain_properties.extent);
-        let ssao_blur_framebuffer = ssao_blur_render_pass.create_framebuffer();
         let ssao_blur_pass = BlurPass::create(
             Arc::clone(&context),
             swapchain_properties,
-            &ssao_blur_render_pass,
-            ssao_render_pass.get_ao_attachment(),
+            ssao_pass.get_output(),
         );
 
         let quad_model = QuadModel::new(&context);
@@ -152,11 +140,7 @@ impl Renderer {
             gbuffer_render_pass,
             gbuffer_framebuffer,
             model_renderer: None,
-            ssao_render_pass,
-            ssao_framebuffer,
             ssao_pass,
-            ssao_blur_render_pass,
-            ssao_blur_framebuffer,
             ssao_blur_pass,
             quad_model,
             final_pass,
@@ -241,68 +225,12 @@ impl Renderer {
             }
 
             // SSAO Pass
-            {
-                {
-                    let clear_values = [vk::ClearValue {
-                        color: vk::ClearColorValue {
-                            float32: [0.0, 0.0, 0.0, 1.0],
-                        },
-                    }];
-                    let render_pass_begin_info = vk::RenderPassBeginInfo::builder()
-                        .render_pass(self.ssao_render_pass.get_render_pass())
-                        .framebuffer(self.ssao_framebuffer)
-                        .render_area(vk::Rect2D {
-                            offset: vk::Offset2D { x: 0, y: 0 },
-                            extent: swapchain_properties.extent,
-                        })
-                        .clear_values(&clear_values);
-
-                    unsafe {
-                        device.cmd_begin_render_pass(
-                            command_buffer,
-                            &render_pass_begin_info,
-                            vk::SubpassContents::INLINE,
-                        )
-                    };
-                }
-
-                self.ssao_pass
-                    .cmd_draw(command_buffer, &self.quad_model, frame_index);
-
-                unsafe { device.cmd_end_render_pass(command_buffer) };
-            }
+            self.ssao_pass
+                .cmd_draw(command_buffer, &self.quad_model, frame_index);
 
             // SSAO Blur Pass
-            {
-                {
-                    let clear_values = [vk::ClearValue {
-                        color: vk::ClearColorValue {
-                            float32: [0.0, 0.0, 0.0, 1.0],
-                        },
-                    }];
-                    let render_pass_begin_info = vk::RenderPassBeginInfo::builder()
-                        .render_pass(self.ssao_blur_render_pass.get_render_pass())
-                        .framebuffer(self.ssao_blur_framebuffer)
-                        .render_area(vk::Rect2D {
-                            offset: vk::Offset2D { x: 0, y: 0 },
-                            extent: swapchain_properties.extent,
-                        })
-                        .clear_values(&clear_values);
-
-                    unsafe {
-                        device.cmd_begin_render_pass(
-                            command_buffer,
-                            &render_pass_begin_info,
-                            vk::SubpassContents::INLINE,
-                        )
-                    };
-                }
-
-                self.ssao_blur_pass
-                    .cmd_draw(command_buffer, &self.quad_model);
-
-                unsafe { device.cmd_end_render_pass(command_buffer) };
-            }
+            self.ssao_blur_pass
+                .cmd_draw(command_buffer, &self.quad_model);
         }
 
         // Scene Pass
@@ -406,7 +334,7 @@ impl Renderer {
         );
 
         let ao_map = if self.ssao_enabled {
-            Some(self.ssao_blur_render_pass.get_output_attachment())
+            Some(self.ssao_blur_pass.get_output())
         } else {
             None
         };
@@ -441,12 +369,6 @@ impl Renderer {
                 .destroy_framebuffer(self.lightpass_framebuffer, None);
             self.context
                 .device()
-                .destroy_framebuffer(self.ssao_blur_framebuffer, None);
-            self.context
-                .device()
-                .destroy_framebuffer(self.ssao_framebuffer, None);
-            self.context
-                .device()
                 .destroy_framebuffer(self.gbuffer_framebuffer, None);
         }
 
@@ -459,24 +381,18 @@ impl Renderer {
         let gbuffer_framebuffer = gbuffer_render_pass.create_framebuffer();
 
         // SSAO
-        let ssao_render_pass =
-            SSAORenderPass::create(Arc::clone(&self.context), swapchain_properties.extent);
-        let ssao_framebuffer = ssao_render_pass.create_framebuffer();
+        self.ssao_pass.set_extent(swapchain_properties.extent);
         self.ssao_pass.set_inputs(
             gbuffer_render_pass.get_normals_attachment(),
             gbuffer_render_pass.get_depth_attachment(),
         );
-        self.ssao_pass
-            .rebuild_pipelines(swapchain_properties, &ssao_render_pass);
+        self.ssao_pass.rebuild_pipelines(swapchain_properties);
 
         // SSAO Blur
-        let ssao_blur_render_pass =
-            BlurRenderPass::create(Arc::clone(&self.context), swapchain_properties.extent);
-        let ssao_blur_framebuffer = ssao_blur_render_pass.create_framebuffer();
+        self.ssao_blur_pass.set_extent(swapchain_properties.extent);
         self.ssao_blur_pass
-            .set_input_image(ssao_render_pass.get_ao_attachment());
-        self.ssao_blur_pass
-            .rebuild_pipelines(swapchain_properties, &ssao_blur_render_pass);
+            .set_input_image(self.ssao_pass.get_output());
+        self.ssao_blur_pass.rebuild_pipelines(swapchain_properties);
 
         // Light
         let light_render_pass = LightRenderPass::create(
@@ -501,7 +417,7 @@ impl Renderer {
                 .rebuild_pipelines(swapchain_properties, &gbuffer_render_pass);
 
             let ao_map = if self.ssao_enabled {
-                Some(self.ssao_blur_render_pass.get_output_attachment())
+                Some(self.ssao_blur_pass.get_output())
             } else {
                 None
             };
@@ -529,10 +445,6 @@ impl Renderer {
         self.swapchain_properties = swapchain_properties;
         self.gbuffer_render_pass = gbuffer_render_pass;
         self.gbuffer_framebuffer = gbuffer_framebuffer;
-        self.ssao_render_pass = ssao_render_pass;
-        self.ssao_framebuffer = ssao_framebuffer;
-        self.ssao_blur_render_pass = ssao_blur_render_pass;
-        self.ssao_blur_framebuffer = ssao_blur_framebuffer;
         self.light_render_pass = light_render_pass;
         self.lightpass_framebuffer = lightpass_framebuffer;
     }
@@ -583,7 +495,7 @@ impl Renderer {
             self.ssao_enabled = enable;
             if let Some(renderer) = self.model_renderer.as_mut() {
                 let ao_map = if enable {
-                    Some(self.ssao_blur_render_pass.get_output_attachment())
+                    Some(self.ssao_blur_pass.get_output())
                 } else {
                     None
                 };
@@ -594,20 +506,17 @@ impl Renderer {
 
     pub fn set_ssao_kernel_size(&mut self, size: u32) {
         self.ssao_pass.set_ssao_kernel_size(size);
-        self.ssao_pass
-            .rebuild_pipelines(self.swapchain_properties, &self.ssao_render_pass);
+        self.ssao_pass.rebuild_pipelines(self.swapchain_properties);
     }
 
     pub fn set_ssao_radius(&mut self, radius: f32) {
         self.ssao_pass.set_ssao_radius(radius);
-        self.ssao_pass
-            .rebuild_pipelines(self.swapchain_properties, &self.ssao_render_pass);
+        self.ssao_pass.rebuild_pipelines(self.swapchain_properties);
     }
 
     pub fn set_ssao_strength(&mut self, strength: f32) {
         self.ssao_pass.set_ssao_strength(strength);
-        self.ssao_pass
-            .rebuild_pipelines(self.swapchain_properties, &self.ssao_render_pass);
+        self.ssao_pass.rebuild_pipelines(self.swapchain_properties);
     }
 
     pub fn update_ubos(&mut self, frame_index: usize, camera: Camera) {
@@ -651,12 +560,6 @@ impl Drop for Renderer {
             self.context
                 .device()
                 .destroy_framebuffer(self.lightpass_framebuffer, None);
-            self.context
-                .device()
-                .destroy_framebuffer(self.ssao_blur_framebuffer, None);
-            self.context
-                .device()
-                .destroy_framebuffer(self.ssao_framebuffer, None);
             self.context
                 .device()
                 .destroy_framebuffer(self.gbuffer_framebuffer, None);
