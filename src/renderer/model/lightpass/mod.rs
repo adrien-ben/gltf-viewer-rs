@@ -33,7 +33,7 @@ const AO_MAP_SAMPLER_BINDING: u32 = 12;
 
 pub struct LightPass {
     context: Arc<Context>,
-    _dummy_texture: VulkanTexture,
+    dummy_texture: VulkanTexture,
     descriptors: Descriptors,
     pipeline_layout: vk::PipelineLayout,
     opaque_pipeline: vk::Pipeline,
@@ -93,13 +93,13 @@ impl LightPass {
         camera_buffers: &[Buffer],
         swapchain_props: SwapchainProperties,
         environment: &Environment,
-        ao_map: &VulkanTexture,
+        ao_map: Option<&VulkanTexture>,
         msaa_samples: vk::SampleCountFlags,
         render_pass: &LightRenderPass,
         output_mode: OutputMode,
         emissive_intensity: f32,
     ) -> Self {
-        let dummy_texture = VulkanTexture::from_rgba(&context, 1, 1, &[0, 0, 0, 0]);
+        let dummy_texture = VulkanTexture::from_rgba(&context, 1, 1, &[std::u8::MAX; 4]);
 
         let model_rc = model_data
             .model
@@ -118,7 +118,7 @@ impl LightPass {
 
                 model: &model_rc.borrow(),
             },
-            ao_map,
+            ao_map.unwrap_or(&dummy_texture),
         );
 
         let pipeline_layout = create_pipeline_layout(context.device(), &descriptors);
@@ -160,7 +160,7 @@ impl LightPass {
 
         LightPass {
             context,
-            _dummy_texture: dummy_texture,
+            dummy_texture: dummy_texture,
             descriptors,
             pipeline_layout,
             opaque_pipeline,
@@ -169,7 +169,7 @@ impl LightPass {
         }
     }
 
-    pub fn set_ao_map(&mut self, ao_map: &VulkanTexture) {
+    pub fn set_ao_map(&mut self, ao_map: Option<&VulkanTexture>) {
         unsafe {
             self.context
                 .device()
@@ -179,7 +179,7 @@ impl LightPass {
             &self.context,
             self.descriptors.pool,
             self.descriptors.input_layout,
-            ao_map,
+            ao_map.unwrap_or(&self.dummy_texture),
         );
     }
 

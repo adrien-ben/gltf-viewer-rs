@@ -3,8 +3,11 @@ use crate::renderer::{OutputMode, ToneMapMode};
 use imgui::*;
 use imgui_winit_support::{HiDpiMode, WinitPlatform};
 use model::{metadata::*, PlaybackState};
+use std::borrow::Cow;
 use std::time::Instant;
 use vulkan::winit::{Event, Window as WinitWindow};
+
+const SSAO_KERNEL_SIZES: [u32; 4] = [16, 32, 64, 128];
 
 pub struct Gui {
     context: Context,
@@ -139,9 +142,17 @@ impl Gui {
         }
     }
 
+    pub fn get_new_ssao_enabled(&self) -> Option<bool> {
+        if self.state.ssao_enabled_changed {
+            Some(self.state.ssao_enabled)
+        } else {
+            None
+        }
+    }
+
     pub fn get_new_ssao_kernel_size(&self) -> Option<u32> {
         if self.state.ssao_kernel_size_changed {
-            Some(self.state.ssao_kernel_size)
+            Some(SSAO_KERNEL_SIZES[self.state.ssao_kernel_size_index])
         } else {
             None
         }
@@ -545,28 +556,30 @@ fn build_renderer_settings_window(ui: &Ui, state: &mut State) {
                         .build(ui, &mut state.emissive_intensity);
                 state.emissive_intensity_changed = emissive_intensity_changed;
 
-                let ssao_kernel_32_selected =
-                    ui.radio_button_bool(im_str!("32"), state.ssao_kernel_size == 32);
-                if ssao_kernel_32_selected {
-                    state.ssao_kernel_size = 32;
-                }
-                ui.same_line(0.0);
-                let ssao_kernel_64_selected =
-                    ui.radio_button_bool(im_str!("64"), state.ssao_kernel_size == 64);
-                if ssao_kernel_64_selected {
-                    state.ssao_kernel_size = 64;
-                }
-                state.ssao_kernel_size_changed = ssao_kernel_32_selected || ssao_kernel_64_selected;
-                ui.same_line(0.0);
-                ui.text("SSAO Kernel Samples");
+                state.ssao_enabled_changed =
+                    ui.checkbox(im_str!("Enable SSAO"), &mut state.ssao_enabled);
+                if state.ssao_enabled {
+                    fn kernel_display_fn<'b>(v: &'b u32) -> Cow<'b, ImStr> {
+                        Cow::Owned(im_str!("{} samples", v))
+                    }
 
-                let ssao_radius_changed = Slider::new(im_str!("SSAO Radius"), 0.01f32..=1.0)
-                    .build(ui, &mut state.ssao_radius);
-                state.ssao_radius_changed = ssao_radius_changed;
+                    let ssao_kernel_size_changed = ComboBox::new(im_str!("SSAO Kernel"))
+                        .build_simple(
+                            ui,
+                            &mut state.ssao_kernel_size_index,
+                            &SSAO_KERNEL_SIZES,
+                            &kernel_display_fn,
+                        );
+                    state.ssao_kernel_size_changed = ssao_kernel_size_changed;
 
-                let ssao_strength_changed = Slider::new(im_str!("SSAO Strength"), 0.5..=3.0f32)
-                    .build(ui, &mut state.ssao_strength);
-                state.ssao_strength_changed = ssao_strength_changed;
+                    let ssao_radius_changed = Slider::new(im_str!("SSAO Radius"), 0.01f32..=1.0)
+                        .build(ui, &mut state.ssao_radius);
+                    state.ssao_radius_changed = ssao_radius_changed;
+
+                    let ssao_strength_changed = Slider::new(im_str!("SSAO Strength"), 0.5..=5.0f32)
+                        .build(ui, &mut state.ssao_strength);
+                    state.ssao_strength_changed = ssao_strength_changed;
+                }
             }
 
             {
@@ -622,11 +635,13 @@ struct State {
     tone_map_mode_changed: bool,
     emissive_intensity: f32,
     emissive_intensity_changed: bool,
+    ssao_enabled: bool,
+    ssao_enabled_changed: bool,
     ssao_radius: f32,
     ssao_radius_changed: bool,
     ssao_strength: f32,
     ssao_strength_changed: bool,
-    ssao_kernel_size: u32,
+    ssao_kernel_size_index: usize,
     ssao_kernel_size_changed: bool,
 
     hovered: bool,
@@ -644,7 +659,8 @@ impl State {
             emissive_intensity: self.emissive_intensity,
             ssao_radius: self.ssao_radius,
             ssao_strength: self.ssao_strength,
-            ssao_kernel_size: self.ssao_kernel_size,
+            ssao_kernel_size_index: self.ssao_kernel_size_index,
+            ssao_enabled: self.ssao_enabled,
             ..Default::default()
         }
     }
@@ -674,11 +690,14 @@ impl Default for State {
             tone_map_mode_changed: false,
             emissive_intensity: 1.0,
             emissive_intensity_changed: false,
+
+            ssao_enabled: true,
+            ssao_enabled_changed: false,
             ssao_radius: 0.15,
             ssao_radius_changed: false,
             ssao_strength: 1.0,
             ssao_strength_changed: false,
-            ssao_kernel_size: 32,
+            ssao_kernel_size_index: 1,
             ssao_kernel_size_changed: false,
 
             hovered: false,

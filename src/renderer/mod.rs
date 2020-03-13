@@ -54,6 +54,7 @@ pub struct Renderer {
     output_mode: OutputMode,
     emissive_intensity: f32,
     tone_map_mode: ToneMapMode,
+    ssao_enabled: bool,
 }
 
 impl Renderer {
@@ -163,6 +164,7 @@ impl Renderer {
             output_mode,
             emissive_intensity: 1.0,
             tone_map_mode,
+            ssao_enabled: true,
         }
     }
 }
@@ -194,111 +196,113 @@ impl Renderer {
     ) {
         let device = self.context.device();
 
-        // GBuffer pass
-        {
+        if self.ssao_enabled {
+            // GBuffer pass
             {
-                let clear_values = [
-                    vk::ClearValue {
+                {
+                    let clear_values = [
+                        vk::ClearValue {
+                            color: vk::ClearColorValue {
+                                float32: [0.0, 0.0, 0.0, 1.0],
+                            },
+                        },
+                        vk::ClearValue {
+                            depth_stencil: vk::ClearDepthStencilValue {
+                                depth: 1.0,
+                                stencil: 0,
+                            },
+                        },
+                    ];
+                    let render_pass_begin_info = vk::RenderPassBeginInfo::builder()
+                        .render_pass(self.gbuffer_render_pass.get_render_pass())
+                        .framebuffer(self.gbuffer_framebuffer)
+                        .render_area(vk::Rect2D {
+                            offset: vk::Offset2D { x: 0, y: 0 },
+                            extent: swapchain_properties.extent,
+                        })
+                        .clear_values(&clear_values);
+
+                    unsafe {
+                        device.cmd_begin_render_pass(
+                            command_buffer,
+                            &render_pass_begin_info,
+                            vk::SubpassContents::INLINE,
+                        )
+                    };
+                }
+
+                if let Some(renderer) = self.model_renderer.as_ref() {
+                    renderer
+                        .gbuffer_pass
+                        .cmd_draw(command_buffer, frame_index, &renderer.data);
+                }
+
+                unsafe { device.cmd_end_render_pass(command_buffer) };
+            }
+
+            // SSAO Pass
+            {
+                {
+                    let clear_values = [vk::ClearValue {
                         color: vk::ClearColorValue {
                             float32: [0.0, 0.0, 0.0, 1.0],
                         },
-                    },
-                    vk::ClearValue {
-                        depth_stencil: vk::ClearDepthStencilValue {
-                            depth: 1.0,
-                            stencil: 0,
+                    }];
+                    let render_pass_begin_info = vk::RenderPassBeginInfo::builder()
+                        .render_pass(self.ssao_render_pass.get_render_pass())
+                        .framebuffer(self.ssao_framebuffer)
+                        .render_area(vk::Rect2D {
+                            offset: vk::Offset2D { x: 0, y: 0 },
+                            extent: swapchain_properties.extent,
+                        })
+                        .clear_values(&clear_values);
+
+                    unsafe {
+                        device.cmd_begin_render_pass(
+                            command_buffer,
+                            &render_pass_begin_info,
+                            vk::SubpassContents::INLINE,
+                        )
+                    };
+                }
+
+                self.ssao_pass
+                    .cmd_draw(command_buffer, &self.quad_model, frame_index);
+
+                unsafe { device.cmd_end_render_pass(command_buffer) };
+            }
+
+            // SSAO Blur Pass
+            {
+                {
+                    let clear_values = [vk::ClearValue {
+                        color: vk::ClearColorValue {
+                            float32: [0.0, 0.0, 0.0, 1.0],
                         },
-                    },
-                ];
-                let render_pass_begin_info = vk::RenderPassBeginInfo::builder()
-                    .render_pass(self.gbuffer_render_pass.get_render_pass())
-                    .framebuffer(self.gbuffer_framebuffer)
-                    .render_area(vk::Rect2D {
-                        offset: vk::Offset2D { x: 0, y: 0 },
-                        extent: swapchain_properties.extent,
-                    })
-                    .clear_values(&clear_values);
+                    }];
+                    let render_pass_begin_info = vk::RenderPassBeginInfo::builder()
+                        .render_pass(self.ssao_blur_render_pass.get_render_pass())
+                        .framebuffer(self.ssao_blur_framebuffer)
+                        .render_area(vk::Rect2D {
+                            offset: vk::Offset2D { x: 0, y: 0 },
+                            extent: swapchain_properties.extent,
+                        })
+                        .clear_values(&clear_values);
 
-                unsafe {
-                    device.cmd_begin_render_pass(
-                        command_buffer,
-                        &render_pass_begin_info,
-                        vk::SubpassContents::INLINE,
-                    )
-                };
+                    unsafe {
+                        device.cmd_begin_render_pass(
+                            command_buffer,
+                            &render_pass_begin_info,
+                            vk::SubpassContents::INLINE,
+                        )
+                    };
+                }
+
+                self.ssao_blur_pass
+                    .cmd_draw(command_buffer, &self.quad_model);
+
+                unsafe { device.cmd_end_render_pass(command_buffer) };
             }
-
-            if let Some(renderer) = self.model_renderer.as_ref() {
-                renderer
-                    .gbuffer_pass
-                    .cmd_draw(command_buffer, frame_index, &renderer.data);
-            }
-
-            unsafe { device.cmd_end_render_pass(command_buffer) };
-        }
-
-        // SSAO Pass
-        {
-            {
-                let clear_values = [vk::ClearValue {
-                    color: vk::ClearColorValue {
-                        float32: [0.0, 0.0, 0.0, 1.0],
-                    },
-                }];
-                let render_pass_begin_info = vk::RenderPassBeginInfo::builder()
-                    .render_pass(self.ssao_render_pass.get_render_pass())
-                    .framebuffer(self.ssao_framebuffer)
-                    .render_area(vk::Rect2D {
-                        offset: vk::Offset2D { x: 0, y: 0 },
-                        extent: swapchain_properties.extent,
-                    })
-                    .clear_values(&clear_values);
-
-                unsafe {
-                    device.cmd_begin_render_pass(
-                        command_buffer,
-                        &render_pass_begin_info,
-                        vk::SubpassContents::INLINE,
-                    )
-                };
-            }
-
-            self.ssao_pass
-                .cmd_draw(command_buffer, &self.quad_model, frame_index);
-
-            unsafe { device.cmd_end_render_pass(command_buffer) };
-        }
-
-        // SSAO Blur Pass
-        {
-            {
-                let clear_values = [vk::ClearValue {
-                    color: vk::ClearColorValue {
-                        float32: [0.0, 0.0, 0.0, 1.0],
-                    },
-                }];
-                let render_pass_begin_info = vk::RenderPassBeginInfo::builder()
-                    .render_pass(self.ssao_blur_render_pass.get_render_pass())
-                    .framebuffer(self.ssao_blur_framebuffer)
-                    .render_area(vk::Rect2D {
-                        offset: vk::Offset2D { x: 0, y: 0 },
-                        extent: swapchain_properties.extent,
-                    })
-                    .clear_values(&clear_values);
-
-                unsafe {
-                    device.cmd_begin_render_pass(
-                        command_buffer,
-                        &render_pass_begin_info,
-                        vk::SubpassContents::INLINE,
-                    )
-                };
-            }
-
-            self.ssao_blur_pass
-                .cmd_draw(command_buffer, &self.quad_model);
-
-            unsafe { device.cmd_end_render_pass(command_buffer) };
         }
 
         // Scene Pass
@@ -401,13 +405,18 @@ impl Renderer {
             &self.gbuffer_render_pass,
         );
 
+        let ao_map = if self.ssao_enabled {
+            Some(self.ssao_blur_render_pass.get_output_attachment())
+        } else {
+            None
+        };
         let light_pass = LightPass::create(
             Arc::clone(&self.context),
             &model_data,
             &self.camera_uniform_buffers,
             self.swapchain_properties,
             &self.environment,
-            self.ssao_blur_render_pass.get_output_attachment(),
+            ao_map,
             self.msaa_samples,
             &self.light_render_pass,
             self.output_mode,
@@ -491,9 +500,12 @@ impl Renderer {
                 .gbuffer_pass
                 .rebuild_pipelines(swapchain_properties, &gbuffer_render_pass);
 
-            renderer
-                .light_pass
-                .set_ao_map(ssao_blur_render_pass.get_output_attachment());
+            let ao_map = if self.ssao_enabled {
+                Some(self.ssao_blur_render_pass.get_output_attachment())
+            } else {
+                None
+            };
+            renderer.light_pass.set_ao_map(ao_map);
 
             renderer.light_pass.rebuild_pipelines(
                 &renderer.data,
@@ -563,6 +575,20 @@ impl Renderer {
                 output_mode,
                 self.emissive_intensity,
             );
+        }
+    }
+
+    pub fn enabled_ssao(&mut self, enable: bool) {
+        if self.ssao_enabled != enable {
+            self.ssao_enabled = enable;
+            if let Some(renderer) = self.model_renderer.as_mut() {
+                let ao_map = if enable {
+                    Some(self.ssao_blur_render_pass.get_output_attachment())
+                } else {
+                    None
+                };
+                renderer.light_pass.set_ao_map(ao_map);
+            }
         }
     }
 

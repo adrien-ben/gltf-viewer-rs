@@ -301,6 +301,10 @@ impl Viewer {
             self.context.graphics_queue_wait_idle();
             self.renderer.set_emissive_intensity(emissive_intensity);
         }
+        if let Some(ssao_enabled) = self.gui.get_new_ssao_enabled() {
+            self.context.graphics_queue_wait_idle();
+            self.renderer.enabled_ssao(ssao_enabled);
+        }
         if let Some(ssao_kernel_size) = self.gui.get_new_ssao_kernel_size() {
             self.context.graphics_queue_wait_idle();
             self.renderer.set_ssao_kernel_size(ssao_kernel_size);
