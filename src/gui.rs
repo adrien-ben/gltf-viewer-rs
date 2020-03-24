@@ -3,8 +3,11 @@ use crate::renderer::{OutputMode, ToneMapMode};
 use imgui::*;
 use imgui_winit_support::{HiDpiMode, WinitPlatform};
 use model::{metadata::*, PlaybackState};
+use std::borrow::Cow;
 use std::time::Instant;
 use vulkan::winit::{Event, Window as WinitWindow};
+
+const SSAO_KERNEL_SIZES: [u32; 4] = [16, 32, 64, 128];
 
 pub struct Gui {
     context: Context,
@@ -134,6 +137,38 @@ impl Gui {
     pub fn get_new_emissive_intensity(&self) -> Option<f32> {
         if self.state.emissive_intensity_changed {
             Some(self.state.emissive_intensity)
+        } else {
+            None
+        }
+    }
+
+    pub fn get_new_ssao_enabled(&self) -> Option<bool> {
+        if self.state.ssao_enabled_changed {
+            Some(self.state.ssao_enabled)
+        } else {
+            None
+        }
+    }
+
+    pub fn get_new_ssao_kernel_size(&self) -> Option<u32> {
+        if self.state.ssao_kernel_size_changed {
+            Some(SSAO_KERNEL_SIZES[self.state.ssao_kernel_size_index])
+        } else {
+            None
+        }
+    }
+
+    pub fn get_new_ssao_radius(&self) -> Option<f32> {
+        if self.state.ssao_radius_changed {
+            Some(self.state.ssao_radius)
+        } else {
+            None
+        }
+    }
+
+    pub fn get_new_ssao_strength(&self) -> Option<f32> {
+        if self.state.ssao_strength_changed {
+            Some(self.state.ssao_strength)
         } else {
             None
         }
@@ -520,6 +555,31 @@ fn build_renderer_settings_window(ui: &Ui, state: &mut State) {
                     Slider::new(im_str!("Emissive intensity"), 1.0f32..=50.0)
                         .build(ui, &mut state.emissive_intensity);
                 state.emissive_intensity_changed = emissive_intensity_changed;
+
+                state.ssao_enabled_changed =
+                    ui.checkbox(im_str!("Enable SSAO"), &mut state.ssao_enabled);
+                if state.ssao_enabled {
+                    fn kernel_display_fn(v: &u32) -> Cow<ImStr> {
+                        Cow::Owned(im_str!("{} samples", v))
+                    }
+
+                    let ssao_kernel_size_changed = ComboBox::new(im_str!("SSAO Kernel"))
+                        .build_simple(
+                            ui,
+                            &mut state.ssao_kernel_size_index,
+                            &SSAO_KERNEL_SIZES,
+                            &kernel_display_fn,
+                        );
+                    state.ssao_kernel_size_changed = ssao_kernel_size_changed;
+
+                    let ssao_radius_changed = Slider::new(im_str!("SSAO Radius"), 0.01f32..=1.0)
+                        .build(ui, &mut state.ssao_radius);
+                    state.ssao_radius_changed = ssao_radius_changed;
+
+                    let ssao_strength_changed = Slider::new(im_str!("SSAO Strength"), 0.5..=5.0f32)
+                        .build(ui, &mut state.ssao_strength);
+                    state.ssao_strength_changed = ssao_strength_changed;
+                }
             }
 
             {
@@ -575,6 +635,14 @@ struct State {
     tone_map_mode_changed: bool,
     emissive_intensity: f32,
     emissive_intensity_changed: bool,
+    ssao_enabled: bool,
+    ssao_enabled_changed: bool,
+    ssao_radius: f32,
+    ssao_radius_changed: bool,
+    ssao_strength: f32,
+    ssao_strength_changed: bool,
+    ssao_kernel_size_index: usize,
+    ssao_kernel_size_changed: bool,
 
     hovered: bool,
 }
@@ -589,6 +657,10 @@ impl State {
             selected_output_mode: self.selected_output_mode,
             selected_tone_map_mode: self.selected_tone_map_mode,
             emissive_intensity: self.emissive_intensity,
+            ssao_radius: self.ssao_radius,
+            ssao_strength: self.ssao_strength,
+            ssao_kernel_size_index: self.ssao_kernel_size_index,
+            ssao_enabled: self.ssao_enabled,
             ..Default::default()
         }
     }
@@ -618,6 +690,15 @@ impl Default for State {
             tone_map_mode_changed: false,
             emissive_intensity: 1.0,
             emissive_intensity_changed: false,
+
+            ssao_enabled: true,
+            ssao_enabled_changed: false,
+            ssao_radius: 0.15,
+            ssao_radius_changed: false,
+            ssao_strength: 1.0,
+            ssao_strength_changed: false,
+            ssao_kernel_size_index: 1,
+            ssao_kernel_size_changed: false,
 
             hovered: false,
         }

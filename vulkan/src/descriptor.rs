@@ -30,8 +30,16 @@ impl Descriptors {
         self.layout
     }
 
+    pub fn pool(&self) -> vk::DescriptorPool {
+        self.pool
+    }
+
     pub fn sets(&self) -> &[vk::DescriptorSet] {
         &self.sets
+    }
+
+    pub fn set_sets(&mut self, sets: Vec<vk::DescriptorSet>) {
+        self.sets = sets;
     }
 }
 

@@ -1,4 +1,4 @@
-use super::{create_renderer_pipeline, RenderPass, RendererPipelineParameters};
+use super::{create_renderer_pipeline, LightRenderPass, RendererPipelineParameters};
 use ash::{version::DeviceV1_0, vk, Device};
 use environment::*;
 use std::sync::Arc;
@@ -19,7 +19,7 @@ impl SkyboxRenderer {
         swapchain_props: SwapchainProperties,
         environment: &Environment,
         msaa_samples: vk::SampleCountFlags,
-        render_pass: &RenderPass,
+        render_pass: &LightRenderPass,
     ) -> Self {
         let model = SkyboxModel::new(&context);
         let descriptors = create_descriptors(&context, camera_buffers, &environment);
@@ -45,7 +45,7 @@ impl SkyboxRenderer {
         &mut self,
         swapchain_props: SwapchainProperties,
         msaa_samples: vk::SampleCountFlags,
-        render_pass: &RenderPass,
+        render_pass: &LightRenderPass,
     ) {
         let device = self.context.device();
         unsafe {
@@ -271,7 +271,8 @@ fn create_skybox_pipeline(
     create_renderer_pipeline::<SkyboxVertex>(
         context,
         RendererPipelineParameters {
-            shader_name: "skybox",
+            vertex_shader_name: "skybox",
+            fragment_shader_name: "skybox",
             vertex_shader_specialization: None,
             fragment_shader_specialization: None,
             swapchain_properties,

@@ -1,4 +1,4 @@
-use crate::{debug::*, extensions::*, surface, swapchain::*};
+use crate::{debug::*, surface, swapchain::*};
 use ash::{
     extensions::{
         ext::DebugReport,
@@ -26,7 +26,6 @@ pub struct SharedContext {
     pub queue_families_indices: QueueFamiliesIndices,
     graphics_queue: vk::Queue,
     present_queue: vk::Queue,
-    create_renderpass_2: CreateRenderpass2,
 }
 
 impl SharedContext {
@@ -54,8 +53,6 @@ impl SharedContext {
             queue_families_indices,
         );
 
-        let create_renderpass_2 = CreateRenderpass2::new(&instance, &device);
-
         Self {
             _entry: entry,
             instance,
@@ -67,7 +64,6 @@ impl SharedContext {
             queue_families_indices,
             graphics_queue,
             present_queue,
-            create_renderpass_2,
         }
     }
 }
@@ -77,10 +73,10 @@ fn create_instance(entry: &Entry, enable_debug: bool) -> Instance {
     let engine_name = CString::new("No Engine").unwrap();
     let app_info = vk::ApplicationInfo::builder()
         .application_name(app_name.as_c_str())
-        .application_version(ash::vk_make_version!(0, 1, 0))
+        .application_version(vk::make_version(0, 1, 0))
         .engine_name(engine_name.as_c_str())
-        .engine_version(ash::vk_make_version!(0, 1, 0))
-        .api_version(ash::vk_make_version!(1, 0, 0));
+        .engine_version(vk::make_version(0, 1, 0))
+        .api_version(vk::make_version(1, 0, 0));
 
     let mut extension_names = surface::required_extension_names();
     extension_names.push(vk::KhrGetPhysicalDeviceProperties2Fn::name().as_ptr());
@@ -181,13 +177,8 @@ fn check_device_extension_support(instance: &Instance, device: vk::PhysicalDevic
     true
 }
 
-fn get_required_device_extensions() -> [&'static CStr; 4] {
-    [
-        SwapchainLoader::name(),
-        CreateRenderpass2::name(),
-        vk::KhrMaintenance2Fn::name(),
-        vk::KhrMultiviewFn::name(),
-    ]
+fn get_required_device_extensions() -> [&'static CStr; 1] {
+    [SwapchainLoader::name()]
 }
 
 /// Find a queue family with at least one graphics queue and one with
@@ -216,8 +207,11 @@ fn find_queue_families(
             graphics = Some(index);
         }
 
-        let present_support =
-            unsafe { surface.get_physical_device_surface_support(device, index, surface_khr) };
+        let present_support = unsafe {
+            surface
+                .get_physical_device_surface_support(device, index, surface_khr)
+                .expect("Failed to get surface support")
+        };
         if present_support && present.is_none() {
             present = Some(index);
         }
@@ -321,10 +315,6 @@ impl SharedContext {
 
     pub fn present_queue(&self) -> vk::Queue {
         self.present_queue
-    }
-
-    pub fn create_renderpass_2(&self) -> &CreateRenderpass2 {
-        &self.create_renderpass_2
     }
 }
 

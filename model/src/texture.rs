@@ -84,33 +84,37 @@ fn build_rgba_buffer(image: &Data) -> Vec<u8> {
 }
 
 fn get_next_rgba(pixels: &[u8], format: Format, index: usize) -> [u8; 4] {
+    use Format::*;
     match format {
-        Format::R8 => [pixels[index], 0, 0, std::u8::MAX],
-        Format::R8G8 => [pixels[index * 2], pixels[index * 2 + 1], 0, std::u8::MAX],
-        Format::R8G8B8 => [
+        R8 => [pixels[index], 0, 0, std::u8::MAX],
+        R8G8 => [pixels[index * 2], pixels[index * 2 + 1], 0, std::u8::MAX],
+        R8G8B8 => [
             pixels[index * 3],
             pixels[index * 3 + 1],
             pixels[index * 3 + 2],
             std::u8::MAX,
         ],
-        Format::B8G8R8 => [
+        B8G8R8 => [
             pixels[index * 3 + 2],
             pixels[index * 3 + 1],
             pixels[index * 3],
             std::u8::MAX,
         ],
-        Format::R8G8B8A8 => [
+        R8G8B8A8 => [
             pixels[index * 4],
             pixels[index * 4 + 1],
             pixels[index * 4 + 2],
             pixels[index * 4 + 3],
         ],
-        Format::B8G8R8A8 => [
+        B8G8R8A8 => [
             pixels[index * 4 + 2],
             pixels[index * 4 + 1],
             pixels[index * 4],
             pixels[index * 4 + 3],
         ],
+        R16 | R16G16 | R16G16B16 | R16G16B16A16 => {
+            panic!("16 bits colors are not supported for model textures")
+        }
     }
 }
 

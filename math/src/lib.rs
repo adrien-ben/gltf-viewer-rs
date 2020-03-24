@@ -2,6 +2,8 @@ mod aabb;
 
 pub use aabb::*;
 pub use cgmath;
+pub use lerp;
+pub use rand;
 
 use cgmath::prelude::*;
 use cgmath::{BaseFloat, Matrix4, Quaternion, Rad};

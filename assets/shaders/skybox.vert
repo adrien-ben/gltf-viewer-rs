@@ -4,9 +4,12 @@
 layout(location = 0) in vec3 vPositions;
 
 layout(binding = 0) uniform CameraUBO {
-     mat4 view;
-     mat4 proj;
-     vec3 eye;
+    mat4 view;
+    mat4 proj;
+    mat4 invertedProj;
+    vec4 eye;
+    float zNear;
+    float zFar;
 } cameraUBO;
 
 layout(location = 0) out vec3 oPositions;

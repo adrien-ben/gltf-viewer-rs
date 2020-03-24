@@ -2,7 +2,6 @@ mod buffer;
 mod context;
 mod debug;
 mod descriptor;
-mod extensions;
 mod image;
 mod pipeline;
 mod renderpass;
@@ -14,8 +13,8 @@ mod util;
 mod vertex;
 
 pub use self::{
-    buffer::*, context::*, debug::*, descriptor::*, extensions::*, image::*, pipeline::*,
-    renderpass::*, shader::*, swapchain::*, texture::*, util::*, vertex::*,
+    buffer::*, context::*, debug::*, descriptor::*, image::*, pipeline::*, renderpass::*,
+    shader::*, swapchain::*, texture::*, util::*, vertex::*,
 };
 
 pub use ash;

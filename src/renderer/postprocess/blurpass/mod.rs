@@ -1,56 +1,31 @@
-use super::{create_renderer_pipeline, RendererPipelineParameters};
-use std::{mem::size_of, sync::Arc};
-use vulkan::ash::{version::DeviceV1_0, vk, Device};
-use vulkan::{
-    create_device_local_buffer_with_data, Buffer, Context, Descriptors, SimpleRenderPass,
-    SwapchainProperties, Texture, Vertex,
-};
+mod renderpass;
 
-pub struct PostProcessRenderer {
+use crate::renderer::{create_renderer_pipeline, fullscreen::*, RendererPipelineParameters};
+use renderpass::RenderPass;
+use std::sync::Arc;
+use vulkan::ash::{version::DeviceV1_0, vk, Device};
+use vulkan::{Context, Descriptors, SwapchainProperties, Texture};
+
+/// Blur pass
+pub struct BlurPass {
     context: Arc<Context>,
-    quad_model: QuadModel,
+    extent: vk::Extent2D,
+    render_pass: RenderPass,
+    framebuffer: vk::Framebuffer,
     descriptors: Descriptors,
     pipeline_layout: vk::PipelineLayout,
     pipeline: vk::Pipeline,
 }
 
-#[derive(Debug, Clone, Copy)]
-pub enum ToneMapMode {
-    Default = 0,
-    Uncharted,
-    HejlRichard,
-    Aces,
-    None,
-}
-
-impl ToneMapMode {
-    pub fn all() -> [ToneMapMode; 5] {
-        use ToneMapMode::*;
-        [Default, Uncharted, HejlRichard, Aces, None]
-    }
-
-    pub fn from_value(value: usize) -> Option<Self> {
-        use ToneMapMode::*;
-        match value {
-            0 => Some(Default),
-            1 => Some(Uncharted),
-            2 => Some(HejlRichard),
-            3 => Some(Aces),
-            4 => Some(None),
-            _ => Option::None,
-        }
-    }
-}
-
-impl PostProcessRenderer {
+impl BlurPass {
     pub fn create(
         context: Arc<Context>,
         swapchain_props: SwapchainProperties,
-        render_pass: &SimpleRenderPass,
         input_image: &Texture,
-        tone_map_mode: ToneMapMode,
     ) -> Self {
-        let quad_model = QuadModel::new(&context);
+        let render_pass = RenderPass::create(Arc::clone(&context), swapchain_props.extent);
+        let framebuffer = render_pass.create_framebuffer();
+
         let descriptors = create_descriptors(&context, input_image);
         let pipeline_layout = create_pipeline_layout(context.device(), descriptors.layout());
         let pipeline = create_pipeline(
@@ -58,12 +33,13 @@ impl PostProcessRenderer {
             swapchain_props,
             render_pass.get_render_pass(),
             pipeline_layout,
-            tone_map_mode,
         );
 
-        Self {
+        BlurPass {
             context,
-            quad_model,
+            extent: swapchain_props.extent,
+            render_pass,
+            framebuffer,
             descriptors,
             pipeline_layout,
             pipeline,
@@ -71,13 +47,34 @@ impl PostProcessRenderer {
     }
 }
 
-impl PostProcessRenderer {
-    pub fn rebuild_pipelines(
-        &mut self,
-        swapchain_properties: SwapchainProperties,
-        render_pass: &SimpleRenderPass,
-        tone_map_mode: ToneMapMode,
-    ) {
+impl BlurPass {
+    pub fn set_input_image(&mut self, input_image: &Texture) {
+        unsafe {
+            self.context
+                .device()
+                .free_descriptor_sets(self.descriptors.pool(), self.descriptors.sets());
+        }
+        self.descriptors.set_sets(create_descriptor_sets(
+            &self.context,
+            self.descriptors.pool(),
+            self.descriptors.layout(),
+            input_image,
+        ));
+    }
+
+    pub fn set_extent(&mut self, extent: vk::Extent2D) {
+        unsafe {
+            self.context
+                .device()
+                .destroy_framebuffer(self.framebuffer, None);
+        }
+
+        self.extent = extent;
+        self.render_pass = RenderPass::create(Arc::clone(&self.context), extent);
+        self.framebuffer = self.render_pass.create_framebuffer();
+    }
+
+    pub fn rebuild_pipelines(&mut self, swapchain_properties: SwapchainProperties) {
         let device = self.context.device();
 
         unsafe {
@@ -87,14 +84,38 @@ impl PostProcessRenderer {
         self.pipeline = create_pipeline(
             &self.context,
             swapchain_properties,
-            render_pass.get_render_pass(),
+            self.render_pass.get_render_pass(),
             self.pipeline_layout,
-            tone_map_mode,
         )
     }
 
-    pub fn cmd_draw(&self, command_buffer: vk::CommandBuffer) {
+    pub fn cmd_draw(&self, command_buffer: vk::CommandBuffer, quad_model: &QuadModel) {
         let device = self.context.device();
+
+        {
+            let clear_values = [vk::ClearValue {
+                color: vk::ClearColorValue {
+                    float32: [0.0, 0.0, 0.0, 1.0],
+                },
+            }];
+            let render_pass_begin_info = vk::RenderPassBeginInfo::builder()
+                .render_pass(self.render_pass.get_render_pass())
+                .framebuffer(self.framebuffer)
+                .render_area(vk::Rect2D {
+                    offset: vk::Offset2D { x: 0, y: 0 },
+                    extent: self.extent,
+                })
+                .clear_values(&clear_values);
+
+            unsafe {
+                device.cmd_begin_render_pass(
+                    command_buffer,
+                    &render_pass_begin_info,
+                    vk::SubpassContents::INLINE,
+                )
+            };
+        }
+
         // Bind pipeline
         unsafe {
             device.cmd_bind_pipeline(
@@ -106,15 +127,10 @@ impl PostProcessRenderer {
 
         // Bind buffers
         unsafe {
-            device.cmd_bind_vertex_buffers(
-                command_buffer,
-                0,
-                &[self.quad_model.vertices.buffer],
-                &[0],
-            );
+            device.cmd_bind_vertex_buffers(command_buffer, 0, &[quad_model.vertices.buffer], &[0]);
             device.cmd_bind_index_buffer(
                 command_buffer,
-                self.quad_model.indices.buffer,
+                quad_model.indices.buffer,
                 0,
                 vk::IndexType::UINT16,
             );
@@ -134,76 +150,26 @@ impl PostProcessRenderer {
 
         // Draw
         unsafe { device.cmd_draw_indexed(command_buffer, 6, 1, 0, 0, 1) };
+
+        unsafe { device.cmd_end_render_pass(command_buffer) };
     }
 }
 
-impl Drop for PostProcessRenderer {
+/// Getters
+impl BlurPass {
+    pub fn get_output(&self) -> &Texture {
+        self.render_pass.get_output_attachment()
+    }
+}
+
+impl Drop for BlurPass {
     fn drop(&mut self) {
         let device = self.context.device();
         unsafe {
+            device.destroy_framebuffer(self.framebuffer, None);
             device.destroy_pipeline(self.pipeline, None);
             device.destroy_pipeline_layout(self.pipeline_layout, None);
         }
-    }
-}
-
-#[derive(Clone, Copy)]
-#[allow(dead_code)]
-struct QuadVertex {
-    position: [f32; 2],
-    coords: [f32; 2],
-}
-
-impl Vertex for QuadVertex {
-    fn get_bindings_descriptions() -> Vec<vk::VertexInputBindingDescription> {
-        vec![vk::VertexInputBindingDescription {
-            binding: 0,
-            stride: size_of::<QuadVertex>() as _,
-            input_rate: vk::VertexInputRate::VERTEX,
-        }]
-    }
-
-    fn get_attributes_descriptions() -> Vec<vk::VertexInputAttributeDescription> {
-        vec![
-            vk::VertexInputAttributeDescription {
-                location: 0,
-                binding: 0,
-                format: vk::Format::R32G32_SFLOAT,
-                offset: 0,
-            },
-            vk::VertexInputAttributeDescription {
-                location: 1,
-                binding: 0,
-                format: vk::Format::R32G32_SFLOAT,
-                offset: 8,
-            },
-        ]
-    }
-}
-
-struct QuadModel {
-    vertices: Buffer,
-    indices: Buffer,
-}
-
-impl QuadModel {
-    fn new(context: &Arc<Context>) -> Self {
-        let indices: [u16; 6] = [0, 1, 2, 2, 3, 0];
-        let indices = create_device_local_buffer_with_data::<u8, _>(
-            context,
-            vk::BufferUsageFlags::INDEX_BUFFER,
-            &indices,
-        );
-        let vertices: [f32; 16] = [
-            -1.0, 1.0, 0.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, -1.0, 1.0, 0.0, -1.0, -1.0, 0.0, 0.0,
-        ];
-        let vertices = create_device_local_buffer_with_data::<u8, _>(
-            context,
-            vk::BufferUsageFlags::VERTEX_BUFFER,
-            &vertices,
-        );
-
-        Self { vertices, indices }
     }
 }
 
@@ -239,7 +205,8 @@ fn create_descriptor_pool(device: &Device) -> vk::DescriptorPool {
 
     let create_info = vk::DescriptorPoolCreateInfo::builder()
         .pool_sizes(&pool_sizes)
-        .max_sets(descriptor_count);
+        .max_sets(descriptor_count)
+        .flags(vk::DescriptorPoolCreateFlags::FREE_DESCRIPTOR_SET);
 
     unsafe { device.create_descriptor_pool(&create_info, None).unwrap() }
 }
@@ -301,11 +268,7 @@ fn create_pipeline(
     swapchain_properties: SwapchainProperties,
     render_pass: vk::RenderPass,
     layout: vk::PipelineLayout,
-    tone_map_mode: ToneMapMode,
 ) -> vk::Pipeline {
-    let (specialization_info, _map_entries, _data) =
-        create_model_frag_shader_specialization(tone_map_mode);
-
     let depth_stencil_info = vk::PipelineDepthStencilStateCreateInfo::builder()
         .depth_test_enable(false)
         .depth_write_enable(false)
@@ -331,9 +294,10 @@ fn create_pipeline(
     create_renderer_pipeline::<QuadVertex>(
         context,
         RendererPipelineParameters {
-            shader_name: "postprocess",
+            vertex_shader_name: "fullscreen",
+            fragment_shader_name: "blur",
             vertex_shader_specialization: None,
-            fragment_shader_specialization: Some(&specialization_info),
+            fragment_shader_specialization: None,
             swapchain_properties,
             msaa_samples: vk::SampleCountFlags::TYPE_1,
             render_pass,
@@ -345,29 +309,4 @@ fn create_pipeline(
             parent: None,
         },
     )
-}
-
-fn create_model_frag_shader_specialization(
-    tone_map_mode: ToneMapMode,
-) -> (
-    vk::SpecializationInfo,
-    Vec<vk::SpecializationMapEntry>,
-    Vec<u8>,
-) {
-    let map_entries = vec![vk::SpecializationMapEntry {
-        constant_id: 0,
-        offset: 0,
-        size: size_of::<u32>(),
-    }];
-
-    let data = [tone_map_mode as u32];
-
-    let data = Vec::from(unsafe { util::any_as_u8_slice(&data) });
-
-    let specialization_info = vk::SpecializationInfo::builder()
-        .map_entries(&map_entries)
-        .data(&data)
-        .build();
-
-    (specialization_info, map_entries, data)
 }

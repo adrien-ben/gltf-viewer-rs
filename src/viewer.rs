@@ -250,7 +250,7 @@ impl Viewer {
 
             self.context.graphics_queue_wait_idle();
             let model = Rc::new(RefCell::new(model));
-            self.renderer.set_model(Rc::downgrade(&model));
+            self.renderer.set_model(&model);
             self.model = Some(model);
         }
     }
@@ -300,6 +300,22 @@ impl Viewer {
         if let Some(emissive_intensity) = self.gui.get_new_emissive_intensity() {
             self.context.graphics_queue_wait_idle();
             self.renderer.set_emissive_intensity(emissive_intensity);
+        }
+        if let Some(ssao_enabled) = self.gui.get_new_ssao_enabled() {
+            self.context.graphics_queue_wait_idle();
+            self.renderer.enabled_ssao(ssao_enabled);
+        }
+        if let Some(ssao_kernel_size) = self.gui.get_new_ssao_kernel_size() {
+            self.context.graphics_queue_wait_idle();
+            self.renderer.set_ssao_kernel_size(ssao_kernel_size);
+        }
+        if let Some(ssao_radius) = self.gui.get_new_ssao_radius() {
+            self.context.graphics_queue_wait_idle();
+            self.renderer.set_ssao_radius(ssao_radius);
+        }
+        if let Some(ssao_strength) = self.gui.get_new_ssao_strength() {
+            self.context.graphics_queue_wait_idle();
+            self.renderer.set_ssao_strength(ssao_strength);
         }
         if let Some(tone_map_mode) = self.gui.get_new_renderer_tone_map_mode() {
             self.context.graphics_queue_wait_idle();
@@ -486,14 +502,14 @@ impl Viewer {
 
     fn has_window_been_minimized(&self) -> bool {
         match self.window.get_inner_size() {
-            Some(LogicalSize { width, height}) if width == 0.0 || height == 0.0 => true,
+            Some(LogicalSize { width, height }) if width == 0.0 || height == 0.0 => true,
             _ => false,
         }
     }
 
     fn has_window_been_maximized(&self) -> bool {
         match self.window.get_inner_size() {
-            Some(LogicalSize { width, height}) if width > 0.0 && height > 0.0 => true,
+            Some(LogicalSize { width, height }) if width > 0.0 && height > 0.0 => true,
             _ => false,
         }
     }

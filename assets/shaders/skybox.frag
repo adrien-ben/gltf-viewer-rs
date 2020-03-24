@@ -4,9 +4,12 @@
 layout(location = 0) in vec3 oPositions;
 
 layout(binding = 0) uniform CameraUBO {
-     mat4 view;
-     mat4 proj;
-     vec3 eye;
+    mat4 view;
+    mat4 proj;
+    mat4 invertedProj;
+    vec4 eye;
+    float zNear;
+    float zFar;
 } cameraUBO;
 
 layout(binding = 1) uniform samplerCube cubemapSampler;

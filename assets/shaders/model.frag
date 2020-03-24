@@ -17,6 +17,7 @@ const uint OUTPUT_MODE_NORMAL = 7;
 const uint OUTPUT_MODE_ALPHA = 8;
 const uint OUTPUT_MODE_UVS0 = 9;
 const uint OUTPUT_MODE_UVS1 = 10;
+const uint OUTPUT_MODE_SSAO = 11;
 
 const vec3 DIELECTRIC_SPECULAR = vec3(0.04);
 const vec3 BLACK = vec3(0.0);
@@ -105,7 +106,10 @@ layout(push_constant) uniform MaterialUniform {
 layout(binding = 0, set = 0) uniform Camera {
     mat4 view;
     mat4 proj;
-    vec3 eye;    
+    mat4 invertedProj;
+    vec4 eye;
+    float zNear;
+    float zFar;
 } cameraUBO;
 layout(binding = 1, set = 0) uniform Lights {
     Light lights[LIGHT_COUNT + 1];
@@ -121,6 +125,7 @@ layout(binding = 8, set = 2) uniform sampler2D normalsSampler;
 layout(binding = 9, set = 2) uniform sampler2D materialSampler;
 layout(binding = 10, set = 2) uniform sampler2D occlusionSampler;
 layout(binding = 11, set = 2) uniform sampler2D emissiveSampler;
+layout(binding = 12, set = 3) uniform sampler2D aoMapSampler;
 
 // Output
 layout(location = 0) out vec4 outColor;
@@ -226,13 +231,20 @@ vec3 getNormal(TextureChannels textureChannels) {
     return normal;
 }
 
+float sampleAOMap() {
+    ivec2 size = textureSize(aoMapSampler, 0);
+    vec2 coords = vec2(float(gl_FragCoord.x) / float(size.x), float(gl_FragCoord.y) / float(size.y));
+    return texture(aoMapSampler, coords).r;
+}
+
 vec3 occludeAmbientColor(vec3 ambientColor, TextureChannels textureChannels) {
+    float aoMapSample = sampleAOMap();
     float sampledOcclusion = 0.0;
     if (textureChannels.occlusion != NO_TEXTURE_ID) {
         vec2 uv = getUV(textureChannels.occlusion);
         sampledOcclusion = texture(occlusionSampler, uv).r;
     }
-    return mix(ambientColor, ambientColor * sampledOcclusion, material.metallicSpecularAndOcclusion.a);
+    return mix(ambientColor, ambientColor * sampledOcclusion, material.metallicSpecularAndOcclusion.a) * aoMapSample;
 }
 
 uint getAlphaMode() {
@@ -437,7 +449,7 @@ void main() {
     vec3 emissive = getEmissiveColor(textureChannels);
 
     vec3 n = getNormal(textureChannels);
-    vec3 v = normalize(cameraUBO.eye - oPositions);
+    vec3 v = normalize(cameraUBO.eye.xyz - oPositions);
 
     vec3 color = vec3(0.0);
 
@@ -481,5 +493,8 @@ void main() {
         outColor = vec4(vec2(oTexcoords0), 0.0, 1.0);
     } else if (OUTPUT_MODE == OUTPUT_MODE_UVS1) {
         outColor = vec4(vec2(oTexcoords1), 0.0, 1.0);
+    } else if (OUTPUT_MODE == OUTPUT_MODE_SSAO) {
+        float ao = sampleAOMap();
+        outColor = vec4(vec3(ao), 1.0);
     }
 }

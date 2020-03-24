@@ -2,7 +2,7 @@ use crate::controls::*;
 use math::cgmath::{InnerSpace, Matrix4, Point3, Vector3};
 use math::clamp;
 
-const MIN_ORBITAL_CAMERA_DISTANCE: f32 = 0.05;
+const MIN_ORBITAL_CAMERA_DISTANCE: f32 = 0.5;
 const TARGET_MOVEMENT_SPEED: f32 = 0.003;
 
 #[derive(Clone, Copy)]
@@ -76,7 +76,7 @@ impl Default for Camera {
         Camera {
             theta: 0.0_f32.to_radians(),
             phi: 90.0_f32.to_radians(),
-            r: 1.0,
+            r: 10.0,
             target: Point3::new(0.0, 0.0, 0.0),
         }
     }
@@ -87,11 +87,30 @@ impl Default for Camera {
 pub struct CameraUBO {
     view: Matrix4<f32>,
     proj: Matrix4<f32>,
+    inverted_proj: Matrix4<f32>,
     eye: Point3<f32>,
+    padding: f32,
+    z_near: f32,
+    z_far: f32,
 }
 
 impl CameraUBO {
-    pub fn new(view: Matrix4<f32>, proj: Matrix4<f32>, eye: Point3<f32>) -> Self {
-        Self { view, proj, eye }
+    pub fn new(
+        view: Matrix4<f32>,
+        proj: Matrix4<f32>,
+        inverted_proj: Matrix4<f32>,
+        eye: Point3<f32>,
+        z_near: f32,
+        z_far: f32,
+    ) -> Self {
+        Self {
+            view,
+            proj,
+            inverted_proj,
+            eye,
+            padding: 0.0,
+            z_near,
+            z_far,
+        }
     }
 }

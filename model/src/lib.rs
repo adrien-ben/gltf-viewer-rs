@@ -69,7 +69,7 @@ impl Model {
 
         let scene = document
             .default_scene()
-            .unwrap_or_else(|| document.scenes().nth(0).unwrap());
+            .unwrap_or_else(|| document.scenes().next().unwrap());
 
         let animations = load_animations(document.animations(), &buffers);
 
@@ -239,12 +239,12 @@ fn compute_aabb(nodes: &Nodes, meshes: &[Mesh]) -> AABB<f32> {
 
 fn compute_unit_cube_at_origin_transform(aabb: AABB<f32>) -> Matrix4<f32> {
     let larger_side = aabb.get_larger_side_size();
-    let scale_factor = 1.0_f32 / larger_side;
+    let scale_factor = (1.0_f32 / larger_side) * 10.0;
 
     let aabb = aabb * scale_factor;
     let center = aabb.get_center();
 
     let translation = Matrix4::from_translation(-center);
-    let scale = Matrix4::from_scale(1.0_f32 / larger_side);
+    let scale = Matrix4::from_scale(scale_factor);
     translation * scale
 }
