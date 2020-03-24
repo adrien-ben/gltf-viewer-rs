@@ -69,7 +69,7 @@ impl Model {
 
         let scene = document
             .default_scene()
-            .unwrap_or_else(|| document.scenes().nth(0).unwrap());
+            .unwrap_or_else(|| document.scenes().next().unwrap());
 
         let animations = load_animations(document.animations(), &buffers);
 

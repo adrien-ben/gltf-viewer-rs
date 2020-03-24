@@ -5,19 +5,23 @@ pub use renderpass::RenderPass as GBufferRenderPass;
 use super::{JointsBuffer, ModelData};
 use crate::renderer::{create_renderer_pipeline, RendererPipelineParameters};
 use math::cgmath::Matrix4;
-use model::{Model, ModelVertex, Primitive};
+use model::{Material, Model, ModelVertex, Primitive, Texture};
 use std::{mem::size_of, sync::Arc};
+use util::any_as_u8_slice;
 use vulkan::ash::{version::DeviceV1_0, vk, Device};
-use vulkan::{Buffer, Context, SwapchainProperties};
+use vulkan::{Buffer, Context, SwapchainProperties, Texture as VulkanTexture};
 
 const DYNAMIC_DATA_SET_INDEX: u32 = 0;
+const PER_PRIMITIVE_DATA_SET_INDEX: u32 = 1;
 
 const CAMERA_UBO_BINDING: u32 = 0;
 const TRANSFORMS_UBO_BINDING: u32 = 1;
 const SKINS_UBO_BINDING: u32 = 2;
+const COLOR_SAMPLER_BINDING: u32 = 3;
 
 pub struct GBufferPass {
     context: Arc<Context>,
+    _dummy_texture: VulkanTexture,
     descriptors: Descriptors,
     pipeline_layout: vk::PipelineLayout,
     culled_pipeline: vk::Pipeline,
@@ -32,12 +36,21 @@ impl GBufferPass {
         swapchain_props: SwapchainProperties,
         render_pass: &GBufferRenderPass,
     ) -> Self {
+        let dummy_texture = VulkanTexture::from_rgba(&context, 1, 1, &[std::u8::MAX; 4]);
+
+        let model_rc = model_data
+            .model
+            .upgrade()
+            .expect("Cannot create model renderer because model was dropped");
+
         let descriptors = create_descriptors(
             &context,
             DescriptorsResources {
                 camera_buffers,
                 model_transform_buffers: &model_data.transform_ubos,
                 model_skin_buffers: &model_data.skin_ubos,
+                model: &model_rc.borrow(),
+                dummy_texture: &dummy_texture,
             },
         );
 
@@ -59,6 +72,7 @@ impl GBufferPass {
 
         GBufferPass {
             context,
+            _dummy_texture: dummy_texture,
             descriptors,
             pipeline_layout,
             culled_pipeline,
@@ -125,6 +139,7 @@ impl GBufferPass {
             command_buffer,
             &model,
             &self.descriptors.dynamic_data_sets[frame_index..=frame_index],
+            &self.descriptors.per_primitive_sets,
             |p| !p.material().is_transparent() && !p.material().is_double_sided(),
         );
 
@@ -144,6 +159,7 @@ impl GBufferPass {
             command_buffer,
             &model,
             &self.descriptors.dynamic_data_sets[frame_index..=frame_index],
+            &self.descriptors.per_primitive_sets,
             |p| !p.material().is_transparent() && p.material().is_double_sided(),
         );
     }
@@ -166,6 +182,8 @@ struct DescriptorsResources<'a> {
     camera_buffers: &'a [Buffer],
     model_transform_buffers: &'a [Buffer],
     model_skin_buffers: &'a [Buffer],
+    model: &'a Model,
+    dummy_texture: &'a VulkanTexture,
 }
 
 pub struct Descriptors {
@@ -173,6 +191,8 @@ pub struct Descriptors {
     pool: vk::DescriptorPool,
     dynamic_data_layout: vk::DescriptorSetLayout,
     dynamic_data_sets: Vec<vk::DescriptorSet>,
+    per_primitive_layout: vk::DescriptorSetLayout,
+    per_primitive_sets: Vec<vk::DescriptorSet>,
 }
 
 impl Drop for Descriptors {
@@ -192,11 +212,17 @@ fn create_descriptors(context: &Arc<Context>, resources: DescriptorsResources) -
     let dynamic_data_sets =
         create_dynamic_data_descriptor_sets(context, pool, dynamic_data_layout, resources);
 
+    let per_primitive_layout = create_per_primitive_descriptor_set_layout(context.device());
+    let per_primitive_sets =
+        create_per_primitive_descriptor_sets(context, pool, per_primitive_layout, resources);
+
     Descriptors {
         context: Arc::clone(context),
         pool,
         dynamic_data_layout,
         dynamic_data_sets,
+        per_primitive_layout,
+        per_primitive_sets,
     }
 }
 
@@ -205,23 +231,29 @@ fn create_descriptor_pool(
     descriptors_resources: DescriptorsResources,
 ) -> vk::DescriptorPool {
     let descriptor_count = descriptors_resources.camera_buffers.len() as u32;
+    let primitive_count = descriptors_resources.model.primitive_count() as u32;
 
     let pool_sizes = [
         // Camera
         vk::DescriptorPoolSize {
             ty: vk::DescriptorType::UNIFORM_BUFFER,
-            descriptor_count: descriptor_count,
+            descriptor_count,
         },
         // Transforms & skins
         vk::DescriptorPoolSize {
             ty: vk::DescriptorType::UNIFORM_BUFFER_DYNAMIC,
             descriptor_count: descriptor_count * 2,
         },
+        // Color sampler
+        vk::DescriptorPoolSize {
+            ty: vk::DescriptorType::COMBINED_IMAGE_SAMPLER,
+            descriptor_count: primitive_count,
+        },
     ];
 
     let create_info = vk::DescriptorPoolCreateInfo::builder()
         .pool_sizes(&pool_sizes)
-        .max_sets(descriptor_count);
+        .max_sets(descriptor_count + primitive_count);
 
     unsafe { device.create_descriptor_pool(&create_info, None).unwrap() }
 }
@@ -331,9 +363,107 @@ fn create_dynamic_data_descriptor_sets(
     sets
 }
 
+fn create_per_primitive_descriptor_set_layout(device: &Device) -> vk::DescriptorSetLayout {
+    let bindings = [vk::DescriptorSetLayoutBinding::builder()
+        .binding(COLOR_SAMPLER_BINDING)
+        .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
+        .descriptor_count(1)
+        .stage_flags(vk::ShaderStageFlags::FRAGMENT)
+        .build()];
+
+    let layout_info = vk::DescriptorSetLayoutCreateInfo::builder().bindings(&bindings);
+
+    unsafe {
+        device
+            .create_descriptor_set_layout(&layout_info, None)
+            .unwrap()
+    }
+}
+
+fn create_per_primitive_descriptor_sets(
+    context: &Arc<Context>,
+    pool: vk::DescriptorPool,
+    layout: vk::DescriptorSetLayout,
+    resources: DescriptorsResources,
+) -> Vec<vk::DescriptorSet> {
+    let layouts = (0..resources.model.primitive_count())
+        .map(|_| layout)
+        .collect::<Vec<_>>();
+
+    let allocate_info = vk::DescriptorSetAllocateInfo::builder()
+        .descriptor_pool(pool)
+        .set_layouts(&layouts);
+    let sets = unsafe {
+        context
+            .device()
+            .allocate_descriptor_sets(&allocate_info)
+            .unwrap()
+    };
+
+    let model = resources.model;
+    let textures = resources.model.textures();
+    let mut primitive_index = 0;
+    for mesh in model.meshes() {
+        for primitive in mesh.primitives() {
+            let material = primitive.material();
+            let albedo_info = create_descriptor_image_info(
+                material.get_color_texture_index(),
+                textures,
+                resources.dummy_texture,
+            );
+
+            let set = sets[primitive_index];
+            primitive_index += 1;
+
+            let descriptor_writes = [vk::WriteDescriptorSet::builder()
+                .dst_set(set)
+                .dst_binding(COLOR_SAMPLER_BINDING)
+                .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
+                .image_info(&albedo_info)
+                .build()];
+
+            unsafe {
+                context
+                    .device()
+                    .update_descriptor_sets(&descriptor_writes, &[])
+            }
+        }
+    }
+
+    sets
+}
+
+fn create_descriptor_image_info(
+    index: Option<usize>,
+    textures: &[Texture],
+    dummy_texture: &VulkanTexture,
+) -> [vk::DescriptorImageInfo; 1] {
+    let (view, sampler) = index
+        .map(|i| &textures[i])
+        .map_or((dummy_texture.view, dummy_texture.sampler.unwrap()), |t| {
+            (t.get_view(), t.get_sampler())
+        });
+
+    [vk::DescriptorImageInfo::builder()
+        .image_layout(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL)
+        .image_view(view)
+        .sampler(sampler)
+        .build()]
+}
+
 fn create_pipeline_layout(device: &Device, descriptors: &Descriptors) -> vk::PipelineLayout {
-    let layouts = [descriptors.dynamic_data_layout];
-    let layout_info = vk::PipelineLayoutCreateInfo::builder().set_layouts(&layouts);
+    let layouts = [
+        descriptors.dynamic_data_layout,
+        descriptors.per_primitive_layout,
+    ];
+    let constant_ranges = [vk::PushConstantRange {
+        stage_flags: vk::ShaderStageFlags::FRAGMENT,
+        offset: 0,
+        size: size_of::<MaterialUniform>() as _,
+    }];
+    let layout_info = vk::PipelineLayoutCreateInfo::builder()
+        .set_layouts(&layouts)
+        .push_constant_ranges(&constant_ranges);
 
     unsafe { device.create_pipeline_layout(&layout_info, None).unwrap() }
 }
@@ -393,6 +523,7 @@ fn register_model_draw_commands<F>(
     command_buffer: vk::CommandBuffer,
     model: &Model,
     dynamic_descriptors: &[vk::DescriptorSet],
+    per_primitive_descriptors: &[vk::DescriptorSet],
     primitive_filter: F,
 ) where
     F: FnMut(&&Primitive) -> bool + Copy,
@@ -427,6 +558,19 @@ fn register_model_draw_commands<F>(
         };
 
         for primitive in mesh.primitives().iter().filter(primitive_filter) {
+            let primitive_index = primitive.index();
+
+            unsafe {
+                device.cmd_bind_descriptor_sets(
+                    command_buffer,
+                    vk::PipelineBindPoint::GRAPHICS,
+                    pipeline_layout,
+                    PER_PRIMITIVE_DATA_SET_INDEX,
+                    &per_primitive_descriptors[primitive_index..=primitive_index],
+                    &[],
+                )
+            };
+
             unsafe {
                 device.cmd_bind_vertex_buffers(
                     command_buffer,
@@ -446,6 +590,19 @@ fn register_model_draw_commands<F>(
                     );
                 }
             }
+
+            // Push material constants
+            unsafe {
+                let material: MaterialUniform = primitive.material().into();
+                let material_contants = any_as_u8_slice(&material);
+                device.cmd_push_constants(
+                    command_buffer,
+                    pipeline_layout,
+                    vk::ShaderStageFlags::FRAGMENT,
+                    0,
+                    &material_contants,
+                );
+            };
 
             // Draw geometry
             match primitive.indices() {
@@ -473,6 +630,37 @@ fn register_model_draw_commands<F>(
                     };
                 }
             }
+        }
+    }
+}
+
+#[derive(Clone, Copy)]
+#[allow(dead_code)]
+pub struct MaterialUniform {
+    alpha: f32,
+    color_texture_channel: u32,
+    alpha_mode: u32,
+    alpha_cutoff: f32,
+}
+
+impl MaterialUniform {
+    const NO_TEXTURE_ID: u32 = std::u8::MAX as u32;
+}
+
+impl<'a> From<Material> for MaterialUniform {
+    fn from(material: Material) -> MaterialUniform {
+        let alpha = material.get_color()[3];
+        let color_texture_channel = material
+            .get_color_texture()
+            .map_or(Self::NO_TEXTURE_ID, |info| info.get_channel());
+        let alpha_mode = material.get_alpha_mode();
+        let alpha_cutoff = material.get_alpha_cutoff();
+
+        MaterialUniform {
+            alpha,
+            color_texture_channel,
+            alpha_mode,
+            alpha_cutoff,
         }
     }
 }

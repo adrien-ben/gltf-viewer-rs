@@ -6,7 +6,7 @@ use super::{uniform::*, JointsBuffer, ModelData};
 use crate::renderer::{create_renderer_pipeline, RendererPipelineParameters};
 use environment::*;
 use math::cgmath::Matrix4;
-use model::{Material, Model, ModelVertex, Primitive, Texture, Workflow};
+use model::{Model, ModelVertex, Primitive, Texture, Workflow};
 use std::{mem::size_of, sync::Arc};
 use util::*;
 use vulkan::ash::{version::DeviceV1_0, vk, Device};
@@ -160,7 +160,7 @@ impl LightPass {
 
         LightPass {
             context,
-            dummy_texture: dummy_texture,
+            dummy_texture,
             descriptors,
             pipeline_layout,
             opaque_pipeline,
@@ -915,7 +915,7 @@ fn create_pipeline_layout(device: &Device, descriptors: &Descriptors) -> vk::Pip
     let push_constant_range = [vk::PushConstantRange {
         stage_flags: vk::ShaderStageFlags::FRAGMENT,
         offset: 0,
-        size: size_of::<Material>() as _,
+        size: size_of::<MaterialUniform>() as _,
     }];
     let layout_info = vk::PipelineLayoutCreateInfo::builder()
         .set_layouts(&layouts)

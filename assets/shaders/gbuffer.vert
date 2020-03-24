@@ -28,6 +28,9 @@ layout(binding = 2, set = 0) uniform SkinUBO {
 } skin;
 
 layout(location = 0) out vec3 oViewSpaceNormal;
+layout(location = 1) out vec2 oTexcoords0;
+layout(location = 2) out vec2 oTexcoords1;
+layout(location = 3) out float oAlpha;
 
 void main() {
     mat4 world = transform.matrix;
@@ -39,5 +42,9 @@ void main() {
     }
 
     oViewSpaceNormal = normalize((cameraUBO.view * world * vec4(vNormals, 0.0)).xyz);
+    oTexcoords0 = vTexcoords0;
+    oTexcoords1 = vTexcoords1;
+    oAlpha = vColors.a;
+
     gl_Position = cameraUBO.proj * cameraUBO.view * world * vec4(vPositions, 1.0);
 }

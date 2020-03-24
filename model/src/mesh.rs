@@ -150,10 +150,7 @@ pub fn create_meshes_from_gltf(
                     && !tex_coords_0.is_empty()
                     && tangents.is_empty()
                 {
-                    generate_tangents(
-                        indices.as_ref().map(|indices| indices.as_slice()),
-                        &mut vertices,
-                    );
+                    generate_tangents(indices.as_deref(), &mut vertices);
                 }
 
                 let indices = indices.map(|indices| {

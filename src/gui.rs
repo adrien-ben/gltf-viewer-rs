@@ -559,7 +559,7 @@ fn build_renderer_settings_window(ui: &Ui, state: &mut State) {
                 state.ssao_enabled_changed =
                     ui.checkbox(im_str!("Enable SSAO"), &mut state.ssao_enabled);
                 if state.ssao_enabled {
-                    fn kernel_display_fn<'b>(v: &'b u32) -> Cow<'b, ImStr> {
+                    fn kernel_display_fn(v: &u32) -> Cow<ImStr> {
                         Cow::Owned(im_str!("{} samples", v))
                     }
 
