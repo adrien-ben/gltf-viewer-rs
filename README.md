@@ -114,6 +114,8 @@ Cubemap faces have been generated using [matheowis' HDRi to cubemap tool][4].
 
 HDRi textures have been downloaded from [hdriheaven][5].
 
+SSAO tutorial from John Chapman's [blog][7].
+
 [0]: https://github.com/KhronosGroup/glTF
 [1]: https://www.khronos.org/vulkan/
 [2]: https://github.com/MaikKlein/ash
@@ -121,6 +123,7 @@ HDRi textures have been downloaded from [hdriheaven][5].
 [4]: https://github.com/matheowis/HDRI-to-CubeMap
 [5]: https://hdrihaven.com/
 [6]: https://vulkan.gpuinfo.org/download.php
+[7]: http://john-chapman-graphics.blogspot.com/2013/01/ssao-tutorial.html
 
 ## Screenshots
 
