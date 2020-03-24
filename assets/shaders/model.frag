@@ -27,6 +27,7 @@ const uint NO_TEXTURE_ID = 255;
 
 const uint ALPHA_MODE_MASK = 1;
 const uint ALPHA_MODE_BLEND = 2;
+const float ALPHA_CUTOFF_BIAS = 0.0000001;
 
 const float MAX_REFLECTION_LOD = 9.0; // last mip mips for 512 px res TODO: specializations ?
 
@@ -252,7 +253,7 @@ uint getAlphaMode() {
 }
 
 bool isMasked(vec4 baseColor) {
-    return getAlphaMode() == ALPHA_MODE_MASK && baseColor.a < material.alphaCutoff;
+    return getAlphaMode() == ALPHA_MODE_MASK && baseColor.a + ALPHA_CUTOFF_BIAS < material.alphaCutoff;
 }
 
 float getAlpha(vec4 baseColor) {

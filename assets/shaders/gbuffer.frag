@@ -3,6 +3,7 @@
 
 const uint NO_TEXTURE_ID = 255;
 const uint ALPHA_MODE_MASK = 1;
+const float ALPHA_CUTOFF_BIAS = 0.0000001;
 
 // -- Inputs --
 layout(location = 0) in vec3 oViewSpaceNormal;
@@ -42,7 +43,7 @@ float getAlpha(uint textureChannel) {
 }
 
 bool isMasked(float alpha) {
-    return material.alphaMode == ALPHA_MODE_MASK && alpha < material.alphaCutoff;
+    return material.alphaMode == ALPHA_MODE_MASK && alpha + ALPHA_CUTOFF_BIAS < material.alphaCutoff;
 }
 
 void main() {
