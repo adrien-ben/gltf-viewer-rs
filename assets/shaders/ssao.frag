@@ -39,7 +39,7 @@ void main() {
     vec3 position = oViewRay * linearDepth(oCoords);
 
     // View-space normal
-    vec3 normal = normalize(texture(normalsSampler, oCoords).xyz * 2.0 - 1.0);
+    vec3 normal = normalize(texture(normalsSampler, oCoords).xyz);
 
     // View space random vector
     ivec2 ssaoSize = textureSize(depthSampler, 0);

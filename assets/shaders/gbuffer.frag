@@ -52,5 +52,5 @@ void main() {
         discard;
     }
 
-    outNormals = vec4((normalize(oViewSpaceNormal) * 0.5) + 0.5, 0.0);
+    outNormals = vec4(normalize(oViewSpaceNormal), 0.0);
 }
