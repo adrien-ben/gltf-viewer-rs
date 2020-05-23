@@ -9,7 +9,7 @@ edition = "2018"
 [dependencies]
 log = "0.4"
 env_logger = "0.7.1"
-ash = "0.30"
+ash = "0.31"
 winit = "0.19.5"
 
 imgui = "0.3"
