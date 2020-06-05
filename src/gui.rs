@@ -273,10 +273,9 @@ fn build_model_descriptor_window(ui: &Ui, state: &mut State, model_metadata: Opt
 }
 
 fn build_summary_block_ui(ui: &Ui, metadata: &Metadata) {
-    if ui
-        .collapsing_header(&im_str!("Summary"))
+    if CollapsingHeader::new(&im_str!("Summary"))
         .default_open(true)
-        .build()
+        .build(ui)
     {
         ui.text(im_str!("Name: {}", metadata.name()));
         if ui.is_item_hovered() {
@@ -294,7 +293,7 @@ fn build_summary_block_ui(ui: &Ui, metadata: &Metadata) {
 }
 
 fn build_hierarchy_block_ui(ui: &Ui, metadata: &Metadata, state: &mut State) {
-    if ui.collapsing_header(&im_str!("Hierarchy")).build() {
+    if CollapsingHeader::new(&im_str!("Hierarchy")).build(ui) {
         for node in metadata.nodes() {
             build_tree_node_ui(ui, node, state);
         }
@@ -310,12 +309,12 @@ fn build_tree_node_ui(ui: &Ui, node: &Node, state: &mut State) {
 
     // This flag is there tu make sure we attach the "is_click" to the correct node/leaf
     let mut opened = false;
-    ui.tree_node(&im_str!("{}: {}", node.index(), name))
+    TreeNode::new(&im_str!("{}: {}", node.index(), name))
         .leaf(node.children().is_empty())
         .open_on_double_click(true)
         .open_on_arrow(true)
         .selected(selected)
-        .build(|| {
+        .build(ui, || {
             // If the node is opened the flag will be set to true
             opened = true;
             if ui.is_item_clicked(MouseButton::Left) {
@@ -372,7 +371,7 @@ fn build_mesh_details_ui(ui: &Ui, mesh_data: &Mesh) {
         "Name: {}",
         mesh_data.name.as_ref().map_or("no name", |s| &s)
     ));
-    if ui.collapsing_header(&im_str!("Primitives")).build() {
+    if CollapsingHeader::new(&im_str!("Primitives")).build(ui) {
         mesh_data
             .primitives
             .iter()
@@ -381,10 +380,10 @@ fn build_mesh_details_ui(ui: &Ui, mesh_data: &Mesh) {
 }
 
 fn build_primitive_ui(ui: &Ui, prim: &Primitive) {
-    ui.tree_node(&im_str!("{}", prim.index))
+    TreeNode::new(&im_str!("{}", prim.index))
         .open_on_double_click(true)
         .open_on_arrow(true)
-        .build(|| {
+        .build(ui, || {
             ui.text(im_str!("Mode: {}", prim.mode));
             ui.text("Material:");
             let material = &prim.material;
@@ -452,7 +451,7 @@ fn build_light_details_ui(ui: &Ui, light: Light) {
 }
 
 fn build_animation_block_ui(ui: &Ui, metadata: &Metadata) {
-    if ui.collapsing_header(&im_str!("Animations")).build() {
+    if CollapsingHeader::new(&im_str!("Animations")).build(ui) {
         ui.indent();
         for animation in metadata.animations() {
             let name = animation.name.as_ref().map_or("no name", |n| &n);
