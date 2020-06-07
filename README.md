@@ -102,6 +102,8 @@ export VK_INSTANCE_LAYERS=VK_LAYER_KHRONOS_validation
 RUST_LOG=gltf_viewer_rs=warn cargo run -- --debug
 ```
 
+> You can also use the run.sh and debug.sh scripts
+
 ## Known issues
 
 On linux, enabling v-sync causes the system to freeze with some hardware configuration (tested on a laptop running Pop_os 19.04, with a GTX 1050Ti). It seems to be an issue related with PRIME sync.
