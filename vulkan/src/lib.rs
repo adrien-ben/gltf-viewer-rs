@@ -6,7 +6,6 @@ mod image;
 mod pipeline;
 mod renderpass;
 mod shader;
-pub mod surface;
 mod swapchain;
 mod texture;
 mod util;

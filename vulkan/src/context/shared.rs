@@ -1,4 +1,4 @@
-use crate::{debug::*, surface, swapchain::*};
+use crate::{debug::*, swapchain::*};
 use ash::{
     extensions::{
         ext::DebugReport,
@@ -31,11 +31,12 @@ pub struct SharedContext {
 impl SharedContext {
     pub fn new(window: &Window, enable_debug: bool) -> Self {
         let entry = Entry::new().expect("Failed to create entry.");
-        let instance = create_instance(&entry, enable_debug);
+        let instance = create_instance(&entry, window, enable_debug);
 
         let surface = Surface::new(&entry, &instance);
         let surface_khr = unsafe {
-            surface::create_surface(&entry, &instance, &window).expect("Failed to create surface")
+            ash_window::create_surface(&entry, &instance, window, None)
+                .expect("Failed to create surface")
         };
 
         let debug_report_callback = if enable_debug {
@@ -68,7 +69,7 @@ impl SharedContext {
     }
 }
 
-fn create_instance(entry: &Entry, enable_debug: bool) -> Instance {
+fn create_instance(entry: &Entry, window: &Window, enable_debug: bool) -> Instance {
     let app_name = CString::new("Vulkan Application").unwrap();
     let engine_name = CString::new("No Engine").unwrap();
     let app_info = vk::ApplicationInfo::builder()
@@ -78,7 +79,12 @@ fn create_instance(entry: &Entry, enable_debug: bool) -> Instance {
         .engine_version(vk::make_version(0, 1, 0))
         .api_version(vk::make_version(1, 0, 0));
 
-    let mut extension_names = surface::required_extension_names();
+    let extension_names = ash_window::enumerate_required_extensions(window)
+        .expect("Failed to enumerate required extensions");
+    let mut extension_names = extension_names
+        .iter()
+        .map(|ext| ext.as_ptr())
+        .collect::<Vec<_>>();
     extension_names.push(vk::KhrGetPhysicalDeviceProperties2Fn::name().as_ptr());
     if enable_debug {
         extension_names.push(DebugReport::name().as_ptr());
