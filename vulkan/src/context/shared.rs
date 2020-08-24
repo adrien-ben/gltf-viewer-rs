@@ -11,7 +11,7 @@ use std::{
     ffi::{CStr, CString},
     mem::size_of,
 };
-use winit::Window;
+use winit::window::Window;
 
 const POSSIBLE_SAMPLE_COUNTS: [u32; 7] = [1, 2, 4, 8, 16, 32, 64];
 

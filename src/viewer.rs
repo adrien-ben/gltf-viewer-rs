@@ -4,15 +4,19 @@ use environment::*;
 use model::{Model, PlaybackMode};
 use std::{cell::RefCell, path::Path, rc::Rc, sync::Arc, time::Instant};
 use vulkan::*;
-use winit::{dpi::LogicalSize, Event, EventsLoop, Window, WindowBuilder, WindowEvent};
+use winit::{
+    dpi::PhysicalSize,
+    event::{Event, WindowEvent},
+    event_loop::{ControlFlow, EventLoop},
+    window::{Window, WindowBuilder},
+};
 
 pub const MAX_FRAMES_IN_FLIGHT: u32 = 2;
 
 pub struct Viewer {
     config: Config,
-    events_loop: EventsLoop,
+    event_loop: EventLoop<()>,
     window: Window,
-    resize_dimensions: Option<[u32; 2]>,
     run: bool,
 
     camera: Camera,
@@ -22,7 +26,6 @@ pub struct Viewer {
     gui: Gui,
 
     context: Arc<Context>,
-    swapchain_properties: SwapchainProperties,
     simple_render_pass: SimpleRenderPass,
     swapchain: Swapchain,
 
@@ -39,14 +42,11 @@ impl Viewer {
 
         let resolution = [config.resolution().width(), config.resolution().height()];
 
-        let events_loop = EventsLoop::new();
+        let event_loop = EventLoop::new();
         let window = WindowBuilder::new()
             .with_title("GLTF Viewer")
-            .with_dimensions(LogicalSize::new(
-                f64::from(resolution[0]),
-                f64::from(resolution[1]),
-            ))
-            .build(&events_loop)
+            .with_inner_size(PhysicalSize::new(resolution[0], resolution[1]))
+            .build(&event_loop)
             .unwrap();
 
         let mut gui = Gui::new(&window);
@@ -98,17 +98,15 @@ impl Viewer {
         }
 
         Self {
-            events_loop,
+            event_loop,
             window,
             config,
-            resize_dimensions: None,
             run: true,
             camera: Default::default(),
             input_state: Default::default(),
             model: None,
             gui,
             context,
-            swapchain_properties,
             simple_render_pass,
             swapchain,
             renderer,
@@ -177,359 +175,358 @@ impl Viewer {
         InFlightFrames::new(sync_objects_vec)
     }
 
-    pub fn run(&mut self) {
+    pub fn run(self) {
         log::debug!("Running application.");
-        let mut time = Instant::now();
-        loop {
-            let new_time = Instant::now();
-            let delta_s = ((new_time - time).as_nanos() as f64) / 1_000_000_000.0;
-            time = new_time;
 
-            self.process_event();
-            if !self.run {
-                break;
+        let Viewer {
+            event_loop,
+            window,
+            config,
+            mut run,
+            mut camera,
+            mut input_state,
+            mut model,
+            mut gui,
+            context,
+            simple_render_pass,
+            mut swapchain,
+            mut renderer,
+            mut command_buffers,
+            mut in_flight_frames,
+            loader,
+        } = self;
+
+        let mut time = Instant::now();
+        let mut dirty_swapchain = false;
+
+        // Main loop
+        event_loop.run(move |event, _, control_flow| {
+            *control_flow = ControlFlow::Poll;
+
+            gui.handle_event(&window, &event);
+            input_state = input_state.update(&event);
+
+            match event {
+                Event::NewEvents(_) => {
+                    input_state.reset();
+                    gui.update_delta_time();
+                }
+                // End of event processing
+                Event::MainEventsCleared => {
+                    // If swapchain must be recreated wait for windows to not be minimized anymore
+                    if dirty_swapchain {
+                        let PhysicalSize { width, height } = window.inner_size();
+                        if width > 0 && height > 0 {
+                            // recreate_swapchain()
+                            {
+                                log::debug!("Recreating swapchain.");
+
+                                unsafe { context.device().device_wait_idle().unwrap() };
+
+                                // cleanup_swapchain();
+                                {
+                                    let device = context.device();
+                                    unsafe {
+                                        device.free_command_buffers(
+                                            context.general_command_pool(),
+                                            &command_buffers,
+                                        );
+                                    }
+                                    swapchain.destroy();
+                                }
+
+                                let dimensions = window.inner_size().into();
+
+                                let swapchain_support_details = SwapchainSupportDetails::new(
+                                    context.physical_device(),
+                                    context.surface(),
+                                    context.surface_khr(),
+                                );
+                                let swapchain_properties = swapchain_support_details
+                                    .get_ideal_swapchain_properties(dimensions, config.vsync());
+
+                                renderer
+                                    .on_new_swapchain(swapchain_properties, &simple_render_pass);
+
+                                swapchain = Swapchain::create(
+                                    Arc::clone(&context),
+                                    swapchain_support_details,
+                                    dimensions,
+                                    config.vsync(),
+                                    &simple_render_pass,
+                                );
+
+                                command_buffers = Self::allocate_command_buffers(
+                                    &context,
+                                    swapchain.image_count(),
+                                );
+                            }
+
+                            dirty_swapchain = false;
+                        } else {
+                            return;
+                        }
+                    }
+
+                    let new_time = Instant::now();
+                    let delta_s = ((new_time - time).as_nanos() as f64) / 1_000_000_000.0;
+                    time = new_time;
+
+                    gui.prepare_frame(&window);
+
+                    // load_new_model()
+                    if let Some(loaded_model) = loader.get_model() {
+                        gui.set_model_metadata(loaded_model.metadata().clone());
+                        model.take();
+
+                        context.graphics_queue_wait_idle();
+                        let loaded_model = Rc::new(RefCell::new(loaded_model));
+                        renderer.set_model(&loaded_model);
+                        model = Some(loaded_model);
+                    }
+
+                    // update_model()
+                    if let Some(model) = model.as_ref() {
+                        let mut model = model.borrow_mut();
+
+                        if gui.should_toggle_animation() {
+                            model.toggle_animation();
+                        } else if gui.should_stop_animation() {
+                            model.stop_animation();
+                        } else if gui.should_reset_animation() {
+                            model.reset_animation();
+                        } else {
+                            let playback_mode = if gui.is_infinite_animation_checked() {
+                                PlaybackMode::LOOP
+                            } else {
+                                PlaybackMode::ONCE
+                            };
+
+                            model.set_animation_playback_mode(playback_mode);
+                            model.set_current_animation(gui.get_selected_animation());
+                        }
+                        gui.set_animation_playback_state(model.get_animation_playback_state());
+
+                        let delta_s = delta_s as f32 * gui.get_animation_speed();
+                        model.update(delta_s);
+                    }
+
+                    // update_camera()
+                    {
+                        if gui.should_reset_camera() {
+                            camera = Default::default();
+                        }
+
+                        if !gui.is_hovered() {
+                            camera.update(&input_state);
+                            gui.set_camera(Some(camera));
+                        }
+                    }
+
+                    // fn update_renderer_settings()
+                    {
+                        if let Some(emissive_intensity) = gui.get_new_emissive_intensity() {
+                            context.graphics_queue_wait_idle();
+                            renderer.set_emissive_intensity(emissive_intensity);
+                        }
+                        if let Some(ssao_enabled) = gui.get_new_ssao_enabled() {
+                            context.graphics_queue_wait_idle();
+                            renderer.enabled_ssao(ssao_enabled);
+                        }
+                        if let Some(ssao_kernel_size) = gui.get_new_ssao_kernel_size() {
+                            context.graphics_queue_wait_idle();
+                            renderer.set_ssao_kernel_size(ssao_kernel_size);
+                        }
+                        if let Some(ssao_radius) = gui.get_new_ssao_radius() {
+                            context.graphics_queue_wait_idle();
+                            renderer.set_ssao_radius(ssao_radius);
+                        }
+                        if let Some(ssao_strength) = gui.get_new_ssao_strength() {
+                            context.graphics_queue_wait_idle();
+                            renderer.set_ssao_strength(ssao_strength);
+                        }
+                        if let Some(tone_map_mode) = gui.get_new_renderer_tone_map_mode() {
+                            context.graphics_queue_wait_idle();
+                            renderer.set_tone_map_mode(&simple_render_pass, tone_map_mode);
+                        }
+                        if let Some(output_mode) = gui.get_new_renderer_output_mode() {
+                            context.graphics_queue_wait_idle();
+                            renderer.set_output_mode(output_mode);
+                        }
+                    }
+
+                    // draw_frame()
+                    {
+                        log::trace!("Drawing frame.");
+                        let sync_objects = in_flight_frames.next().unwrap();
+                        let image_available_semaphore = sync_objects.image_available_semaphore;
+                        let render_finished_semaphore = sync_objects.render_finished_semaphore;
+                        let in_flight_fence = sync_objects.fence;
+                        let wait_fences = [in_flight_fence];
+
+                        unsafe {
+                            context
+                                .device()
+                                .wait_for_fences(&wait_fences, true, std::u64::MAX)
+                                .unwrap()
+                        };
+
+                        let result = swapchain.acquire_next_image(
+                            None,
+                            Some(image_available_semaphore),
+                            None,
+                        );
+                        let image_index = match result {
+                            Ok((image_index, _)) => image_index,
+                            Err(vk::Result::ERROR_OUT_OF_DATE_KHR) => {
+                                dirty_swapchain = true;
+                                return;
+                            }
+                            Err(error) => {
+                                panic!("Error while acquiring next image. Cause: {}", error)
+                            }
+                        };
+
+                        unsafe { context.device().reset_fences(&wait_fences).unwrap() };
+
+                        // record_command_buffer
+                        {
+                            let command_buffer = command_buffers[image_index as usize];
+                            let frame_index = image_index as _;
+                            let device = context.device();
+
+                            unsafe {
+                                device
+                                    .reset_command_buffer(
+                                        command_buffer,
+                                        vk::CommandBufferResetFlags::empty(),
+                                    )
+                                    .unwrap();
+                            }
+
+                            // begin command buffer
+                            {
+                                let command_buffer_begin_info =
+                                    vk::CommandBufferBeginInfo::builder()
+                                        .flags(vk::CommandBufferUsageFlags::SIMULTANEOUS_USE);
+                                unsafe {
+                                    device
+                                        .begin_command_buffer(
+                                            command_buffer,
+                                            &command_buffer_begin_info,
+                                        )
+                                        .unwrap()
+                                };
+                            }
+
+                            let draw_data = gui.render(&mut run, &window);
+
+                            renderer.cmd_draw(
+                                command_buffer,
+                                frame_index,
+                                swapchain.properties(),
+                                &simple_render_pass,
+                                swapchain.framebuffers()[frame_index],
+                                draw_data,
+                            );
+
+                            // End command buffer
+                            unsafe { device.end_command_buffer(command_buffer).unwrap() };
+                        }
+
+                        renderer.update_ubos(image_index as _, camera);
+
+                        let device = context.device();
+                        let wait_semaphores = [image_available_semaphore];
+                        let signal_semaphores = [render_finished_semaphore];
+
+                        // Submit command buffer
+                        {
+                            let wait_stages = [vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT];
+                            let command_buffers = [command_buffers[image_index as usize]];
+                            let submit_info = vk::SubmitInfo::builder()
+                                .wait_semaphores(&wait_semaphores)
+                                .wait_dst_stage_mask(&wait_stages)
+                                .command_buffers(&command_buffers)
+                                .signal_semaphores(&signal_semaphores)
+                                .build();
+                            let submit_infos = [submit_info];
+                            unsafe {
+                                device
+                                    .queue_submit(
+                                        context.graphics_queue(),
+                                        &submit_infos,
+                                        in_flight_fence,
+                                    )
+                                    .unwrap()
+                            };
+                        }
+
+                        let swapchains = [swapchain.swapchain_khr()];
+                        let images_indices = [image_index];
+
+                        {
+                            let present_info = vk::PresentInfoKHR::builder()
+                                .wait_semaphores(&signal_semaphores)
+                                .swapchains(&swapchains)
+                                .image_indices(&images_indices);
+                            let result = swapchain.present(&present_info);
+                            match result {
+                                Ok(is_suboptimal) if is_suboptimal => {
+                                    dirty_swapchain = true;
+                                }
+                                Err(vk::Result::ERROR_OUT_OF_DATE_KHR) => {
+                                    dirty_swapchain = true;
+                                }
+                                Err(error) => panic!("Failed to present queue. Cause: {}", error),
+                                _ => {}
+                            }
+                        }
+                    }
+                }
+                // Window event
+                Event::WindowEvent { event, .. } => {
+                    match event {
+                        // Dropped file
+                        WindowEvent::DroppedFile(path) => {
+                            log::debug!("File dropped: {:?}", path);
+                            loader.load(path);
+                        }
+                        // Resizing
+                        WindowEvent::Resized(new_size) => {
+                            log::debug!("Window was resized. New size is {:?}", new_size);
+                            dirty_swapchain = true;
+                        }
+                        // Exit
+                        WindowEvent::CloseRequested => run = false,
+                        _ => (),
+                    }
+                }
+                // Cleanup
+                Event::LoopDestroyed => {
+                    log::info!("Stopping application");
+                    let device = context.device();
+                    // self.cleanup_swapchain();
+                    {
+                        unsafe { device.device_wait_idle().unwrap() };
+                        unsafe {
+                            device.free_command_buffers(
+                                context.general_command_pool(),
+                                &command_buffers,
+                            );
+                        }
+                        swapchain.destroy();
+                    }
+                    in_flight_frames.destroy(device);
+                }
+                // Ignored
+                _ => (),
             }
 
-            self.load_new_model();
-            self.update_model(delta_s as f32);
-            self.update_camera();
-            self.update_renderer_settings();
-            self.draw_frame();
-        }
-        unsafe { self.context.device().device_wait_idle().unwrap() };
-    }
-
-    /// Process the events from the `EventsLoop` and return whether the
-    /// main loop should stop.
-    fn process_event(&mut self) {
-        if !self.run {
-            return;
-        }
-
-        let mut run = true;
-        let mut resize_dimensions = None;
-        let mut path_to_load = None;
-        let mut input_state = self.input_state;
-        input_state.reset();
-
-        let gui = &mut self.gui;
-        let window = &self.window;
-
-        self.events_loop.poll_events(|event| {
-            gui.handle_event(window, &event);
-            input_state = input_state.update(&event);
-            if let Event::WindowEvent { event, .. } = event {
-                match event {
-                    WindowEvent::CloseRequested => run = false,
-                    WindowEvent::Resized(LogicalSize { width, height }) => {
-                        resize_dimensions = Some([width as u32, height as u32]);
-                    }
-                    WindowEvent::DroppedFile(path) => {
-                        log::debug!("File dropped: {:?}", path);
-                        path_to_load = Some(path);
-                    }
-                    _ => {}
-                }
+            if !run {
+                *control_flow = ControlFlow::Exit;
             }
         });
-
-        self.gui.prepare_frame(window);
-
-        self.resize_dimensions = resize_dimensions;
-        if path_to_load.is_some() {
-            self.loader.load(path_to_load.as_ref().cloned().unwrap());
-        }
-        self.input_state = input_state;
-        self.run = run;
-    }
-
-    fn load_new_model(&mut self) {
-        if let Some(model) = self.loader.get_model() {
-            self.gui.set_model_metadata(model.metadata().clone());
-            self.model.take();
-
-            self.context.graphics_queue_wait_idle();
-            let model = Rc::new(RefCell::new(model));
-            self.renderer.set_model(&model);
-            self.model = Some(model);
-        }
-    }
-
-    fn update_model(&mut self, delta_s: f32) {
-        if let Some(model) = self.model.as_ref() {
-            let mut model = model.borrow_mut();
-
-            if self.gui.should_toggle_animation() {
-                model.toggle_animation();
-            } else if self.gui.should_stop_animation() {
-                model.stop_animation();
-            } else if self.gui.should_reset_animation() {
-                model.reset_animation();
-            } else {
-                let playback_mode = if self.gui.is_infinite_animation_checked() {
-                    PlaybackMode::LOOP
-                } else {
-                    PlaybackMode::ONCE
-                };
-
-                model.set_animation_playback_mode(playback_mode);
-                model.set_current_animation(self.gui.get_selected_animation());
-            }
-            self.gui
-                .set_animation_playback_state(model.get_animation_playback_state());
-
-            let delta_s = delta_s * self.gui.get_animation_speed();
-            model.update(delta_s);
-        }
-    }
-
-    fn update_camera(&mut self) {
-        if self.gui.should_reset_camera() {
-            self.camera = Default::default();
-        }
-
-        if self.gui.is_hovered() {
-            return;
-        }
-
-        self.camera.update(&self.input_state);
-        self.gui.set_camera(Some(self.camera));
-    }
-
-    fn update_renderer_settings(&mut self) {
-        if let Some(emissive_intensity) = self.gui.get_new_emissive_intensity() {
-            self.context.graphics_queue_wait_idle();
-            self.renderer.set_emissive_intensity(emissive_intensity);
-        }
-        if let Some(ssao_enabled) = self.gui.get_new_ssao_enabled() {
-            self.context.graphics_queue_wait_idle();
-            self.renderer.enabled_ssao(ssao_enabled);
-        }
-        if let Some(ssao_kernel_size) = self.gui.get_new_ssao_kernel_size() {
-            self.context.graphics_queue_wait_idle();
-            self.renderer.set_ssao_kernel_size(ssao_kernel_size);
-        }
-        if let Some(ssao_radius) = self.gui.get_new_ssao_radius() {
-            self.context.graphics_queue_wait_idle();
-            self.renderer.set_ssao_radius(ssao_radius);
-        }
-        if let Some(ssao_strength) = self.gui.get_new_ssao_strength() {
-            self.context.graphics_queue_wait_idle();
-            self.renderer.set_ssao_strength(ssao_strength);
-        }
-        if let Some(tone_map_mode) = self.gui.get_new_renderer_tone_map_mode() {
-            self.context.graphics_queue_wait_idle();
-            self.renderer
-                .set_tone_map_mode(&self.simple_render_pass, tone_map_mode);
-        }
-        if let Some(output_mode) = self.gui.get_new_renderer_output_mode() {
-            self.context.graphics_queue_wait_idle();
-            self.renderer.set_output_mode(output_mode);
-        }
-    }
-
-    fn draw_frame(&mut self) {
-        log::trace!("Drawing frame.");
-        let sync_objects = self.in_flight_frames.next().unwrap();
-        let image_available_semaphore = sync_objects.image_available_semaphore;
-        let render_finished_semaphore = sync_objects.render_finished_semaphore;
-        let in_flight_fence = sync_objects.fence;
-        let wait_fences = [in_flight_fence];
-
-        unsafe {
-            self.context
-                .device()
-                .wait_for_fences(&wait_fences, true, std::u64::MAX)
-                .unwrap()
-        };
-
-        let result = self
-            .swapchain
-            .acquire_next_image(None, Some(image_available_semaphore), None);
-        let image_index = match result {
-            Ok((image_index, _)) => image_index,
-            Err(vk::Result::ERROR_OUT_OF_DATE_KHR) => {
-                self.recreate_swapchain();
-                return;
-            }
-            Err(error) => panic!("Error while acquiring next image. Cause: {}", error),
-        };
-
-        unsafe { self.context.device().reset_fences(&wait_fences).unwrap() };
-
-        self.record_command_buffer(self.command_buffers[image_index as usize], image_index as _);
-        self.renderer.update_ubos(image_index as _, self.camera);
-
-        let device = self.context.device();
-        let wait_semaphores = [image_available_semaphore];
-        let signal_semaphores = [render_finished_semaphore];
-
-        // Submit command buffer
-        {
-            let wait_stages = [vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT];
-            let command_buffers = [self.command_buffers[image_index as usize]];
-            let submit_info = vk::SubmitInfo::builder()
-                .wait_semaphores(&wait_semaphores)
-                .wait_dst_stage_mask(&wait_stages)
-                .command_buffers(&command_buffers)
-                .signal_semaphores(&signal_semaphores)
-                .build();
-            let submit_infos = [submit_info];
-            unsafe {
-                device
-                    .queue_submit(
-                        self.context.graphics_queue(),
-                        &submit_infos,
-                        in_flight_fence,
-                    )
-                    .unwrap()
-            };
-        }
-
-        let swapchains = [self.swapchain.swapchain_khr()];
-        let images_indices = [image_index];
-
-        {
-            let present_info = vk::PresentInfoKHR::builder()
-                .wait_semaphores(&signal_semaphores)
-                .swapchains(&swapchains)
-                .image_indices(&images_indices);
-            let result = self.swapchain.present(&present_info);
-            match result {
-                Ok(is_suboptimal) if is_suboptimal => {
-                    self.recreate_swapchain();
-                }
-                Err(vk::Result::ERROR_OUT_OF_DATE_KHR) => {
-                    self.recreate_swapchain();
-                }
-                Err(error) => panic!("Failed to present queue. Cause: {}", error),
-                _ => {}
-            }
-
-            if self.resize_dimensions.is_some() {
-                self.recreate_swapchain();
-            }
-        }
-    }
-
-    fn record_command_buffer(&mut self, command_buffer: vk::CommandBuffer, frame_index: usize) {
-        let device = self.context.device();
-
-        unsafe {
-            device
-                .reset_command_buffer(command_buffer, vk::CommandBufferResetFlags::empty())
-                .unwrap();
-        }
-
-        // begin command buffer
-        {
-            let command_buffer_begin_info = vk::CommandBufferBeginInfo::builder()
-                .flags(vk::CommandBufferUsageFlags::SIMULTANEOUS_USE);
-            unsafe {
-                device
-                    .begin_command_buffer(command_buffer, &command_buffer_begin_info)
-                    .unwrap()
-            };
-        }
-
-        let draw_data = self.gui.render(&mut self.run, &self.window);
-
-        self.renderer.cmd_draw(
-            command_buffer,
-            frame_index,
-            self.swapchain.properties(),
-            &self.simple_render_pass,
-            self.swapchain.framebuffers()[frame_index],
-            draw_data,
-        );
-
-        // End command buffer
-        unsafe { device.end_command_buffer(command_buffer).unwrap() };
-    }
-
-    /// Recreates the swapchain.
-    ///
-    /// If the window has been resized, then the new size is used
-    /// otherwise, the size of the current swapchain is used.
-    ///
-    /// If the window has been minimized, then the functions block until
-    /// the window is maximized. This is because a width or height of 0
-    /// is not legal.
-    fn recreate_swapchain(&mut self) {
-        log::debug!("Recreating swapchain.");
-
-        if self.has_window_been_minimized() {
-            while !self.has_window_been_maximized() {
-                self.process_event();
-            }
-        }
-
-        unsafe { self.context.device().device_wait_idle().unwrap() };
-
-        self.cleanup_swapchain();
-
-        let dimensions = self.resize_dimensions.unwrap_or([
-            self.swapchain.properties().extent.width,
-            self.swapchain.properties().extent.height,
-        ]);
-
-        let swapchain_support_details = SwapchainSupportDetails::new(
-            self.context.physical_device(),
-            self.context.surface(),
-            self.context.surface_khr(),
-        );
-        let swapchain_properties = swapchain_support_details
-            .get_ideal_swapchain_properties(dimensions, self.config.vsync());
-
-        self.renderer
-            .on_new_swapchain(swapchain_properties, &self.simple_render_pass);
-
-        let swapchain = Swapchain::create(
-            Arc::clone(&self.context),
-            swapchain_support_details,
-            dimensions,
-            self.config.vsync(),
-            &self.simple_render_pass,
-        );
-
-        let command_buffers =
-            Self::allocate_command_buffers(&self.context, swapchain.image_count());
-
-        self.swapchain = swapchain;
-        self.swapchain_properties = swapchain_properties;
-        self.command_buffers = command_buffers;
-    }
-
-    fn has_window_been_minimized(&self) -> bool {
-        match self.window.get_inner_size() {
-            Some(LogicalSize { width, height }) if width == 0.0 || height == 0.0 => true,
-            _ => false,
-        }
-    }
-
-    fn has_window_been_maximized(&self) -> bool {
-        match self.window.get_inner_size() {
-            Some(LogicalSize { width, height }) if width > 0.0 && height > 0.0 => true,
-            _ => false,
-        }
-    }
-
-    /// Clean up the swapchain and all resources that depends on it.
-    fn cleanup_swapchain(&mut self) {
-        let device = self.context.device();
-        unsafe {
-            device.free_command_buffers(self.context.general_command_pool(), &self.command_buffers);
-        }
-        self.swapchain.destroy();
-    }
-}
-
-impl Drop for Viewer {
-    fn drop(&mut self) {
-        log::debug!("Dropping application.");
-        self.cleanup_swapchain();
-        let device = self.context.device();
-        self.in_flight_frames.destroy(device);
     }
 }
 
