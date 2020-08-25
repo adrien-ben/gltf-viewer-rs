@@ -14,7 +14,9 @@ use self::ssao::*;
 pub use self::{postprocess::*, skybox::*};
 
 use super::camera::{Camera, CameraUBO};
-use ash::{version::DeviceV1_0, vk};
+use super::config::Config;
+use super::gui::Gui;
+use ash::{version::DeviceV1_0, vk, Device};
 use environment::Environment;
 use imgui::{Context as GuiContext, DrawData};
 use imgui_rs_vulkan_renderer::Renderer as GuiRenderer;
@@ -26,6 +28,13 @@ use std::mem::size_of;
 use std::rc::Rc;
 use std::sync::Arc;
 use vulkan::*;
+use winit::window::Window;
+
+pub const MAX_FRAMES_IN_FLIGHT: u32 = 2;
+
+pub enum RenderError {
+    DirtySwapchain,
+}
 
 // TODO: at some point I'll need to put vulkan's render passes and frame buffers into the pass structure
 // TODO: try and remember why I did not
@@ -33,7 +42,10 @@ pub struct Renderer {
     context: Arc<Context>,
     depth_format: vk::Format,
     msaa_samples: vk::SampleCountFlags,
-    swapchain_properties: SwapchainProperties,
+    simple_render_pass: SimpleRenderPass,
+    swapchain: Swapchain,
+    command_buffers: Vec<vk::CommandBuffer>,
+    in_flight_frames: InFlightFrames,
     environment: Environment,
     camera_uniform_buffers: Vec<Buffer>,
     light_render_pass: LightRenderPass,
@@ -56,13 +68,38 @@ pub struct Renderer {
 impl Renderer {
     pub fn create(
         context: Arc<Context>,
-        depth_format: vk::Format,
-        msaa_samples: vk::SampleCountFlags,
-        swapchain_properties: SwapchainProperties,
-        simple_render_pass: &SimpleRenderPass,
+        config: &Config,
         environment: Environment,
         gui_context: &mut GuiContext,
     ) -> Self {
+        let resolution = [config.resolution().width(), config.resolution().height()];
+
+        let swapchain_support_details = SwapchainSupportDetails::new(
+            context.physical_device(),
+            context.surface(),
+            context.surface_khr(),
+        );
+        let swapchain_properties =
+            swapchain_support_details.get_ideal_swapchain_properties(resolution, config.vsync());
+        let depth_format = find_depth_format(&context);
+        let msaa_samples = context.get_max_usable_sample_count(config.msaa());
+        log::debug!("msaa: {:?} - preferred was {}", msaa_samples, config.msaa());
+
+        let simple_render_pass =
+            SimpleRenderPass::create(Arc::clone(&context), swapchain_properties.format.format);
+
+        let swapchain = Swapchain::create(
+            Arc::clone(&context),
+            swapchain_support_details,
+            resolution,
+            config.vsync(),
+            &simple_render_pass,
+        );
+
+        let command_buffers = allocate_command_buffers(&context, swapchain.image_count());
+
+        let in_flight_frames = create_sync_objects(&context);
+
         let camera_uniform_buffers =
             create_camera_uniform_buffers(&context, swapchain_properties.image_count);
 
@@ -119,7 +156,7 @@ impl Renderer {
 
         let gui_renderer = GuiRenderer::new::<Context>(
             context.borrow(),
-            crate::viewer::MAX_FRAMES_IN_FLIGHT as _,
+            MAX_FRAMES_IN_FLIGHT as _,
             simple_render_pass.get_render_pass(),
             gui_context,
         )
@@ -131,7 +168,10 @@ impl Renderer {
             context,
             depth_format,
             msaa_samples,
-            swapchain_properties,
+            simple_render_pass,
+            swapchain,
+            command_buffers,
+            in_flight_frames,
             environment,
             camera_uniform_buffers,
             light_render_pass,
@@ -153,6 +193,65 @@ impl Renderer {
     }
 }
 
+fn find_depth_format(context: &Context) -> vk::Format {
+    let candidates = vec![
+        vk::Format::D32_SFLOAT,
+        vk::Format::D32_SFLOAT_S8_UINT,
+        vk::Format::D24_UNORM_S8_UINT,
+    ];
+    context
+        .find_supported_format(
+            &candidates,
+            vk::ImageTiling::OPTIMAL,
+            vk::FormatFeatureFlags::DEPTH_STENCIL_ATTACHMENT,
+        )
+        .expect("Failed to find a supported depth format")
+}
+
+fn allocate_command_buffers(context: &Context, count: usize) -> Vec<vk::CommandBuffer> {
+    let allocate_info = vk::CommandBufferAllocateInfo::builder()
+        .command_pool(context.general_command_pool())
+        .level(vk::CommandBufferLevel::PRIMARY)
+        .command_buffer_count(count as _);
+
+    unsafe {
+        context
+            .device()
+            .allocate_command_buffers(&allocate_info)
+            .unwrap()
+    }
+}
+
+fn create_sync_objects(context: &Arc<Context>) -> InFlightFrames {
+    let device = context.device();
+    let mut sync_objects_vec = Vec::new();
+    for _ in 0..MAX_FRAMES_IN_FLIGHT {
+        let image_available_semaphore = {
+            let semaphore_info = vk::SemaphoreCreateInfo::builder();
+            unsafe { device.create_semaphore(&semaphore_info, None).unwrap() }
+        };
+
+        let render_finished_semaphore = {
+            let semaphore_info = vk::SemaphoreCreateInfo::builder();
+            unsafe { device.create_semaphore(&semaphore_info, None).unwrap() }
+        };
+
+        let in_flight_fence = {
+            let fence_info = vk::FenceCreateInfo::builder().flags(vk::FenceCreateFlags::SIGNALED);
+            unsafe { device.create_fence(&fence_info, None).unwrap() }
+        };
+
+        let sync_objects = SyncObjects {
+            image_available_semaphore,
+            render_finished_semaphore,
+            fence: in_flight_fence,
+        };
+        sync_objects_vec.push(sync_objects)
+    }
+
+    InFlightFrames::new(Arc::clone(context), sync_objects_vec)
+}
+
 fn create_camera_uniform_buffers(context: &Arc<Context>, count: u32) -> Vec<Buffer> {
     (0..count)
         .map(|_| {
@@ -169,16 +268,134 @@ fn create_camera_uniform_buffers(context: &Arc<Context>, count: u32) -> Vec<Buff
 }
 
 impl Renderer {
-    pub fn cmd_draw(
+    pub fn render(
+        &mut self,
+        window: &Window,
+        camera: Camera,
+        gui: &mut Gui,
+    ) -> Result<(), RenderError> {
+        log::trace!("Drawing frame.");
+        let sync_objects = self.in_flight_frames.next().unwrap();
+        let image_available_semaphore = sync_objects.image_available_semaphore;
+        let render_finished_semaphore = sync_objects.render_finished_semaphore;
+        let in_flight_fence = sync_objects.fence;
+        let wait_fences = [in_flight_fence];
+
+        unsafe {
+            self.context
+                .device()
+                .wait_for_fences(&wait_fences, true, std::u64::MAX)
+                .unwrap()
+        };
+
+        let result = self
+            .swapchain
+            .acquire_next_image(None, Some(image_available_semaphore), None);
+        let image_index = match result {
+            Ok((image_index, _)) => image_index,
+            Err(vk::Result::ERROR_OUT_OF_DATE_KHR) => {
+                return Err(RenderError::DirtySwapchain);
+            }
+            Err(error) => panic!("Error while acquiring next image. Cause: {}", error),
+        };
+
+        unsafe { self.context.device().reset_fences(&wait_fences).unwrap() };
+
+        // record_command_buffer
+        {
+            let command_buffer = self.command_buffers[image_index as usize];
+            let frame_index = image_index as _;
+
+            unsafe {
+                self.context
+                    .device()
+                    .reset_command_buffer(command_buffer, vk::CommandBufferResetFlags::empty())
+                    .unwrap();
+            }
+
+            // begin command buffer
+            {
+                let command_buffer_begin_info = vk::CommandBufferBeginInfo::builder()
+                    .flags(vk::CommandBufferUsageFlags::SIMULTANEOUS_USE);
+                unsafe {
+                    self.context
+                        .device()
+                        .begin_command_buffer(command_buffer, &command_buffer_begin_info)
+                        .unwrap()
+                };
+            }
+
+            let draw_data = gui.render(&window);
+
+            self.cmd_draw(command_buffer, frame_index, draw_data);
+
+            // End command buffer
+            unsafe {
+                self.context
+                    .device()
+                    .end_command_buffer(command_buffer)
+                    .unwrap()
+            };
+        }
+
+        self.update_ubos(image_index as _, camera);
+
+        let wait_semaphores = [image_available_semaphore];
+        let signal_semaphores = [render_finished_semaphore];
+
+        // Submit command buffer
+        {
+            let wait_stages = [vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT];
+            let command_buffers = [self.command_buffers[image_index as usize]];
+            let submit_info = vk::SubmitInfo::builder()
+                .wait_semaphores(&wait_semaphores)
+                .wait_dst_stage_mask(&wait_stages)
+                .command_buffers(&command_buffers)
+                .signal_semaphores(&signal_semaphores)
+                .build();
+            let submit_infos = [submit_info];
+            unsafe {
+                self.context
+                    .device()
+                    .queue_submit(
+                        self.context.graphics_queue(),
+                        &submit_infos,
+                        in_flight_fence,
+                    )
+                    .unwrap()
+            };
+        }
+
+        let swapchains = [self.swapchain.swapchain_khr()];
+        let images_indices = [image_index];
+
+        {
+            let present_info = vk::PresentInfoKHR::builder()
+                .wait_semaphores(&signal_semaphores)
+                .swapchains(&swapchains)
+                .image_indices(&images_indices);
+
+            match self.swapchain.present(&present_info) {
+                Ok(true) | Err(vk::Result::ERROR_OUT_OF_DATE_KHR) => {
+                    return Err(RenderError::DirtySwapchain)
+                }
+                Err(error) => panic!("Failed to present queue. Cause: {}", error),
+                _ => {}
+            }
+        }
+
+        Ok(())
+    }
+
+    fn cmd_draw(
         &mut self,
         command_buffer: vk::CommandBuffer,
         frame_index: usize,
-        swapchain_properties: SwapchainProperties,
-        simple_render_pass: &SimpleRenderPass,
-        final_framebuffer: vk::Framebuffer,
         draw_data: &DrawData,
     ) {
         let device = self.context.device();
+
+        let extent = self.swapchain.properties().extent;
 
         if self.ssao_enabled {
             // GBuffer pass
@@ -202,7 +419,7 @@ impl Renderer {
                         .framebuffer(self.gbuffer_framebuffer)
                         .render_area(vk::Rect2D {
                             offset: vk::Offset2D { x: 0, y: 0 },
-                            extent: swapchain_properties.extent,
+                            extent,
                         })
                         .clear_values(&clear_values);
 
@@ -254,7 +471,7 @@ impl Renderer {
                     .framebuffer(self.lightpass_framebuffer)
                     .render_area(vk::Rect2D {
                         offset: vk::Offset2D { x: 0, y: 0 },
-                        extent: swapchain_properties.extent,
+                        extent,
                     })
                     .clear_values(&clear_values);
 
@@ -287,11 +504,11 @@ impl Renderer {
                     },
                 }];
                 let render_pass_begin_info = vk::RenderPassBeginInfo::builder()
-                    .render_pass(simple_render_pass.get_render_pass())
-                    .framebuffer(final_framebuffer)
+                    .render_pass(self.simple_render_pass.get_render_pass())
+                    .framebuffer(self.swapchain.framebuffers()[frame_index])
                     .render_area(vk::Rect2D {
                         offset: vk::Offset2D { x: 0, y: 0 },
-                        extent: swapchain_properties.extent,
+                        extent,
                     })
                     .clear_values(&clear_values);
 
@@ -319,17 +536,19 @@ impl Renderer {
     pub fn set_model(&mut self, model: &Rc<RefCell<Model>>) {
         self.model_renderer.take();
 
+        let swapchain_properties = self.swapchain.properties();
+
         let model_data = ModelData::create(
             Arc::clone(&self.context),
             Rc::downgrade(model),
-            self.swapchain_properties,
+            swapchain_properties,
         );
 
         let gbuffer_pass = GBufferPass::create(
             Arc::clone(&self.context),
             &model_data,
             &self.camera_uniform_buffers,
-            self.swapchain_properties,
+            swapchain_properties,
             &self.gbuffer_render_pass,
         );
 
@@ -342,7 +561,7 @@ impl Renderer {
             Arc::clone(&self.context),
             &model_data,
             &self.camera_uniform_buffers,
-            self.swapchain_properties,
+            swapchain_properties,
             &self.environment,
             ao_map,
             self.msaa_samples,
@@ -358,11 +577,47 @@ impl Renderer {
         });
     }
 
-    pub fn on_new_swapchain(
-        &mut self,
-        swapchain_properties: SwapchainProperties,
-        simple_render_pass: &SimpleRenderPass,
-    ) {
+    pub fn recreate_swapchain(&mut self, dimensions: [u32; 2], vsync: bool) {
+        log::debug!("Recreating swapchain.");
+
+        self.wait_idle_gpu();
+
+        self.destroy_swapchain();
+
+        let swapchain_support_details = SwapchainSupportDetails::new(
+            self.context.physical_device(),
+            self.context.surface(),
+            self.context.surface_khr(),
+        );
+
+        self.swapchain = Swapchain::create(
+            Arc::clone(&self.context),
+            swapchain_support_details,
+            dimensions,
+            vsync,
+            &self.simple_render_pass,
+        );
+
+        self.on_new_swapchain();
+
+        self.command_buffers =
+            allocate_command_buffers(&self.context, self.swapchain.image_count());
+    }
+
+    pub fn wait_idle_gpu(&self) {
+        unsafe { self.context.device().device_wait_idle().unwrap() };
+    }
+
+    fn destroy_swapchain(&mut self) {
+        unsafe {
+            self.context
+                .device()
+                .free_command_buffers(self.context.general_command_pool(), &self.command_buffers);
+        }
+        self.swapchain.destroy();
+    }
+
+    fn on_new_swapchain(&mut self) {
         unsafe {
             self.context
                 .device()
@@ -371,6 +626,8 @@ impl Renderer {
                 .device()
                 .destroy_framebuffer(self.gbuffer_framebuffer, None);
         }
+
+        let swapchain_properties = self.swapchain.properties();
 
         // GBuffer
         let gbuffer_render_pass = GBufferRenderPass::create(
@@ -438,11 +695,10 @@ impl Renderer {
             .set_input_image(light_render_pass.get_color_attachment());
         self.final_pass.rebuild_pipelines(
             swapchain_properties,
-            simple_render_pass,
+            &self.simple_render_pass,
             self.tone_map_mode,
         );
 
-        self.swapchain_properties = swapchain_properties;
         self.gbuffer_render_pass = gbuffer_render_pass;
         self.gbuffer_framebuffer = gbuffer_framebuffer;
         self.light_render_pass = light_render_pass;
@@ -454,7 +710,7 @@ impl Renderer {
         if let Some(renderer) = self.model_renderer.as_mut() {
             renderer.light_pass.rebuild_pipelines(
                 &renderer.data,
-                self.swapchain_properties,
+                self.swapchain.properties(),
                 self.msaa_samples,
                 &self.light_render_pass,
                 self.output_mode,
@@ -463,15 +719,11 @@ impl Renderer {
         }
     }
 
-    pub fn set_tone_map_mode(
-        &mut self,
-        simple_render_pass: &SimpleRenderPass,
-        tone_map_mode: ToneMapMode,
-    ) {
+    pub fn set_tone_map_mode(&mut self, tone_map_mode: ToneMapMode) {
         self.tone_map_mode = tone_map_mode;
         self.final_pass.rebuild_pipelines(
-            self.swapchain_properties,
-            simple_render_pass,
+            self.swapchain.properties(),
+            &self.simple_render_pass,
             tone_map_mode,
         );
     }
@@ -481,7 +733,7 @@ impl Renderer {
         if let Some(renderer) = self.model_renderer.as_mut() {
             renderer.light_pass.rebuild_pipelines(
                 &renderer.data,
-                self.swapchain_properties,
+                self.swapchain.properties(),
                 self.msaa_samples,
                 &self.light_render_pass,
                 output_mode,
@@ -506,24 +758,27 @@ impl Renderer {
 
     pub fn set_ssao_kernel_size(&mut self, size: u32) {
         self.ssao_pass.set_ssao_kernel_size(size);
-        self.ssao_pass.rebuild_pipelines(self.swapchain_properties);
+        self.ssao_pass
+            .rebuild_pipelines(self.swapchain.properties());
     }
 
     pub fn set_ssao_radius(&mut self, radius: f32) {
         self.ssao_pass.set_ssao_radius(radius);
-        self.ssao_pass.rebuild_pipelines(self.swapchain_properties);
+        self.ssao_pass
+            .rebuild_pipelines(self.swapchain.properties());
     }
 
     pub fn set_ssao_strength(&mut self, strength: f32) {
         self.ssao_pass.set_ssao_strength(strength);
-        self.ssao_pass.rebuild_pipelines(self.swapchain_properties);
+        self.ssao_pass
+            .rebuild_pipelines(self.swapchain.properties());
     }
 
     pub fn update_ubos(&mut self, frame_index: usize, camera: Camera) {
         // Camera
         {
-            let aspect = self.swapchain_properties.extent.width as f32
-                / self.swapchain_properties.extent.height as f32;
+            let extent = self.swapchain.properties().extent;
+            let aspect = extent.width as f32 / extent.height as f32;
 
             let view = Matrix4::look_at(
                 camera.position(),
@@ -563,6 +818,7 @@ impl Drop for Renderer {
             self.context
                 .device()
                 .destroy_framebuffer(self.gbuffer_framebuffer, None);
+            self.destroy_swapchain();
         }
     }
 }
@@ -658,4 +914,57 @@ fn create_renderer_pipeline<V: Vertex>(
             allow_derivatives: params.parent.is_none(),
         },
     )
+}
+
+struct InFlightFrames {
+    context: Arc<Context>,
+    sync_objects: Vec<SyncObjects>,
+    current_frame: usize,
+}
+
+impl InFlightFrames {
+    fn new(context: Arc<Context>, sync_objects: Vec<SyncObjects>) -> Self {
+        Self {
+            context,
+            sync_objects,
+            current_frame: 0,
+        }
+    }
+}
+
+impl Drop for InFlightFrames {
+    fn drop(&mut self) {
+        self.sync_objects
+            .iter()
+            .for_each(|o| o.destroy(self.context.device()));
+    }
+}
+
+impl Iterator for InFlightFrames {
+    type Item = SyncObjects;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let next = self.sync_objects[self.current_frame];
+
+        self.current_frame = (self.current_frame + 1) % self.sync_objects.len();
+
+        Some(next)
+    }
+}
+
+#[derive(Clone, Copy)]
+struct SyncObjects {
+    image_available_semaphore: vk::Semaphore,
+    render_finished_semaphore: vk::Semaphore,
+    fence: vk::Fence,
+}
+
+impl SyncObjects {
+    fn destroy(&self, device: &Device) {
+        unsafe {
+            device.destroy_semaphore(self.image_available_semaphore, None);
+            device.destroy_semaphore(self.render_finished_semaphore, None);
+            device.destroy_fence(self.fence, None);
+        }
+    }
 }

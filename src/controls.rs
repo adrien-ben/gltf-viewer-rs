@@ -1,4 +1,6 @@
-use vulkan::winit::{DeviceEvent, ElementState, Event, MouseButton, MouseScrollDelta, WindowEvent};
+use vulkan::winit::event::{
+    DeviceEvent, ElementState, Event, MouseButton, MouseScrollDelta, WindowEvent,
+};
 
 #[derive(Copy, Clone, Debug)]
 pub struct InputState {
@@ -9,7 +11,7 @@ pub struct InputState {
 }
 
 impl InputState {
-    pub fn update(self, event: &Event) -> Self {
+    pub fn update(self, event: &Event<()>) -> Self {
         let mut is_left_clicked = None;
         let mut is_right_clicked = None;
         let mut wheel_delta = self.wheel_delta;

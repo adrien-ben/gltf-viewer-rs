@@ -1,4 +1,4 @@
-use image::hdr::HDRDecoder;
+use image::hdr::HdrDecoder;
 use image::Rgb;
 use std::{fs::File, io::BufReader, path::Path};
 
@@ -9,7 +9,7 @@ pub unsafe fn any_as_u8_slice<T: Sized>(any: &T) -> &[u8] {
 }
 
 pub fn load_hdr_image<P: AsRef<Path>>(path: P) -> (u32, u32, Vec<f32>) {
-    let decoder = HDRDecoder::new(BufReader::new(File::open(path).unwrap())).unwrap();
+    let decoder = HdrDecoder::new(BufReader::new(File::open(path).unwrap())).unwrap();
 
     let w = decoder.metadata().width;
     let h = decoder.metadata().height;

@@ -21,9 +21,5 @@ serde = { version = "1.0", features = ["derive"] }
 serde_yaml = "0.8"
 clap = "2.33"
 imgui = "0.4"
+imgui-winit-support = "0.4"
 imgui-rs-vulkan-renderer = "0.4"
-
-[dependencies.imgui-winit-support]
-version = "0.4"
-default-features = false
-features = ["winit-19"]

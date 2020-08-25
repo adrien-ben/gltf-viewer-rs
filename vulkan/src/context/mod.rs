@@ -4,7 +4,7 @@ use self::shared::*;
 use ash::{extensions::khr::Surface, version::DeviceV1_0, vk, Device, Instance};
 use imgui_rs_vulkan_renderer::RendererVkContext;
 use std::sync::Arc;
-use winit::Window;
+use winit::window::Window;
 
 pub struct Context {
     shared_context: Arc<SharedContext>,

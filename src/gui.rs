@@ -5,7 +5,7 @@ use imgui_winit_support::{HiDpiMode, WinitPlatform};
 use model::{metadata::*, PlaybackState};
 use std::borrow::Cow;
 use std::time::Instant;
-use vulkan::winit::{Event, Window as WinitWindow};
+use vulkan::winit::{event::Event, window::Window as WinitWindow};
 
 const SSAO_KERNEL_SIZES: [u32; 4] = [16, 32, 64, 128];
 
@@ -34,21 +34,25 @@ impl Gui {
         }
     }
 
-    pub fn handle_event(&mut self, window: &WinitWindow, event: &Event) {
+    pub fn handle_event(&mut self, window: &WinitWindow, event: &Event<()>) {
         let mut io = self.context.io_mut();
         let platform = &mut self.winit_platform;
 
         platform.handle_event(&mut io, window, event);
     }
 
+    pub fn update_delta_time(&mut self) {
+        let io = self.context.io_mut();
+        self.last_frame_instant = io.update_delta_time(self.last_frame_instant);
+    }
+
     pub fn prepare_frame(&mut self, window: &WinitWindow) {
         let io = self.context.io_mut();
         let platform = &mut self.winit_platform;
         platform.prepare_frame(io, &window).unwrap();
-        self.last_frame_instant = io.update_delta_time(self.last_frame_instant);
     }
 
-    pub fn render(&mut self, _run: &mut bool, window: &WinitWindow) -> &DrawData {
+    pub fn render(&mut self, window: &WinitWindow) -> &DrawData {
         let ui = self.context.frame();
 
         {

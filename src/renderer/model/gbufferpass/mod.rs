@@ -201,6 +201,7 @@ impl Drop for Descriptors {
         unsafe {
             device.destroy_descriptor_pool(self.pool, None);
             device.destroy_descriptor_set_layout(self.dynamic_data_layout, None);
+            device.destroy_descriptor_set_layout(self.per_primitive_layout, None);
         }
     }
 }
