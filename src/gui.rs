@@ -52,7 +52,7 @@ impl Gui {
         platform.prepare_frame(io, &window).unwrap();
     }
 
-    pub fn render(&mut self, _run: &mut bool, window: &WinitWindow) -> &DrawData {
+    pub fn render(&mut self, window: &WinitWindow) -> &DrawData {
         let ui = self.context.frame();
 
         {
