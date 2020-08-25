@@ -10,11 +10,8 @@ math = { path = "../math" }
 
 log = "0.4"
 env_logger = "0.7.1"
-byteorder = "1.3.2"
-
-[dependencies.mikktspace]
-git = "https://github.com/gltf-rs/mikktspace"
-rev = "abbae9b486f280ce6e331821e2454c2cfd746d5b"
+byteorder = "1.3"
+mikktspace = "0.2"
 
 [dependencies.gltf]
 version = "0.15"

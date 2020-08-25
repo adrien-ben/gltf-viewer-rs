@@ -1,5 +1,4 @@
 use super::vertex::ModelVertex;
-use mikktspace::{generate_tangents_default, Geometry};
 
 const VERTEX_PER_FACE: usize = 3;
 
@@ -22,7 +21,7 @@ impl<'a> Mesh<'a> {
     }
 }
 
-impl<'a> Geometry for Mesh<'a> {
+impl<'a> mikktspace::Geometry for Mesh<'a> {
     fn num_faces(&self) -> usize {
         self.faces.len()
     }
@@ -87,7 +86,7 @@ pub fn generate_tangents(indices: Option<&[u32]>, vertices: &mut [ModelVertex]) 
 
     let mut mesh = Mesh { faces, vertices };
 
-    generate_tangents_default(&mut mesh);
+    mikktspace::generate_tangents(&mut mesh);
 }
 
 fn can_generate_inputs(index_count: usize, vertex_count: usize) -> bool {
