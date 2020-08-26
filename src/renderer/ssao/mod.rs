@@ -1,7 +1,7 @@
 mod renderpass;
 
 use super::fullscreen::*;
-use super::{create_renderer_pipeline, RendererPipelineParameters};
+use super::{create_renderer_pipeline, RendererPipelineParameters, RendererSettings};
 use math::{
     cgmath::{InnerSpace, Vector3, Vector4},
     lerp::Lerp,
@@ -18,9 +18,6 @@ use vulkan::{
 };
 
 const NOISE_SIZE: u32 = 8;
-const DEFAULT_KERNEL_SIZE: u32 = 32;
-const DEFAULT_RADIUS: f32 = 0.15;
-const DEFAULT_STRENGTH: f32 = 1.0;
 
 const STATIC_SET_INDEX: u32 = 0;
 const DYNAMIC_SET_INDEX: u32 = 1;
@@ -53,11 +50,12 @@ impl SSAOPass {
         normals: &Texture,
         depth: &Texture,
         camera_buffers: &[Buffer],
+        settings: RendererSettings,
     ) -> Self {
         let render_pass = RenderPass::create(Arc::clone(&context), swapchain_props.extent);
         let framebuffer = render_pass.create_framebuffer();
 
-        let kernel_buffer = create_kernel_buffer(&context, DEFAULT_KERNEL_SIZE);
+        let kernel_buffer = create_kernel_buffer(&context, settings.ssao_kernel_size);
 
         let noise_texture = {
             let size = NOISE_SIZE * NOISE_SIZE;
@@ -101,9 +99,9 @@ impl SSAOPass {
             swapchain_props,
             render_pass.get_render_pass(),
             pipeline_layout,
-            DEFAULT_KERNEL_SIZE,
-            DEFAULT_RADIUS,
-            DEFAULT_STRENGTH,
+            settings.ssao_kernel_size,
+            settings.ssao_radius,
+            settings.ssao_strength,
         );
 
         SSAOPass {
@@ -116,9 +114,9 @@ impl SSAOPass {
             descriptors,
             pipeline_layout,
             pipeline,
-            kernel_size: DEFAULT_KERNEL_SIZE,
-            ssao_radius: DEFAULT_RADIUS,
-            ssao_strength: DEFAULT_STRENGTH,
+            kernel_size: settings.ssao_kernel_size,
+            ssao_radius: settings.ssao_radius,
+            ssao_strength: settings.ssao_strength,
         }
     }
 }

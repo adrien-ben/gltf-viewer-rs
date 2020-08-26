@@ -53,11 +53,14 @@ fn run(config: Config, enable_debug: bool, path: Option<PathBuf>) {
 
     let context = Arc::new(Context::new(&window, enable_debug));
 
+    let renderer_settings = RendererSettings::default();
+
     let environment = Environment::new(&context, config.env().path(), config.env().resolution());
-    let mut gui = Gui::new(&window);
+    let mut gui = Gui::new(&window, renderer_settings);
     let mut renderer = Renderer::create(
         Arc::clone(&context),
         &config,
+        renderer_settings,
         environment,
         gui.get_context(),
     );
@@ -96,7 +99,7 @@ fn run(config: Config, enable_debug: bool, path: Option<PathBuf>) {
 
                 gui.prepare_frame(&window);
 
-                // load_new_model()
+                // Load new model
                 if let Some(loaded_model) = loader.get_model() {
                     gui.set_model_metadata(loaded_model.metadata().clone());
                     model.take();
@@ -107,7 +110,7 @@ fn run(config: Config, enable_debug: bool, path: Option<PathBuf>) {
                     model = Some(loaded_model);
                 }
 
-                // update_model()
+                // Update model
                 if let Some(model) = model.as_ref() {
                     let mut model = model.borrow_mut();
 
@@ -133,7 +136,7 @@ fn run(config: Config, enable_debug: bool, path: Option<PathBuf>) {
                     model.update(delta_s);
                 }
 
-                // update_camera()
+                // Update camera
                 {
                     if gui.should_reset_camera() {
                         camera = Default::default();
@@ -145,36 +148,9 @@ fn run(config: Config, enable_debug: bool, path: Option<PathBuf>) {
                     }
                 }
 
-                // fn update_renderer_settings()
-                {
-                    if let Some(emissive_intensity) = gui.get_new_emissive_intensity() {
-                        context.graphics_queue_wait_idle();
-                        renderer.set_emissive_intensity(emissive_intensity);
-                    }
-                    if let Some(ssao_enabled) = gui.get_new_ssao_enabled() {
-                        context.graphics_queue_wait_idle();
-                        renderer.enabled_ssao(ssao_enabled);
-                    }
-                    if let Some(ssao_kernel_size) = gui.get_new_ssao_kernel_size() {
-                        context.graphics_queue_wait_idle();
-                        renderer.set_ssao_kernel_size(ssao_kernel_size);
-                    }
-                    if let Some(ssao_radius) = gui.get_new_ssao_radius() {
-                        context.graphics_queue_wait_idle();
-                        renderer.set_ssao_radius(ssao_radius);
-                    }
-                    if let Some(ssao_strength) = gui.get_new_ssao_strength() {
-                        context.graphics_queue_wait_idle();
-                        renderer.set_ssao_strength(ssao_strength);
-                    }
-                    if let Some(tone_map_mode) = gui.get_new_renderer_tone_map_mode() {
-                        context.graphics_queue_wait_idle();
-                        renderer.set_tone_map_mode(tone_map_mode);
-                    }
-                    if let Some(output_mode) = gui.get_new_renderer_output_mode() {
-                        context.graphics_queue_wait_idle();
-                        renderer.set_output_mode(output_mode);
-                    }
+                // Update renderer settings
+                if let Some(renderer_settings) = gui.get_new_renderer_settings() {
+                    renderer.update_settings(renderer_settings);
                 }
 
                 // If swapchain must be recreated wait for windows to not be minimized anymore

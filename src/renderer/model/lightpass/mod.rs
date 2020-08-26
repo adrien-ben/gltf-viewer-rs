@@ -3,7 +3,7 @@ mod renderpass;
 pub use renderpass::RenderPass as LightRenderPass;
 
 use super::{uniform::*, JointsBuffer, ModelData};
-use crate::renderer::{create_renderer_pipeline, RendererPipelineParameters};
+use crate::renderer::{create_renderer_pipeline, RendererPipelineParameters, RendererSettings};
 use environment::*;
 use math::cgmath::Matrix4;
 use model::{Model, ModelVertex, Primitive, Texture, Workflow};
@@ -41,7 +41,7 @@ pub struct LightPass {
     transparent_pipeline: vk::Pipeline,
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub enum OutputMode {
     Final = 0,
     Color,
@@ -96,8 +96,7 @@ impl LightPass {
         ao_map: Option<&VulkanTexture>,
         msaa_samples: vk::SampleCountFlags,
         render_pass: &LightRenderPass,
-        output_mode: OutputMode,
-        emissive_intensity: f32,
+        settings: RendererSettings,
     ) -> Self {
         let dummy_texture = VulkanTexture::from_rgba(&context, 1, 1, &[std::u8::MAX; 4]);
 
@@ -130,8 +129,8 @@ impl LightPass {
             render_pass.get_render_pass(),
             pipeline_layout,
             &model_rc.borrow(),
-            output_mode,
-            emissive_intensity,
+            settings.output_mode,
+            settings.emissive_intensity,
         );
 
         let opaque_unculled_pipeline = create_opaque_pipeline(
@@ -142,8 +141,8 @@ impl LightPass {
             render_pass.get_render_pass(),
             pipeline_layout,
             &model_rc.borrow(),
-            output_mode,
-            emissive_intensity,
+            settings.output_mode,
+            settings.emissive_intensity,
         );
 
         let transparent_pipeline = create_transparent_pipeline(
@@ -154,8 +153,8 @@ impl LightPass {
             pipeline_layout,
             opaque_pipeline,
             &model_rc.borrow(),
-            output_mode,
-            emissive_intensity,
+            settings.output_mode,
+            settings.emissive_intensity,
         );
 
         LightPass {
