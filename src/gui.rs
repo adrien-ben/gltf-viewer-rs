@@ -1,5 +1,5 @@
 use crate::camera::Camera;
-use crate::renderer::{OutputMode, ToneMapMode};
+use crate::renderer::{OutputMode, RendererSettings, ToneMapMode};
 use imgui::*;
 use imgui_winit_support::{HiDpiMode, WinitPlatform};
 use model::{metadata::*, PlaybackState};
@@ -8,6 +8,17 @@ use std::time::Instant;
 use vulkan::winit::{event::Event, window::Window as WinitWindow};
 
 const SSAO_KERNEL_SIZES: [u32; 4] = [16, 32, 64, 128];
+fn get_kernel_size_index(size: u32) -> usize {
+    SSAO_KERNEL_SIZES
+        .iter()
+        .position(|&v| v == size)
+        .unwrap_or_else(|| {
+            panic!(
+                "Illegal kernel size {:?}. Should be one of {:?}",
+                size, SSAO_KERNEL_SIZES
+            )
+        })
+}
 
 pub struct Gui {
     context: Context,
@@ -20,7 +31,7 @@ pub struct Gui {
 }
 
 impl Gui {
-    pub fn new(window: &WinitWindow) -> Self {
+    pub fn new(window: &WinitWindow, renderer_settings: RendererSettings) -> Self {
         let (context, winit_platform) = init_imgui(window);
 
         Self {
@@ -30,7 +41,7 @@ impl Gui {
             model_metadata: None,
             animation_playback_state: None,
             camera: None,
-            state: Default::default(),
+            state: State::new(renderer_settings),
         }
     }
 
@@ -138,57 +149,19 @@ impl Gui {
         self.state.reset_camera
     }
 
-    pub fn get_new_emissive_intensity(&self) -> Option<f32> {
-        if self.state.emissive_intensity_changed {
-            Some(self.state.emissive_intensity)
-        } else {
-            None
-        }
-    }
-
-    pub fn get_new_ssao_enabled(&self) -> Option<bool> {
-        if self.state.ssao_enabled_changed {
-            Some(self.state.ssao_enabled)
-        } else {
-            None
-        }
-    }
-
-    pub fn get_new_ssao_kernel_size(&self) -> Option<u32> {
-        if self.state.ssao_kernel_size_changed {
-            Some(SSAO_KERNEL_SIZES[self.state.ssao_kernel_size_index])
-        } else {
-            None
-        }
-    }
-
-    pub fn get_new_ssao_radius(&self) -> Option<f32> {
-        if self.state.ssao_radius_changed {
-            Some(self.state.ssao_radius)
-        } else {
-            None
-        }
-    }
-
-    pub fn get_new_ssao_strength(&self) -> Option<f32> {
-        if self.state.ssao_strength_changed {
-            Some(self.state.ssao_strength)
-        } else {
-            None
-        }
-    }
-
-    pub fn get_new_renderer_tone_map_mode(&self) -> Option<ToneMapMode> {
-        if self.state.tone_map_mode_changed {
-            ToneMapMode::from_value(self.state.selected_tone_map_mode)
-        } else {
-            None
-        }
-    }
-
-    pub fn get_new_renderer_output_mode(&self) -> Option<OutputMode> {
-        if self.state.output_mode_changed {
-            OutputMode::from_value(self.state.selected_output_mode)
+    pub fn get_new_renderer_settings(&self) -> Option<RendererSettings> {
+        if self.state.renderer_settings_changed {
+            Some(RendererSettings {
+                emissive_intensity: self.state.emissive_intensity,
+                ssao_enabled: self.state.ssao_enabled,
+                ssao_kernel_size: SSAO_KERNEL_SIZES[self.state.ssao_kernel_size_index],
+                ssao_radius: self.state.ssao_radius,
+                ssao_strength: self.state.ssao_strength,
+                tone_map_mode: ToneMapMode::from_value(self.state.selected_tone_map_mode)
+                    .expect("Unknown tone map mode"),
+                output_mode: OutputMode::from_value(self.state.selected_output_mode)
+                    .expect("Unknown outpout mode"),
+            })
         } else {
             None
         }
@@ -557,31 +530,27 @@ fn build_renderer_settings_window(ui: &Ui, state: &mut State) {
                 let emissive_intensity_changed =
                     Slider::new(im_str!("Emissive intensity"), 1.0f32..=50.0)
                         .build(ui, &mut state.emissive_intensity);
-                state.emissive_intensity_changed = emissive_intensity_changed;
+                state.renderer_settings_changed = emissive_intensity_changed;
 
-                state.ssao_enabled_changed =
+                state.renderer_settings_changed |=
                     ui.checkbox(im_str!("Enable SSAO"), &mut state.ssao_enabled);
                 if state.ssao_enabled {
-                    fn kernel_display_fn(v: &u32) -> Cow<ImStr> {
-                        Cow::Owned(im_str!("{} samples", v))
-                    }
-
                     let ssao_kernel_size_changed = ComboBox::new(im_str!("SSAO Kernel"))
                         .build_simple(
                             ui,
                             &mut state.ssao_kernel_size_index,
                             &SSAO_KERNEL_SIZES,
-                            &kernel_display_fn,
+                            &|v| Cow::Owned(im_str!("{} samples", v)),
                         );
-                    state.ssao_kernel_size_changed = ssao_kernel_size_changed;
+                    state.renderer_settings_changed |= ssao_kernel_size_changed;
 
                     let ssao_radius_changed = Slider::new(im_str!("SSAO Radius"), 0.01f32..=1.0)
                         .build(ui, &mut state.ssao_radius);
-                    state.ssao_radius_changed = ssao_radius_changed;
+                    state.renderer_settings_changed |= ssao_radius_changed;
 
                     let ssao_strength_changed = Slider::new(im_str!("SSAO Strength"), 0.5..=5.0f32)
                         .build(ui, &mut state.ssao_strength);
-                    state.ssao_strength_changed = ssao_strength_changed;
+                    state.renderer_settings_changed |= ssao_strength_changed;
                 }
             }
 
@@ -589,28 +558,27 @@ fn build_renderer_settings_window(ui: &Ui, state: &mut State) {
                 ui.text("Post Processing");
                 ui.separator();
 
-                let combo_labels = ToneMapMode::all()
-                    .iter()
-                    .map(|mode| im_str!("{:?}", mode))
-                    .collect::<Vec<_>>();
-                let combo_labels = combo_labels.iter().map(|l| l).collect::<Vec<_>>();
-                let tone_map_mode_changed = ComboBox::new(im_str!("Tone Map mode"))
-                    .build_simple_string(ui, &mut state.selected_tone_map_mode, &combo_labels);
-                state.tone_map_mode_changed = tone_map_mode_changed;
+                let tone_map_mode_changed = ComboBox::new(im_str!("Tone Map mode")).build_simple(
+                    ui,
+                    &mut state.selected_tone_map_mode,
+                    &ToneMapMode::all(),
+                    &|mode| Cow::Owned(im_str!("{:?}", mode)),
+                );
+
+                state.renderer_settings_changed |= tone_map_mode_changed;
             }
 
             {
                 ui.text("Debug");
                 ui.separator();
 
-                let combo_labels = OutputMode::all()
-                    .iter()
-                    .map(|mode| im_str!("{:?}", mode))
-                    .collect::<Vec<_>>();
-                let combo_labels = combo_labels.iter().map(|l| l).collect::<Vec<_>>();
-                let output_mode_changed = ComboBox::new(im_str!("Output mode"))
-                    .build_simple_string(ui, &mut state.selected_output_mode, &combo_labels);
-                state.output_mode_changed = output_mode_changed;
+                let output_mode_changed = ComboBox::new(im_str!("Output mode")).build_simple(
+                    ui,
+                    &mut state.selected_output_mode,
+                    &OutputMode::all(),
+                    &|mode| Cow::Owned(im_str!("{:?}", mode)),
+                );
+                state.renderer_settings_changed |= output_mode_changed;
             }
         });
     state.show_renderer_settings = opened;
@@ -633,24 +601,31 @@ struct State {
 
     show_renderer_settings: bool,
     selected_output_mode: usize,
-    output_mode_changed: bool,
     selected_tone_map_mode: usize,
-    tone_map_mode_changed: bool,
     emissive_intensity: f32,
-    emissive_intensity_changed: bool,
     ssao_enabled: bool,
-    ssao_enabled_changed: bool,
     ssao_radius: f32,
-    ssao_radius_changed: bool,
     ssao_strength: f32,
-    ssao_strength_changed: bool,
     ssao_kernel_size_index: usize,
-    ssao_kernel_size_changed: bool,
+    renderer_settings_changed: bool,
 
     hovered: bool,
 }
 
 impl State {
+    fn new(renderer_settings: RendererSettings) -> Self {
+        Self {
+            selected_output_mode: renderer_settings.output_mode as _,
+            selected_tone_map_mode: renderer_settings.tone_map_mode as _,
+            emissive_intensity: renderer_settings.emissive_intensity,
+            ssao_enabled: renderer_settings.ssao_enabled,
+            ssao_radius: renderer_settings.ssao_radius,
+            ssao_strength: renderer_settings.ssao_strength,
+            ssao_kernel_size_index: get_kernel_size_index(renderer_settings.ssao_kernel_size),
+            ..Default::default()
+        }
+    }
+
     fn reset(&self) -> Self {
         Self {
             show_model_descriptor: self.show_model_descriptor,
@@ -688,20 +663,13 @@ impl Default for State {
 
             show_renderer_settings: false,
             selected_output_mode: 0,
-            output_mode_changed: false,
             selected_tone_map_mode: 0,
-            tone_map_mode_changed: false,
             emissive_intensity: 1.0,
-            emissive_intensity_changed: false,
-
             ssao_enabled: true,
-            ssao_enabled_changed: false,
             ssao_radius: 0.15,
-            ssao_radius_changed: false,
             ssao_strength: 1.0,
-            ssao_strength_changed: false,
             ssao_kernel_size_index: 1,
-            ssao_kernel_size_changed: false,
+            renderer_settings_changed: false,
 
             hovered: false,
         }

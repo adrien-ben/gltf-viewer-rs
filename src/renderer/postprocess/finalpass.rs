@@ -1,4 +1,6 @@
-use crate::renderer::{create_renderer_pipeline, fullscreen::*, RendererPipelineParameters};
+use crate::renderer::{
+    create_renderer_pipeline, fullscreen::*, RendererPipelineParameters, RendererSettings,
+};
 use std::{mem::size_of, sync::Arc};
 use vulkan::ash::{version::DeviceV1_0, vk, Device};
 use vulkan::{Context, Descriptors, SimpleRenderPass, SwapchainProperties, Texture};
@@ -11,7 +13,7 @@ pub struct FinalPass {
     pipeline: vk::Pipeline,
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub enum ToneMapMode {
     Default = 0,
     Uncharted,
@@ -45,7 +47,7 @@ impl FinalPass {
         swapchain_props: SwapchainProperties,
         render_pass: &SimpleRenderPass,
         input_image: &Texture,
-        tone_map_mode: ToneMapMode,
+        settings: RendererSettings,
     ) -> Self {
         let descriptors = create_descriptors(&context, input_image);
         let pipeline_layout = create_pipeline_layout(context.device(), descriptors.layout());
@@ -54,7 +56,7 @@ impl FinalPass {
             swapchain_props,
             render_pass.get_render_pass(),
             pipeline_layout,
-            tone_map_mode,
+            settings.tone_map_mode,
         );
 
         FinalPass {

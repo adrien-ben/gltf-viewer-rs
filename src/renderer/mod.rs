@@ -32,14 +32,45 @@ use winit::window::Window;
 
 pub const MAX_FRAMES_IN_FLIGHT: u32 = 2;
 
+const DEFAULT_EMISSIVE_INTENSITY: f32 = 1.0;
+const DEFAULT_SSAO_KERNEL_SIZE: u32 = 32;
+const DEFAULT_SSAO_RADIUS: f32 = 0.15;
+const DEFAULT_SSAO_STRENGTH: f32 = 1.0;
+
 pub enum RenderError {
     DirtySwapchain,
+}
+
+#[derive(Clone, Copy, Debug)]
+pub struct RendererSettings {
+    pub emissive_intensity: f32,
+    pub ssao_enabled: bool,
+    pub ssao_kernel_size: u32,
+    pub ssao_radius: f32,
+    pub ssao_strength: f32,
+    pub tone_map_mode: ToneMapMode,
+    pub output_mode: OutputMode,
+}
+
+impl Default for RendererSettings {
+    fn default() -> Self {
+        Self {
+            emissive_intensity: DEFAULT_EMISSIVE_INTENSITY,
+            ssao_enabled: true,
+            ssao_kernel_size: DEFAULT_SSAO_KERNEL_SIZE,
+            ssao_radius: DEFAULT_SSAO_RADIUS,
+            ssao_strength: DEFAULT_SSAO_STRENGTH,
+            tone_map_mode: ToneMapMode::Default,
+            output_mode: OutputMode::Final,
+        }
+    }
 }
 
 // TODO: at some point I'll need to put vulkan's render passes and frame buffers into the pass structure
 // TODO: try and remember why I did not
 pub struct Renderer {
     context: Arc<Context>,
+    settings: RendererSettings,
     depth_format: vk::Format,
     msaa_samples: vk::SampleCountFlags,
     simple_render_pass: SimpleRenderPass,
@@ -59,26 +90,23 @@ pub struct Renderer {
     quad_model: QuadModel,
     final_pass: FinalPass,
     gui_renderer: GuiRenderer,
-    output_mode: OutputMode,
-    emissive_intensity: f32,
-    tone_map_mode: ToneMapMode,
-    ssao_enabled: bool,
 }
 
 impl Renderer {
     pub fn create(
         context: Arc<Context>,
         config: &Config,
+        settings: RendererSettings,
         environment: Environment,
         gui_context: &mut GuiContext,
     ) -> Self {
-        let resolution = [config.resolution().width(), config.resolution().height()];
-
         let swapchain_support_details = SwapchainSupportDetails::new(
             context.physical_device(),
             context.surface(),
             context.surface_khr(),
         );
+
+        let resolution = [config.resolution().width(), config.resolution().height()];
         let swapchain_properties =
             swapchain_support_details.get_ideal_swapchain_properties(resolution, config.vsync());
         let depth_format = find_depth_format(&context);
@@ -135,6 +163,7 @@ impl Renderer {
             gbuffer_render_pass.get_normals_attachment(),
             gbuffer_render_pass.get_depth_attachment(),
             &camera_uniform_buffers,
+            settings,
         );
 
         let ssao_blur_pass = BlurPass::create(
@@ -145,13 +174,12 @@ impl Renderer {
 
         let quad_model = QuadModel::new(&context);
 
-        let tone_map_mode = ToneMapMode::Default;
         let final_pass = FinalPass::create(
             Arc::clone(&context),
             swapchain_properties,
             &simple_render_pass,
             light_render_pass.get_color_attachment(),
-            tone_map_mode,
+            settings,
         );
 
         let gui_renderer = GuiRenderer::new::<Context>(
@@ -162,10 +190,9 @@ impl Renderer {
         )
         .expect("Failed to create gui renderer");
 
-        let output_mode = OutputMode::Final;
-
         Self {
             context,
+            settings,
             depth_format,
             msaa_samples,
             simple_render_pass,
@@ -185,10 +212,6 @@ impl Renderer {
             quad_model,
             final_pass,
             gui_renderer,
-            output_mode,
-            emissive_intensity: 1.0,
-            tone_map_mode,
-            ssao_enabled: true,
         }
     }
 }
@@ -397,7 +420,7 @@ impl Renderer {
 
         let extent = self.swapchain.properties().extent;
 
-        if self.ssao_enabled {
+        if self.settings.ssao_enabled {
             // GBuffer pass
             {
                 {
@@ -552,7 +575,7 @@ impl Renderer {
             &self.gbuffer_render_pass,
         );
 
-        let ao_map = if self.ssao_enabled {
+        let ao_map = if self.settings.ssao_enabled {
             Some(self.ssao_blur_pass.get_output())
         } else {
             None
@@ -566,8 +589,7 @@ impl Renderer {
             ao_map,
             self.msaa_samples,
             &self.light_render_pass,
-            self.output_mode,
-            self.emissive_intensity,
+            self.settings,
         );
 
         self.model_renderer = Some(ModelRenderer {
@@ -673,7 +695,7 @@ impl Renderer {
                 .gbuffer_pass
                 .rebuild_pipelines(swapchain_properties, &gbuffer_render_pass);
 
-            let ao_map = if self.ssao_enabled {
+            let ao_map = if self.settings.ssao_enabled {
                 Some(self.ssao_blur_pass.get_output())
             } else {
                 None
@@ -685,8 +707,8 @@ impl Renderer {
                 swapchain_properties,
                 self.msaa_samples,
                 &light_render_pass,
-                self.output_mode,
-                self.emissive_intensity,
+                self.settings.output_mode,
+                self.settings.emissive_intensity,
             )
         }
 
@@ -696,7 +718,7 @@ impl Renderer {
         self.final_pass.rebuild_pipelines(
             swapchain_properties,
             &self.simple_render_pass,
-            self.tone_map_mode,
+            self.settings.tone_map_mode,
         );
 
         self.gbuffer_render_pass = gbuffer_render_pass;
@@ -705,22 +727,48 @@ impl Renderer {
         self.lightpass_framebuffer = lightpass_framebuffer;
     }
 
-    pub fn set_emissive_intensity(&mut self, emissive_intensity: f32) {
-        self.emissive_intensity = emissive_intensity;
+    pub fn update_settings(&mut self, settings: RendererSettings) {
+        log::debug!("Updating renderer settings");
+        self.context.graphics_queue_wait_idle();
+        if (self.settings.emissive_intensity - settings.emissive_intensity).abs() > f32::EPSILON {
+            self.set_emissive_intensity(settings.emissive_intensity);
+        }
+        if self.settings.tone_map_mode != settings.tone_map_mode {
+            self.set_tone_map_mode(settings.tone_map_mode);
+        }
+        if self.settings.output_mode != settings.output_mode {
+            self.set_output_mode(settings.output_mode);
+        }
+        if self.settings.ssao_enabled != settings.ssao_enabled {
+            self.enabled_ssao(settings.ssao_enabled);
+        }
+        if self.settings.ssao_kernel_size != settings.ssao_kernel_size {
+            self.set_ssao_kernel_size(settings.ssao_kernel_size);
+        }
+        if (self.settings.ssao_radius - settings.ssao_radius).abs() > f32::EPSILON {
+            self.set_ssao_radius(settings.ssao_radius);
+        }
+        if (self.settings.ssao_strength - settings.ssao_strength).abs() > f32::EPSILON {
+            self.set_ssao_strength(settings.ssao_strength);
+        }
+    }
+
+    fn set_emissive_intensity(&mut self, emissive_intensity: f32) {
+        self.settings.emissive_intensity = emissive_intensity;
         if let Some(renderer) = self.model_renderer.as_mut() {
             renderer.light_pass.rebuild_pipelines(
                 &renderer.data,
                 self.swapchain.properties(),
                 self.msaa_samples,
                 &self.light_render_pass,
-                self.output_mode,
+                self.settings.output_mode,
                 emissive_intensity,
             );
         }
     }
 
-    pub fn set_tone_map_mode(&mut self, tone_map_mode: ToneMapMode) {
-        self.tone_map_mode = tone_map_mode;
+    fn set_tone_map_mode(&mut self, tone_map_mode: ToneMapMode) {
+        self.settings.tone_map_mode = tone_map_mode;
         self.final_pass.rebuild_pipelines(
             self.swapchain.properties(),
             &self.simple_render_pass,
@@ -728,8 +776,8 @@ impl Renderer {
         );
     }
 
-    pub fn set_output_mode(&mut self, output_mode: OutputMode) {
-        self.output_mode = output_mode;
+    fn set_output_mode(&mut self, output_mode: OutputMode) {
+        self.settings.output_mode = output_mode;
         if let Some(renderer) = self.model_renderer.as_mut() {
             renderer.light_pass.rebuild_pipelines(
                 &renderer.data,
@@ -737,14 +785,14 @@ impl Renderer {
                 self.msaa_samples,
                 &self.light_render_pass,
                 output_mode,
-                self.emissive_intensity,
+                self.settings.emissive_intensity,
             );
         }
     }
 
-    pub fn enabled_ssao(&mut self, enable: bool) {
-        if self.ssao_enabled != enable {
-            self.ssao_enabled = enable;
+    fn enabled_ssao(&mut self, enable: bool) {
+        if self.settings.ssao_enabled != enable {
+            self.settings.ssao_enabled = enable;
             if let Some(renderer) = self.model_renderer.as_mut() {
                 let ao_map = if enable {
                     Some(self.ssao_blur_pass.get_output())
@@ -756,19 +804,19 @@ impl Renderer {
         }
     }
 
-    pub fn set_ssao_kernel_size(&mut self, size: u32) {
+    fn set_ssao_kernel_size(&mut self, size: u32) {
         self.ssao_pass.set_ssao_kernel_size(size);
         self.ssao_pass
             .rebuild_pipelines(self.swapchain.properties());
     }
 
-    pub fn set_ssao_radius(&mut self, radius: f32) {
+    fn set_ssao_radius(&mut self, radius: f32) {
         self.ssao_pass.set_ssao_radius(radius);
         self.ssao_pass
             .rebuild_pipelines(self.swapchain.properties());
     }
 
-    pub fn set_ssao_strength(&mut self, strength: f32) {
+    fn set_ssao_strength(&mut self, strength: f32) {
         self.ssao_pass.set_ssao_strength(strength);
         self.ssao_pass
             .rebuild_pipelines(self.swapchain.properties());
