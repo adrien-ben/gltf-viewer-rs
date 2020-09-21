@@ -1,4 +1,4 @@
-use super::node::Node;
+use super::node::Nodes;
 use gltf::{buffer::Data, iter::Skins as GltfSkins, Skin as GltfSkin};
 use math::cgmath::{Matrix4, SquareMatrix};
 
@@ -12,7 +12,7 @@ pub struct Skin {
 
 impl Skin {
     /// Compute the joints matrices from the nodes matrices.
-    pub fn compute_joints_matrices(&mut self, transform: Matrix4<f32>, nodes: &[Node]) {
+    pub fn compute_joints_matrices(&mut self, transform: Matrix4<f32>, nodes: &Nodes) {
         self.joints
             .iter_mut()
             .for_each(|j| j.compute_matrix(transform, nodes));
@@ -41,11 +41,11 @@ impl Joint {
         }
     }
 
-    fn compute_matrix(&mut self, transform: Matrix4<f32>, nodes: &[Node]) {
+    fn compute_matrix(&mut self, transform: Matrix4<f32>, nodes: &Nodes) {
         let global_transform_inverse = transform
             .invert()
             .expect("Transform matrix should be invertible");
-        let node_transform = nodes[self.node_id].transform();
+        let node_transform = nodes.node(self.node_id).transform();
 
         self.matrix = global_transform_inverse * node_transform * self.inverse_bind_matrix;
     }

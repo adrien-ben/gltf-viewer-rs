@@ -1064,8 +1064,7 @@ fn create_model_frag_shader_specialization(
 
     let light_count = model
         .nodes()
-        .nodes()
-        .iter()
+        .into_iter()
         .filter(|n| n.light_index().is_some())
         .count() as u32;
 
@@ -1096,13 +1095,12 @@ fn register_model_draw_commands<F>(
     let model_transform_ubo_offset = context.get_ubo_alignment::<Matrix4<f32>>();
     let model_skin_ubo_offset = context.get_ubo_alignment::<JointsBuffer>();
 
-    for (index, node) in model
+    for node in model
         .nodes()
-        .nodes()
-        .iter()
+        .into_iter()
         .filter(|n| n.mesh_index().is_some())
-        .enumerate()
     {
+        let index = node.meshed_index().unwrap();
         let mesh = model.mesh(node.mesh_index().unwrap());
         let skin_index = node.skin_index().unwrap_or(0);
 

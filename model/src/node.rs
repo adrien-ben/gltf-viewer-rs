@@ -1,11 +1,12 @@
-use gltf::{iter::Nodes as GltfNodes, scene::Transform, Scene};
+use gltf::{iter::Nodes as GltfNodes, Scene, scene::Transform};
+
 use math::cgmath::{Matrix4, Quaternion, Vector3};
 
 #[derive(Clone, Debug)]
 pub struct Nodes {
     nodes: Vec<Node>,
     roots_indices: Vec<usize>,
-    depth_first_taversal_indices: Vec<(usize, Option<usize>)>,
+    depth_first_traversal_indices: Vec<(usize, Option<usize>)>,
 }
 
 impl Nodes {
@@ -25,11 +26,16 @@ impl Nodes {
                 local_transform,
                 global_transform_matrix,
                 mesh_index,
+                meshed_index: None,
                 skin_index,
                 light_index,
                 children_indices,
             };
             nodes.insert(node_index, node);
+        }
+
+        for (index, node) in nodes.iter_mut().filter(|n| n.mesh_index.is_some()).enumerate() {
+            node.meshed_index.replace(index);
         }
 
         let mut nodes = Nodes::new(nodes, roots_indices);
@@ -39,18 +45,18 @@ impl Nodes {
     }
 
     fn new(nodes: Vec<Node>, roots_indices: Vec<usize>) -> Self {
-        let depth_first_taversal_indices = build_graph_run_indices(&roots_indices, &nodes);
+        let depth_first_traversal_indices = build_graph_run_indices(&roots_indices, &nodes);
         Self {
             roots_indices,
             nodes,
-            depth_first_taversal_indices,
+            depth_first_traversal_indices,
         }
     }
 }
 
 impl Nodes {
     pub fn transform(&mut self, global_transform: Option<Matrix4<f32>>) {
-        for (index, parent_index) in &self.depth_first_taversal_indices {
+        for (index, parent_index) in &self.depth_first_traversal_indices {
             let parent_transform = parent_index
                 .map(|id| {
                     let parent = &self.nodes[id];
@@ -95,12 +101,21 @@ fn build_graph_run_indices_rec(
 }
 
 impl Nodes {
-    pub fn nodes(&self) -> &[Node] {
-        &self.nodes
+    pub fn node(&self, index: usize) -> &Node {
+        &self.nodes[index]
     }
 
-    pub fn nodes_mut(&mut self) -> &mut [Node] {
-        &mut self.nodes
+    pub fn node_mut(&mut self, index: usize) -> &mut Node {
+        &mut self.nodes[index]
+    }
+}
+
+impl<'a> IntoIterator for &'a Nodes {
+    type Item = &'a Node;
+    type IntoIter = std::slice::Iter<'a, Node>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.nodes.iter()
     }
 }
 
@@ -109,6 +124,8 @@ pub struct Node {
     local_transform: Transform,
     global_transform_matrix: Matrix4<f32>,
     mesh_index: Option<usize>,
+    // position of this node among the nodes with mesh
+    meshed_index: Option<usize>,
     skin_index: Option<usize>,
     light_index: Option<usize>,
     children_indices: Vec<usize>,
@@ -129,6 +146,8 @@ impl Node {
     pub fn mesh_index(&self) -> Option<usize> {
         self.mesh_index
     }
+
+    pub fn meshed_index(&self) -> Option<usize> { self.meshed_index }
 
     pub fn skin_index(&self) -> Option<usize> {
         self.skin_index
