@@ -1,4 +1,4 @@
-use gltf::{iter::Nodes as GltfNodes, Scene, scene::Transform};
+use gltf::{iter::Nodes as GltfNodes, scene::Transform, Scene};
 
 use math::cgmath::{Matrix4, Quaternion, Vector3};
 
@@ -34,7 +34,11 @@ impl Nodes {
             nodes.insert(node_index, node);
         }
 
-        for (index, node) in nodes.iter_mut().filter(|n| n.mesh_index.is_some()).enumerate() {
+        for (index, node) in nodes
+            .iter_mut()
+            .filter(|n| n.mesh_index.is_some())
+            .enumerate()
+        {
             node.meshed_index.replace(index);
         }
 
@@ -147,7 +151,9 @@ impl Node {
         self.mesh_index
     }
 
-    pub fn meshed_index(&self) -> Option<usize> { self.meshed_index }
+    pub fn meshed_index(&self) -> Option<usize> {
+        self.meshed_index
+    }
 
     pub fn skin_index(&self) -> Option<usize> {
         self.skin_index

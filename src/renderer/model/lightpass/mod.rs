@@ -1,16 +1,19 @@
-mod renderpass;
-
-pub use renderpass::RenderPass as LightRenderPass;
-
-use super::{uniform::*, JointsBuffer, ModelData};
-use crate::renderer::{create_renderer_pipeline, RendererPipelineParameters, RendererSettings};
-use environment::*;
-use math::cgmath::Matrix4;
-use model::{Model, ModelVertex, Primitive, Texture, Workflow};
 use std::{mem::size_of, sync::Arc};
+
+use environment::*;
+use math::cgmath::{vec3, vec4, InnerSpace, Matrix4};
+use model::{Model, ModelVertex, Primitive, Texture, Workflow};
+pub use renderpass::RenderPass as LightRenderPass;
 use util::*;
 use vulkan::ash::{version::DeviceV1_0, vk, Device};
 use vulkan::{Buffer, Context, SwapchainProperties, Texture as VulkanTexture};
+
+use crate::renderer::{create_renderer_pipeline, RendererPipelineParameters, RendererSettings};
+
+use super::{uniform::*, JointsBuffer, ModelData};
+use crate::camera::Camera;
+
+mod renderpass;
 
 const DYNAMIC_DATA_SET_INDEX: u32 = 0;
 const STATIC_DATA_SET_INDEX: u32 = 1;
@@ -247,6 +250,7 @@ impl LightPass {
         command_buffer: vk::CommandBuffer,
         frame_index: usize,
         model_data: &ModelData,
+        camera: Camera,
     ) {
         let device = self.context.device();
         let model = model_data
@@ -254,15 +258,6 @@ impl LightPass {
             .upgrade()
             .expect("Cannot register draw commands because model was dropped");
         let model = model.borrow();
-
-        // Bind opaque pipeline
-        unsafe {
-            device.cmd_bind_pipeline(
-                command_buffer,
-                vk::PipelineBindPoint::GRAPHICS,
-                self.opaque_pipeline,
-            )
-        };
 
         // Bind static data
         unsafe {
@@ -288,15 +283,33 @@ impl LightPass {
             )
         };
 
-        // Draw opaque primitives
+        // Bind opaque pipeline
+        unsafe {
+            device.cmd_bind_pipeline(
+                command_buffer,
+                vk::PipelineBindPoint::GRAPHICS,
+                self.opaque_pipeline,
+            )
+        };
+
+        let mut opaque_primitives = get_primitives(
+            &model,
+            |p| !p.material().is_transparent() && !p.material().is_double_sided(),
+            camera,
+        );
+        opaque_primitives.sort_unstable_by(|a, b| {
+            a.distance_from_camera
+                .partial_cmp(&b.distance_from_camera)
+                .unwrap()
+        });
+
         register_model_draw_commands(
             &self.context,
             self.pipeline_layout,
             command_buffer,
-            &model,
             &self.descriptors.dynamic_data_sets[frame_index..=frame_index],
             &self.descriptors.per_primitive_sets,
-            |p| !p.material().is_transparent() && !p.material().is_double_sided(),
+            &mut opaque_primitives,
         );
 
         // Bind opaque without culling pipeline
@@ -308,15 +321,24 @@ impl LightPass {
             )
         };
 
-        // Draw opaque, double sided primitives
+        let mut opaque_unculled_primitives = get_primitives(
+            &model,
+            |p| !p.material().is_transparent() && p.material().is_double_sided(),
+            camera,
+        );
+        opaque_unculled_primitives.sort_unstable_by(|a, b| {
+            a.distance_from_camera
+                .partial_cmp(&b.distance_from_camera)
+                .unwrap()
+        });
+
         register_model_draw_commands(
             &self.context,
             self.pipeline_layout,
             command_buffer,
-            &model,
             &self.descriptors.dynamic_data_sets[frame_index..=frame_index],
             &self.descriptors.per_primitive_sets,
-            |p| !p.material().is_transparent() && p.material().is_double_sided(),
+            &mut opaque_unculled_primitives,
         );
 
         // Bind transparent pipeline
@@ -327,15 +349,22 @@ impl LightPass {
                 self.transparent_pipeline,
             )
         };
-        // Draw transparent primitives
+
+        let mut transparent_primitives =
+            get_primitives(&model, |p| p.material().is_transparent(), camera);
+        transparent_primitives.sort_unstable_by(|a, b| {
+            b.distance_from_camera
+                .partial_cmp(&a.distance_from_camera)
+                .unwrap()
+        });
+
         register_model_draw_commands(
             &self.context,
             self.pipeline_layout,
             command_buffer,
-            &model,
             &self.descriptors.dynamic_data_sets[frame_index..=frame_index],
             &self.descriptors.per_primitive_sets,
-            |p| p.material().is_transparent(),
+            &mut transparent_primitives,
         );
     }
 }
@@ -1080,29 +1109,71 @@ fn create_model_frag_shader_specialization(
     (specialization_info, map_entries, data)
 }
 
-fn register_model_draw_commands<F>(
-    context: &Context,
-    pipeline_layout: vk::PipelineLayout,
-    command_buffer: vk::CommandBuffer,
-    model: &Model,
-    dynamic_descriptors: &[vk::DescriptorSet],
-    per_primitive_descriptors: &[vk::DescriptorSet],
-    primitive_filter: F,
-) where
+struct PrimitiveRenderData<'a> {
+    primitive: &'a Primitive,
+    transform_ubo_index: usize,
+    skin_index: Option<usize>,
+    distance_from_camera: f32,
+}
+
+fn get_primitives<F>(model: &Model, filter: F, camera: Camera) -> Vec<PrimitiveRenderData>
+where
     F: FnMut(&&Primitive) -> bool + Copy,
 {
-    let device = context.device();
-    let model_transform_ubo_offset = context.get_ubo_alignment::<Matrix4<f32>>();
-    let model_skin_ubo_offset = context.get_ubo_alignment::<JointsBuffer>();
-
+    let mut primitives = Vec::new();
     for node in model
         .nodes()
         .into_iter()
         .filter(|n| n.mesh_index().is_some())
+        .into_iter()
     {
-        let index = node.meshed_index().unwrap();
+        let transform_ubo_index = node.meshed_index().unwrap();
         let mesh = model.mesh(node.mesh_index().unwrap());
-        let skin_index = node.skin_index().unwrap_or(0);
+        let skin_index = node.skin_index();
+        let transform = node.transform();
+
+        for primitive in mesh.primitives().iter().filter(filter) {
+            // Compute center of the primitive
+            let center = primitive.aabb().get_center();
+            let center = vec4(center.x, center.y, center.z, 1.0);
+            let center = transform * center;
+            let center = vec3(center.x, center.y, center.z);
+
+            let camera_position = camera.position();
+            let camera_position = vec3(camera_position.x, camera_position.y, camera_position.z);
+            let distance_from_camera = (camera_position - center).magnitude2();
+
+            primitives.push(PrimitiveRenderData {
+                primitive,
+                transform_ubo_index,
+                skin_index,
+                distance_from_camera,
+            });
+        }
+    }
+    primitives
+}
+
+fn register_model_draw_commands(
+    context: &Context,
+    pipeline_layout: vk::PipelineLayout,
+    command_buffer: vk::CommandBuffer,
+    dynamic_descriptors: &[vk::DescriptorSet],
+    per_primitive_descriptors: &[vk::DescriptorSet],
+    primitives: &[PrimitiveRenderData],
+) {
+    let device = context.device();
+    let model_transform_ubo_offset = context.get_ubo_alignment::<Matrix4<f32>>();
+    let model_skin_ubo_offset = context.get_ubo_alignment::<JointsBuffer>();
+
+    for PrimitiveRenderData {
+        primitive,
+        transform_ubo_index,
+        skin_index,
+        ..
+    } in primitives
+    {
+        let skin_index = skin_index.unwrap_or(0);
 
         // Bind descriptor sets
         unsafe {
@@ -1113,84 +1184,82 @@ fn register_model_draw_commands<F>(
                 DYNAMIC_DATA_SET_INDEX,
                 &dynamic_descriptors,
                 &[
-                    model_transform_ubo_offset * index as u32,
+                    model_transform_ubo_offset * *transform_ubo_index as u32,
                     model_skin_ubo_offset * skin_index as u32,
                 ],
             )
         };
 
-        for primitive in mesh.primitives().iter().filter(primitive_filter) {
-            let primitive_index = primitive.index();
+        let primitive_index = primitive.index();
 
-            // Bind descriptor sets
-            unsafe {
-                device.cmd_bind_descriptor_sets(
-                    command_buffer,
-                    vk::PipelineBindPoint::GRAPHICS,
-                    pipeline_layout,
-                    PER_PRIMITIVE_DATA_SET_INDEX,
-                    &per_primitive_descriptors[primitive_index..=primitive_index],
-                    &[],
-                )
-            };
+        // Bind descriptor sets
+        unsafe {
+            device.cmd_bind_descriptor_sets(
+                command_buffer,
+                vk::PipelineBindPoint::GRAPHICS,
+                pipeline_layout,
+                PER_PRIMITIVE_DATA_SET_INDEX,
+                &per_primitive_descriptors[primitive_index..=primitive_index],
+                &[],
+            )
+        };
 
+        unsafe {
+            device.cmd_bind_vertex_buffers(
+                command_buffer,
+                0,
+                &[primitive.vertices().buffer().buffer],
+                &[primitive.vertices().offset()],
+            );
+        }
+
+        if let Some(index_buffer) = primitive.indices() {
             unsafe {
-                device.cmd_bind_vertex_buffers(
+                device.cmd_bind_index_buffer(
                     command_buffer,
-                    0,
-                    &[primitive.vertices().buffer().buffer],
-                    &[primitive.vertices().offset()],
+                    index_buffer.buffer().buffer,
+                    index_buffer.offset(),
+                    index_buffer.index_type(),
                 );
             }
+        }
+        // Push material constants
+        unsafe {
+            let material: MaterialUniform = primitive.material().into();
+            let material_contants = any_as_u8_slice(&material);
+            device.cmd_push_constants(
+                command_buffer,
+                pipeline_layout,
+                vk::ShaderStageFlags::FRAGMENT,
+                0,
+                &material_contants,
+            );
+        };
 
-            if let Some(index_buffer) = primitive.indices() {
+        // Draw geometry
+        match primitive.indices() {
+            Some(index_buffer) => {
                 unsafe {
-                    device.cmd_bind_index_buffer(
+                    device.cmd_draw_indexed(
                         command_buffer,
-                        index_buffer.buffer().buffer,
-                        index_buffer.offset(),
-                        index_buffer.index_type(),
-                    );
-                }
+                        index_buffer.element_count(),
+                        1,
+                        0,
+                        0,
+                        0,
+                    )
+                };
             }
-            // Push material constants
-            unsafe {
-                let material: MaterialUniform = primitive.material().into();
-                let material_contants = any_as_u8_slice(&material);
-                device.cmd_push_constants(
-                    command_buffer,
-                    pipeline_layout,
-                    vk::ShaderStageFlags::FRAGMENT,
-                    0,
-                    &material_contants,
-                );
-            };
-
-            // Draw geometry
-            match primitive.indices() {
-                Some(index_buffer) => {
-                    unsafe {
-                        device.cmd_draw_indexed(
-                            command_buffer,
-                            index_buffer.element_count(),
-                            1,
-                            0,
-                            0,
-                            0,
-                        )
-                    };
-                }
-                None => {
-                    unsafe {
-                        device.cmd_draw(
-                            command_buffer,
-                            primitive.vertices().element_count(),
-                            1,
-                            0,
-                            0,
-                        )
-                    };
-                }
+            None => {
+                unsafe {
+                    device.cmd_draw(
+                        command_buffer,
+                        primitive.vertices().element_count(),
+                        1,
+                        0,
+                        0,
+                    )
+                };
             }
         }
     }

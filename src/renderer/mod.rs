@@ -350,7 +350,7 @@ impl Renderer {
 
             let draw_data = gui.render(&window);
 
-            self.cmd_draw(command_buffer, frame_index, draw_data);
+            self.cmd_draw(command_buffer, frame_index, draw_data, camera);
 
             // End command buffer
             unsafe {
@@ -415,6 +415,7 @@ impl Renderer {
         command_buffer: vk::CommandBuffer,
         frame_index: usize,
         draw_data: &DrawData,
+        camera: Camera,
     ) {
         let device = self.context.device();
 
@@ -512,7 +513,7 @@ impl Renderer {
             if let Some(renderer) = self.model_renderer.as_ref() {
                 renderer
                     .light_pass
-                    .cmd_draw(command_buffer, frame_index, &renderer.data);
+                    .cmd_draw(command_buffer, frame_index, &renderer.data, camera);
             }
 
             unsafe { device.cmd_end_render_pass(command_buffer) };
