@@ -1,7 +1,7 @@
 use std::{mem::size_of, sync::Arc};
 
 use environment::*;
-use math::cgmath::{vec3, vec4, InnerSpace, Matrix4};
+use math::cgmath::Matrix4;
 use model::{Model, ModelVertex, Primitive, Texture, Workflow};
 pub use renderpass::RenderPass as LightRenderPass;
 use util::*;
@@ -12,6 +12,7 @@ use crate::renderer::{create_renderer_pipeline, RendererPipelineParameters, Rend
 
 use super::{uniform::*, JointsBuffer, ModelData};
 use crate::camera::Camera;
+use math::partial_min;
 
 mod renderpass;
 
@@ -309,7 +310,7 @@ impl LightPass {
             command_buffer,
             &self.descriptors.dynamic_data_sets[frame_index..=frame_index],
             &self.descriptors.per_primitive_sets,
-            &mut opaque_primitives,
+            &opaque_primitives,
         );
 
         // Bind opaque without culling pipeline
@@ -338,7 +339,7 @@ impl LightPass {
             command_buffer,
             &self.descriptors.dynamic_data_sets[frame_index..=frame_index],
             &self.descriptors.per_primitive_sets,
-            &mut opaque_unculled_primitives,
+            &opaque_unculled_primitives,
         );
 
         // Bind transparent pipeline
@@ -364,7 +365,7 @@ impl LightPass {
             command_buffer,
             &self.descriptors.dynamic_data_sets[frame_index..=frame_index],
             &self.descriptors.per_primitive_sets,
-            &mut transparent_primitives,
+            &transparent_primitives,
         );
     }
 }
@@ -1118,7 +1119,7 @@ struct PrimitiveRenderData<'a> {
 
 fn get_primitives<F>(model: &Model, filter: F, camera: Camera) -> Vec<PrimitiveRenderData>
 where
-    F: FnMut(&&Primitive) -> bool + Copy,
+    F: Fn(&&Primitive) -> bool + Copy,
 {
     let mut primitives = Vec::new();
     for node in model
@@ -1132,16 +1133,15 @@ where
         let skin_index = node.skin_index();
         let transform = node.transform();
 
-        for primitive in mesh.primitives().iter().filter(filter) {
-            // Compute center of the primitive
-            let center = primitive.aabb().get_center();
-            let center = vec4(center.x, center.y, center.z, 1.0);
-            let center = transform * center;
-            let center = vec3(center.x, center.y, center.z);
+        let view_matrix = camera.view_matrix();
 
-            let camera_position = camera.position();
-            let camera_position = vec3(camera_position.x, camera_position.y, camera_position.z);
-            let distance_from_camera = (camera_position - center).magnitude2();
+        for primitive in mesh.primitives().iter().filter(filter) {
+            let aabb_vertices = primitive.aabb().get_transformed_vertices(transform);
+            let distance_from_camera = partial_min(aabb_vertices.iter().map(|v| {
+                let view_space = view_matrix * v.extend(1.0);
+                view_space.z.abs()
+            }))
+            .unwrap();
 
             primitives.push(PrimitiveRenderData {
                 primitive,

@@ -20,7 +20,7 @@ use ash::{version::DeviceV1_0, vk, Device};
 use environment::Environment;
 use imgui::{Context as GuiContext, DrawData};
 use imgui_rs_vulkan_renderer::Renderer as GuiRenderer;
-use math::cgmath::{Deg, Matrix4, SquareMatrix, Vector3};
+use math::cgmath::{Deg, SquareMatrix};
 use model_crate::Model;
 use std::borrow::Borrow;
 use std::cell::RefCell;
@@ -829,11 +829,7 @@ impl Renderer {
             let extent = self.swapchain.properties().extent;
             let aspect = extent.width as f32 / extent.height as f32;
 
-            let view = Matrix4::look_at(
-                camera.position(),
-                camera.target(),
-                Vector3::new(0.0, 1.0, 0.0),
-            );
+            let view = camera.view_matrix();
 
             const Z_NEAR: f32 = 0.01;
             const Z_FAR: f32 = 100.0;

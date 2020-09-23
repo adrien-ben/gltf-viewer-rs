@@ -1,5 +1,5 @@
 use super::{partial_max, partial_min};
-use cgmath::{BaseFloat, Matrix4, Vector3, Vector4};
+use cgmath::{vec3, BaseFloat, Matrix4, Vector3, Vector4};
 use std::ops::Mul;
 
 /// Axis aligned bounding box.
@@ -58,6 +58,34 @@ impl<S: BaseFloat> AABB<S> {
     pub fn get_center(&self) -> Vector3<S> {
         let two = S::one() + S::one();
         self.min + (self.max - self.min) / two
+    }
+
+    /// Get all vertices of the AABB.
+    pub fn get_vertices(&self) -> [Vector3<S>; 8] {
+        [
+            vec3(self.min.x, self.min.y, self.min.z),
+            vec3(self.max.x, self.min.y, self.min.z),
+            vec3(self.min.x, self.min.y, self.max.z),
+            vec3(self.max.x, self.min.y, self.max.z),
+            vec3(self.min.x, self.max.y, self.min.z),
+            vec3(self.max.x, self.max.y, self.min.z),
+            vec3(self.min.x, self.max.y, self.max.z),
+            vec3(self.max.x, self.max.y, self.max.z),
+        ]
+    }
+
+    /// Get all vertices of the AABB transformed with the passed in matrix.
+    pub fn get_transformed_vertices(&self, transform: Matrix4<S>) -> [Vector3<S>; 8] {
+        let mut vertices = self.get_vertices();
+
+        for vertex in vertices.iter_mut() {
+            let transformed = transform * vertex.extend(S::one());
+            vertex.x = transformed.x;
+            vertex.y = transformed.y;
+            vertex.z = transformed.z;
+        }
+
+        vertices
     }
 }
 

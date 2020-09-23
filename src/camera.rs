@@ -1,9 +1,10 @@
 use crate::controls::*;
-use math::cgmath::{InnerSpace, Matrix4, Point3, Vector3};
+use math::cgmath::{vec3, InnerSpace, Matrix4, Point3, Vector3};
 use math::clamp;
 
 const MIN_ORBITAL_CAMERA_DISTANCE: f32 = 0.5;
 const TARGET_MOVEMENT_SPEED: f32 = 0.003;
+const VEC3_UP: Vector3<f32> = vec3(0.0, 1.0, 0.0);
 
 #[derive(Clone, Copy)]
 pub struct Camera {
@@ -24,6 +25,10 @@ impl Camera {
 
     pub fn target(&self) -> Point3<f32> {
         self.target
+    }
+
+    pub fn view_matrix(&self) -> Matrix4<f32> {
+        Matrix4::look_at(self.position(), self.target(), VEC3_UP)
     }
 }
 
