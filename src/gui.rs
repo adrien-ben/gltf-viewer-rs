@@ -54,7 +54,8 @@ impl Gui {
 
     pub fn update_delta_time(&mut self) {
         let io = self.context.io_mut();
-        self.last_frame_instant = io.update_delta_time(self.last_frame_instant);
+        io.update_delta_time(self.last_frame_instant.elapsed());
+        self.last_frame_instant = Instant::now();
     }
 
     pub fn prepare_frame(&mut self, window: &WinitWindow) {
@@ -481,7 +482,8 @@ fn build_animation_player_window(
                     ui.same_line(0.0);
                     ui.checkbox(im_str!("Loop"), &mut state.infinite_animation);
 
-                    Slider::new(im_str!("Speed"), 0.05f32..=3.0)
+                    Slider::new(im_str!("Speed"))
+                        .range(0.05f32..=3.0)
                         .build(ui, &mut state.animation_speed);
                     ui.same_line(0.0);
                     if ui.button(&im_str!("Default"), [0.0, 0.0]) {
@@ -527,9 +529,9 @@ fn build_renderer_settings_window(ui: &Ui, state: &mut State) {
                 ui.text("Settings");
                 ui.separator();
 
-                let emissive_intensity_changed =
-                    Slider::new(im_str!("Emissive intensity"), 1.0f32..=50.0)
-                        .build(ui, &mut state.emissive_intensity);
+                let emissive_intensity_changed = Slider::new(im_str!("Emissive intensity"))
+                    .range(1.0f32..=50.0)
+                    .build(ui, &mut state.emissive_intensity);
                 state.renderer_settings_changed = emissive_intensity_changed;
 
                 state.renderer_settings_changed |=
@@ -544,11 +546,13 @@ fn build_renderer_settings_window(ui: &Ui, state: &mut State) {
                         );
                     state.renderer_settings_changed |= ssao_kernel_size_changed;
 
-                    let ssao_radius_changed = Slider::new(im_str!("SSAO Radius"), 0.01f32..=1.0)
+                    let ssao_radius_changed = Slider::new(im_str!("SSAO Radius"))
+                        .range(0.01f32..=1.0)
                         .build(ui, &mut state.ssao_radius);
                     state.renderer_settings_changed |= ssao_radius_changed;
 
-                    let ssao_strength_changed = Slider::new(im_str!("SSAO Strength"), 0.5..=5.0f32)
+                    let ssao_strength_changed = Slider::new(im_str!("SSAO Strength"))
+                        .range(0.5..=5.0f32)
                         .build(ui, &mut state.ssao_strength);
                     state.renderer_settings_changed |= ssao_strength_changed;
                 }
