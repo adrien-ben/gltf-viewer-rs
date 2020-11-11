@@ -129,7 +129,7 @@ impl Renderer {
         let in_flight_frames = create_sync_objects(&context);
 
         let camera_uniform_buffers =
-            create_camera_uniform_buffers(&context, swapchain_properties.image_count);
+            create_camera_uniform_buffers(&context, swapchain.image_count() as u32);
 
         let light_render_pass = LightRenderPass::create(
             Arc::clone(&context),
@@ -564,7 +564,7 @@ impl Renderer {
         let model_data = ModelData::create(
             Arc::clone(&self.context),
             Rc::downgrade(model),
-            swapchain_properties,
+            self.swapchain.image_count() as u32,
         );
 
         let gbuffer_pass = GBufferPass::create(

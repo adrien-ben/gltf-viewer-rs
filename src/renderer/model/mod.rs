@@ -12,7 +12,7 @@ use std::cell::RefCell;
 use std::rc::Weak;
 use std::sync::Arc;
 use uniform::*;
-use vulkan::{mem_copy, mem_copy_aligned, Buffer, Context, SwapchainProperties};
+use vulkan::{mem_copy, mem_copy_aligned, Buffer, Context};
 
 type JointsBuffer = [Matrix4<f32>; MAX_JOINTS_PER_MESH];
 
@@ -36,18 +36,18 @@ impl ModelData {
         context: Arc<Context>,
 
         model: Weak<RefCell<Model>>,
-        swapchain_props: SwapchainProperties,
+        image_count: u32,
     ) -> Self {
         let model_rc = model
             .upgrade()
             .expect("Cannot create model renderer because model was dropped");
 
         let transform_ubos =
-            create_transform_ubos(&context, &model_rc.borrow(), swapchain_props.image_count);
+            create_transform_ubos(&context, &model_rc.borrow(), image_count);
         let (skin_ubos, skin_matrices) =
-            create_skin_ubos(&context, &model_rc.borrow(), swapchain_props.image_count);
+            create_skin_ubos(&context, &model_rc.borrow(), image_count);
         let light_buffers =
-            create_lights_ubos(&context, &model_rc.borrow(), swapchain_props.image_count);
+            create_lights_ubos(&context, &model_rc.borrow(), image_count);
 
         Self {
             context,
