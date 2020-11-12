@@ -6,7 +6,7 @@ edition = "2018"
 
 [dependencies]
 log = "0.4"
-env_logger = "0.7"
+env_logger = "0.8"
 cgmath = "0.17"
 rand = "0.7"
-lerp = "0.2"
+lerp = "0.3"
