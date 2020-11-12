@@ -35,22 +35,15 @@ impl Swapchain {
         preferred_vsync: bool,
         render_pass: &SimpleRenderPass,
     ) -> Self {
+        log::debug!("Creating swapchain.");
+
         let properties =
             swapchain_support_details.get_ideal_swapchain_properties(dimensions, preferred_vsync);
 
         let format = properties.format;
         let present_mode = properties.present_mode;
         let extent = properties.extent;
-        let image_count = properties.image_count;
-
-        log::debug!(
-            "Creating swapchain.\n\tFormat: {:?}\n\tColorSpace: {:?}\n\tPresentMode: {:?}\n\tExtent: {:?}\n\tImageCount: {:?}",
-            format.format,
-            format.color_space,
-            present_mode,
-            extent,
-            image_count,
-        );
+        let min_image_count = properties.min_image_count;
 
         let queue_families_indices = context.queue_families_indices();
         let graphics = queue_families_indices.graphics_index;
@@ -60,7 +53,7 @@ impl Swapchain {
         let create_info = {
             let mut builder = vk::SwapchainCreateInfoKHR::builder()
                 .surface(context.surface_khr())
-                .min_image_count(image_count)
+                .min_image_count(min_image_count)
                 .image_format(format.format)
                 .image_color_space(format.color_space)
                 .image_extent(extent)
@@ -110,6 +103,16 @@ impl Swapchain {
             vec![],
         );
         swapchain.create_framebuffers(render_pass);
+
+        log::debug!(
+            "Created swapchain.\n\tFormat: {:?}\n\tColorSpace: {:?}\n\tPresentMode: {:?}\n\tExtent: {:?}\n\tImageCount: {:?}",
+            format.format,
+            format.color_space,
+            present_mode,
+            extent,
+            swapchain.image_count(),
+        );
+
         swapchain
     }
 
@@ -279,12 +282,12 @@ impl SwapchainSupportDetails {
         let present_mode =
             Self::choose_swapchain_surface_present_mode(&self.present_modes, preferred_vsync);
         let extent = Self::choose_swapchain_extent(self.capabilities, preferred_dimensions);
-        let image_count = Self::choose_image_count(self.capabilities);
+        let min_image_count = Self::choose_image_count(self.capabilities);
         SwapchainProperties {
             format,
             present_mode,
             extent,
-            image_count,
+            min_image_count,
         }
     }
 
@@ -367,5 +370,5 @@ pub struct SwapchainProperties {
     pub format: vk::SurfaceFormatKHR,
     pub present_mode: vk::PresentModeKHR,
     pub extent: vk::Extent2D,
-    pub image_count: u32,
+    min_image_count: u32,
 }
