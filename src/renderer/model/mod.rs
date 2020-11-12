@@ -32,22 +32,15 @@ pub struct ModelRenderer {
 }
 
 impl ModelData {
-    pub fn create(
-        context: Arc<Context>,
-
-        model: Weak<RefCell<Model>>,
-        image_count: u32,
-    ) -> Self {
+    pub fn create(context: Arc<Context>, model: Weak<RefCell<Model>>, image_count: u32) -> Self {
         let model_rc = model
             .upgrade()
             .expect("Cannot create model renderer because model was dropped");
 
-        let transform_ubos =
-            create_transform_ubos(&context, &model_rc.borrow(), image_count);
+        let transform_ubos = create_transform_ubos(&context, &model_rc.borrow(), image_count);
         let (skin_ubos, skin_matrices) =
             create_skin_ubos(&context, &model_rc.borrow(), image_count);
-        let light_buffers =
-            create_lights_ubos(&context, &model_rc.borrow(), image_count);
+        let light_buffers = create_lights_ubos(&context, &model_rc.borrow(), image_count);
 
         Self {
             context,
