@@ -54,8 +54,9 @@ impl Gui {
 
     pub fn update_delta_time(&mut self) {
         let io = self.context.io_mut();
-        io.update_delta_time(self.last_frame_instant.elapsed());
-        self.last_frame_instant = Instant::now();
+        let now = Instant::now();
+        io.update_delta_time(now - self.last_frame_instant);
+        self.last_frame_instant = now;
     }
 
     pub fn prepare_frame(&mut self, window: &WinitWindow) {
