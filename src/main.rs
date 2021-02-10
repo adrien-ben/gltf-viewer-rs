@@ -88,7 +88,6 @@ fn run(config: Config, enable_debug: bool, path: Option<PathBuf>) {
         match event {
             // Start of event processing
             Event::NewEvents(_) => {
-                input_state.reset();
                 gui.update_delta_time();
             }
             // End of event processing

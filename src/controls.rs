@@ -17,6 +17,14 @@ impl InputState {
         let mut wheel_delta = self.wheel_delta;
         let mut cursor_delta = self.cursor_delta;
 
+        if let Event::NewEvents(_) = event {
+            return Self {
+                cursor_delta: [0.0, 0.0],
+                wheel_delta: 0.0,
+                ..self
+            };
+        }
+
         if let Event::WindowEvent { event, .. } = event {
             match event {
                 WindowEvent::MouseInput { button, state, .. } => {
@@ -59,11 +67,6 @@ impl InputState {
             cursor_delta,
             wheel_delta,
         }
-    }
-
-    pub fn reset(&mut self) {
-        self.cursor_delta = [0.0, 0.0];
-        self.wheel_delta = 0.0;
     }
 }
 
