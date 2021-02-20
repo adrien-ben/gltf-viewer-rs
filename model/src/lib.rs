@@ -86,7 +86,7 @@ impl Model {
                 .iter()
                 .for_each(|(index, transform)| {
                     let skin = &mut skins[*index];
-                    skin.compute_joints_matrices(*transform, &nodes.nodes());
+                    skin.compute_joints_matrices(*transform, &nodes);
                 });
             transform
         };
@@ -141,7 +141,7 @@ impl Model {
                 .iter()
                 .for_each(|(index, transform)| {
                     let skin = &mut self.skins[*index];
-                    skin.compute_joints_matrices(*transform, &self.nodes.nodes());
+                    skin.compute_joints_matrices(*transform, &self.nodes);
                 });
         }
 
@@ -226,8 +226,7 @@ impl Model {
 
 fn compute_aabb(nodes: &Nodes, meshes: &[Mesh]) -> AABB<f32> {
     let aabbs = nodes
-        .nodes()
-        .iter()
+        .into_iter()
         .filter(|n| n.mesh_index().is_some())
         .map(|n| {
             let mesh = &meshes[n.mesh_index().unwrap()];

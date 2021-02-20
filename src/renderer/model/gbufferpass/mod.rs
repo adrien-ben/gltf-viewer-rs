@@ -535,8 +535,7 @@ fn register_model_draw_commands<F>(
 
     for (index, node) in model
         .nodes()
-        .nodes()
-        .iter()
+        .into_iter()
         .filter(|n| n.mesh_index().is_some())
         .enumerate()
     {

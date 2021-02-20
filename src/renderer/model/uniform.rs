@@ -190,8 +190,7 @@ impl<'a> From<Material> for MaterialUniform {
 pub fn create_transform_ubos(context: &Arc<Context>, model: &Model, count: u32) -> Vec<Buffer> {
     let mesh_node_count = model
         .nodes()
-        .nodes()
-        .iter()
+        .into_iter()
         .filter(|n| n.mesh_index().is_some())
         .count() as u32;
     let elem_size = context.get_ubo_alignment::<Matrix4<f32>>();
@@ -247,8 +246,7 @@ pub fn create_skin_ubos(
 pub fn create_lights_ubos(context: &Arc<Context>, model: &Model, count: u32) -> Vec<Buffer> {
     let light_count = model
         .nodes()
-        .nodes()
-        .iter()
+        .into_iter()
         .filter(|n| n.light_index().is_some())
         .count();
 

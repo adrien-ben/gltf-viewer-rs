@@ -277,13 +277,13 @@ impl Animation {
     pub fn animate(&mut self, nodes: &mut Nodes, time: f32) -> bool {
         let NodesKeyFrame(translations, rotations, scale) = self.sample(time);
         translations.iter().for_each(|(node_index, translation)| {
-            nodes.nodes_mut()[*node_index].set_translation(*translation);
+            nodes.node_mut(*node_index).set_translation(*translation);
         });
         rotations.iter().for_each(|(node_index, rotation)| {
-            nodes.nodes_mut()[*node_index].set_rotation(*rotation);
+            nodes.node_mut(*node_index).set_rotation(*rotation);
         });
         scale.iter().for_each(|(node_index, scale)| {
-            nodes.nodes_mut()[*node_index].set_scale(*scale);
+            nodes.node_mut(*node_index).set_scale(*scale);
         });
 
         !translations.is_empty() || !rotations.is_empty() || !scale.is_empty()

@@ -63,8 +63,7 @@ impl ModelData {
         {
             let mesh_nodes = model
                 .nodes()
-                .nodes()
-                .iter()
+                .into_iter()
                 .filter(|n| n.mesh_index().is_some());
 
             let transforms = mesh_nodes.map(|n| n.transform()).collect::<Vec<_>>();
@@ -102,8 +101,7 @@ impl ModelData {
         {
             let uniforms = model
                 .nodes()
-                .nodes()
-                .iter()
+                .into_iter()
                 .filter(|n| n.light_index().is_some())
                 .map(|n| (n.transform(), n.light_index().unwrap()))
                 .map(|(t, i)| (t, model.lights()[i]).into())
