@@ -1,30 +1,21 @@
-use ash::extensions::ext::DebugReport;
+use ash::extensions::ext::DebugUtils;
 use ash::{vk, Entry, Instance};
-use std::{
-    ffi::CStr,
-    os::raw::{c_char, c_void},
-};
+use std::{ffi::CStr, os::raw::c_void};
 
 unsafe extern "system" fn vulkan_debug_callback(
-    flag: vk::DebugReportFlagsEXT,
-    typ: vk::DebugReportObjectTypeEXT,
-    _: u64,
-    _: usize,
-    _: i32,
-    _: *const c_char,
-    p_message: *const c_char,
+    flag: vk::DebugUtilsMessageSeverityFlagsEXT,
+    typ: vk::DebugUtilsMessageTypeFlagsEXT,
+    p_callback_data: *const vk::DebugUtilsMessengerCallbackDataEXT,
     _: *mut c_void,
-) -> u32 {
-    if flag == vk::DebugReportFlagsEXT::DEBUG {
-        log::debug!("{:?} - {:?}", typ, CStr::from_ptr(p_message));
-    } else if flag == vk::DebugReportFlagsEXT::INFORMATION {
-        log::info!("{:?} - {:?}", typ, CStr::from_ptr(p_message));
-    } else if flag == vk::DebugReportFlagsEXT::WARNING {
-        log::warn!("{:?} - {:?}", typ, CStr::from_ptr(p_message));
-    } else if flag == vk::DebugReportFlagsEXT::PERFORMANCE_WARNING {
-        log::warn!("{:?} - {:?}", typ, CStr::from_ptr(p_message));
-    } else {
-        log::error!("{:?} - {:?}", typ, CStr::from_ptr(p_message));
+) -> vk::Bool32 {
+    use vk::DebugUtilsMessageSeverityFlagsEXT as Flag;
+
+    let message = CStr::from_ptr((*p_callback_data).p_message);
+    match flag {
+        Flag::VERBOSE => log::debug!("{:?} - {:?}", typ, message),
+        Flag::INFO => log::info!("{:?} - {:?}", typ, message),
+        Flag::WARNING => log::warn!("{:?} - {:?}", typ, message),
+        _ => log::error!("{:?} - {:?}", typ, message),
     }
     vk::FALSE
 }
@@ -33,15 +24,17 @@ unsafe extern "system" fn vulkan_debug_callback(
 pub fn setup_debug_messenger(
     entry: &Entry,
     instance: &Instance,
-) -> (DebugReport, vk::DebugReportCallbackEXT) {
-    let create_info = vk::DebugReportCallbackCreateInfoEXT::builder()
-        .flags(vk::DebugReportFlagsEXT::all())
-        .pfn_callback(Some(vulkan_debug_callback));
-    let debug_report = DebugReport::new(entry, instance);
-    let debug_report_callback = unsafe {
-        debug_report
-            .create_debug_report_callback(&create_info, None)
-            .expect("Failed to create debig report callback")
+) -> (DebugUtils, vk::DebugUtilsMessengerEXT) {
+    let create_info = vk::DebugUtilsMessengerCreateInfoEXT::builder()
+        .flags(vk::DebugUtilsMessengerCreateFlagsEXT::all())
+        .message_severity(vk::DebugUtilsMessageSeverityFlagsEXT::all())
+        .message_type(vk::DebugUtilsMessageTypeFlagsEXT::all())
+        .pfn_user_callback(Some(vulkan_debug_callback));
+    let debug_utils = DebugUtils::new(entry, instance);
+    let debug_utils_messenger = unsafe {
+        debug_utils
+            .create_debug_utils_messenger(&create_info, None)
+            .expect("Failed to create debug report callback")
     };
-    (debug_report, debug_report_callback)
+    (debug_utils, debug_utils_messenger)
 }

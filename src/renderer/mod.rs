@@ -828,7 +828,7 @@ impl Renderer {
             let extent = self.swapchain.properties().extent;
             let aspect = extent.width as f32 / extent.height as f32;
 
-            let view = Matrix4::look_at(
+            let view = Matrix4::look_at_rh(
                 camera.position(),
                 camera.target(),
                 Vector3::new(0.0, 1.0, 0.0),

@@ -148,7 +148,8 @@ impl SSAOPass {
         unsafe {
             self.context
                 .device()
-                .free_descriptor_sets(self.descriptors.pool, &[self.descriptors.static_set]);
+                .free_descriptor_sets(self.descriptors.pool, &[self.descriptors.static_set])
+                .expect("Failed to free descriptor sets");
         }
         self.descriptors.static_set = create_static_set(
             &self.context,
@@ -164,7 +165,8 @@ impl SSAOPass {
         unsafe {
             self.context
                 .device()
-                .free_descriptor_sets(self.descriptors.pool, &[self.descriptors.dynamic_set]);
+                .free_descriptor_sets(self.descriptors.pool, &[self.descriptors.dynamic_set])
+                .expect("Failed to free descriptor sets");
         }
 
         self.kernel_size = kernel_size;

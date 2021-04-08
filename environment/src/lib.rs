@@ -126,32 +126,32 @@ impl SkyboxModel {
 
 fn get_view_matrices() -> [Matrix4<f32>; 6] {
     [
-        Matrix4::<f32>::look_at(
+        Matrix4::<f32>::look_at_rh(
             Point3::new(0.0, 0.0, 0.0),
             Point3::new(1.0, 0.0, 0.0),
             Vector3::new(0.0, 1.0, 0.0),
         ),
-        Matrix4::<f32>::look_at(
+        Matrix4::<f32>::look_at_rh(
             Point3::new(0.0, 0.0, 0.0),
             Point3::new(-1.0, 0.0, 0.0),
             Vector3::new(0.0, 1.0, 0.0),
         ),
-        Matrix4::<f32>::look_at(
+        Matrix4::<f32>::look_at_rh(
             Point3::new(0.0, 0.0, 0.0),
             Point3::new(0.0, 1.0, 0.0),
             Vector3::new(0.0, 0.0, -1.0),
         ),
-        Matrix4::<f32>::look_at(
+        Matrix4::<f32>::look_at_rh(
             Point3::new(0.0, 0.0, 0.0),
             Point3::new(0.0, -1.0, 0.0),
             Vector3::new(0.0, 0.0, 1.0),
         ),
-        Matrix4::<f32>::look_at(
+        Matrix4::<f32>::look_at_rh(
             Point3::new(0.0, 0.0, 0.0),
             Point3::new(0.0, 0.0, 1.0),
             Vector3::new(0.0, 1.0, 0.0),
         ),
-        Matrix4::<f32>::look_at(
+        Matrix4::<f32>::look_at_rh(
             Point3::new(0.0, 0.0, 0.0),
             Point3::new(0.0, 0.0, -1.0),
             Vector3::new(0.0, 1.0, 0.0),

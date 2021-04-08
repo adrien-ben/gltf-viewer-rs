@@ -172,7 +172,8 @@ impl LightPass {
         unsafe {
             self.context
                 .device()
-                .free_descriptor_sets(self.descriptors.pool, &[self.descriptors.input_set]);
+                .free_descriptor_sets(self.descriptors.pool, &[self.descriptors.input_set])
+                .expect("Failed to free descriptor sets");
         }
         self.descriptors.input_set = create_input_descriptor_set(
             &self.context,

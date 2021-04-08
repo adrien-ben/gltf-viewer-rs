@@ -1,7 +1,7 @@
 use crate::{debug::*, swapchain::*};
 use ash::{
     extensions::{
-        ext::DebugReport,
+        ext::DebugUtils,
         khr::{Surface, Swapchain as SwapchainLoader},
     },
     version::{DeviceV1_0, EntryV1_0, InstanceV1_0},
@@ -18,7 +18,7 @@ const POSSIBLE_SAMPLE_COUNTS: [u32; 7] = [1, 2, 4, 8, 16, 32, 64];
 pub struct SharedContext {
     _entry: Entry,
     instance: Instance,
-    debug_report_callback: Option<(DebugReport, vk::DebugReportCallbackEXT)>,
+    debug_report_callback: Option<(DebugUtils, vk::DebugUtilsMessengerEXT)>,
     surface: Surface,
     surface_khr: vk::SurfaceKHR,
     physical_device: vk::PhysicalDevice,
@@ -30,7 +30,7 @@ pub struct SharedContext {
 
 impl SharedContext {
     pub fn new(window: &Window, enable_debug: bool) -> Self {
-        let entry = Entry::new().expect("Failed to create entry.");
+        let entry = unsafe { Entry::new().expect("Failed to create entry.") };
         let instance = create_instance(&entry, window, enable_debug);
 
         let surface = Surface::new(&entry, &instance);
@@ -87,7 +87,7 @@ fn create_instance(entry: &Entry, window: &Window, enable_debug: bool) -> Instan
         .collect::<Vec<_>>();
     extension_names.push(vk::KhrGetPhysicalDeviceProperties2Fn::name().as_ptr());
     if enable_debug {
-        extension_names.push(DebugReport::name().as_ptr());
+        extension_names.push(DebugUtils::name().as_ptr());
     }
 
     let instance_create_info = vk::InstanceCreateInfo::builder()
@@ -481,8 +481,8 @@ impl Drop for SharedContext {
         unsafe {
             self.device.destroy_device(None);
             self.surface.destroy_surface(self.surface_khr, None);
-            if let Some((report, callback)) = self.debug_report_callback.take() {
-                report.destroy_debug_report_callback(callback, None);
+            if let Some((utils, messenger)) = self.debug_report_callback.take() {
+                utils.destroy_debug_utils_messenger(messenger, None);
             }
             self.instance.destroy_instance(None);
         }

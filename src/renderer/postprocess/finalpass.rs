@@ -73,7 +73,8 @@ impl FinalPass {
         unsafe {
             self.context
                 .device()
-                .free_descriptor_sets(self.descriptors.pool(), self.descriptors.sets());
+                .free_descriptor_sets(self.descriptors.pool(), self.descriptors.sets())
+                .expect("Failed to free descriptor sets");
         }
         self.descriptors.set_sets(create_descriptor_sets(
             &self.context,
