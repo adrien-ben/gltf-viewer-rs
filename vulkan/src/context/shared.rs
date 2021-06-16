@@ -1,4 +1,4 @@
-use crate::{debug::*, swapchain::*};
+use crate::{debug::*, swapchain::*, MsaaSamples};
 use ash::{
     extensions::{
         ext::DebugUtils,
@@ -12,8 +12,6 @@ use std::{
     mem::size_of,
 };
 use winit::window::Window;
-
-const POSSIBLE_SAMPLE_COUNTS: [u32; 7] = [1, 2, 4, 8, 16, 32, 64];
 
 pub struct SharedContext {
     _entry: Entry,
@@ -350,34 +348,28 @@ impl SharedContext {
         })
     }
 
-    /// Return the preferred sample count or the maximim supported below preferred.
-    pub fn get_max_usable_sample_count(&self, preferred: u32) -> vk::SampleCountFlags {
-        if !POSSIBLE_SAMPLE_COUNTS.contains(&preferred) {
-            panic!(
-                "Preferred sample count must be one of {:?}",
-                POSSIBLE_SAMPLE_COUNTS
-            );
-        }
-
+    /// Return the preferred sample count or the maximum supported below preferred.
+    pub fn get_max_usable_sample_count(&self, preferred: MsaaSamples) -> vk::SampleCountFlags {
         let props = unsafe {
             self.instance
                 .get_physical_device_properties(self.physical_device)
         };
         let color_sample_counts = props.limits.framebuffer_color_sample_counts;
         let depth_sample_counts = props.limits.framebuffer_depth_sample_counts;
-        let sample_counts = color_sample_counts.min(depth_sample_counts);
+        let max_sample_count = color_sample_counts.min(depth_sample_counts);
 
-        if sample_counts.contains(vk::SampleCountFlags::TYPE_64) && preferred == 64 {
+        use MsaaSamples::*;
+        if max_sample_count.contains(vk::SampleCountFlags::TYPE_64) && preferred == S64 {
             vk::SampleCountFlags::TYPE_64
-        } else if sample_counts.contains(vk::SampleCountFlags::TYPE_32) && preferred >= 32 {
+        } else if max_sample_count.contains(vk::SampleCountFlags::TYPE_32) && preferred >= S32 {
             vk::SampleCountFlags::TYPE_32
-        } else if sample_counts.contains(vk::SampleCountFlags::TYPE_16) && preferred >= 16 {
+        } else if max_sample_count.contains(vk::SampleCountFlags::TYPE_16) && preferred >= S16 {
             vk::SampleCountFlags::TYPE_16
-        } else if sample_counts.contains(vk::SampleCountFlags::TYPE_8) && preferred >= 8 {
+        } else if max_sample_count.contains(vk::SampleCountFlags::TYPE_8) && preferred >= S8 {
             vk::SampleCountFlags::TYPE_8
-        } else if sample_counts.contains(vk::SampleCountFlags::TYPE_4) && preferred >= 4 {
+        } else if max_sample_count.contains(vk::SampleCountFlags::TYPE_4) && preferred >= S4 {
             vk::SampleCountFlags::TYPE_4
-        } else if sample_counts.contains(vk::SampleCountFlags::TYPE_2) && preferred >= 2 {
+        } else if max_sample_count.contains(vk::SampleCountFlags::TYPE_2) && preferred >= S2 {
             vk::SampleCountFlags::TYPE_2
         } else {
             vk::SampleCountFlags::TYPE_1

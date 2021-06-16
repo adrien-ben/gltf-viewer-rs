@@ -111,7 +111,11 @@ impl Renderer {
             swapchain_support_details.get_ideal_swapchain_properties(resolution, config.vsync());
         let depth_format = find_depth_format(&context);
         let msaa_samples = context.get_max_usable_sample_count(config.msaa());
-        log::debug!("msaa: {:?} - preferred was {}", msaa_samples, config.msaa());
+        log::debug!(
+            "msaa: {:?} - preferred was {:?}",
+            msaa_samples,
+            config.msaa()
+        );
 
         let simple_render_pass =
             SimpleRenderPass::create(Arc::clone(&context), swapchain_properties.format.format);

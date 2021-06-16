@@ -1,14 +1,38 @@
 use crate::error::*;
+use serde::de::Unexpected;
 use serde::Deserialize;
 use std::fs::File;
+use vulkan::MsaaSamples;
 
 #[derive(Deserialize, Clone)]
 pub struct Config {
     resolution: Resolution,
     vsync: Option<bool>,
-    msaa: Option<u32>,
+    #[serde(deserialize_with = "deserialize_msaa")]
+    msaa: MsaaSamples,
     #[serde(default)]
     env: Environment,
+}
+
+fn deserialize_msaa<'de, D>(deserializer: D) -> Result<MsaaSamples, D::Error>
+where
+    D: serde::de::Deserializer<'de>,
+{
+    let samples: u64 = serde::de::Deserialize::deserialize(deserializer)?;
+
+    match samples {
+        1 => Ok(MsaaSamples::S1),
+        2 => Ok(MsaaSamples::S2),
+        4 => Ok(MsaaSamples::S4),
+        8 => Ok(MsaaSamples::S8),
+        16 => Ok(MsaaSamples::S16),
+        32 => Ok(MsaaSamples::S32),
+        64 => Ok(MsaaSamples::S64),
+        _ => Err(serde::de::Error::invalid_value(
+            Unexpected::Unsigned(samples),
+            &"msaa should be one of 1, 2, 4, 8, 16, 32 or 64",
+        )),
+    }
 }
 
 impl Config {
@@ -20,8 +44,8 @@ impl Config {
         self.vsync.unwrap_or(false)
     }
 
-    pub fn msaa(&self) -> u32 {
-        self.msaa.unwrap_or(1)
+    pub fn msaa(&self) -> MsaaSamples {
+        self.msaa
     }
 
     pub fn env(&self) -> &Environment {
@@ -34,7 +58,7 @@ impl Default for Config {
         Config {
             resolution: Default::default(),
             vsync: Some(false),
-            msaa: Some(64),
+            msaa: MsaaSamples::S1,
             env: Default::default(),
         }
     }

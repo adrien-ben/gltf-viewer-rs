@@ -1,6 +1,7 @@
 mod shared;
 
 use self::shared::*;
+use crate::MsaaSamples;
 use ash::{extensions::khr::Surface, version::DeviceV1_0, vk, Device, Instance};
 use imgui_rs_vulkan_renderer::RendererVkContext;
 use std::sync::Arc;
@@ -125,7 +126,7 @@ impl Context {
     }
 
     /// Return the preferred sample count or the maximim supported below preferred.
-    pub fn get_max_usable_sample_count(&self, preferred: u32) -> vk::SampleCountFlags {
+    pub fn get_max_usable_sample_count(&self, preferred: MsaaSamples) -> vk::SampleCountFlags {
         self.shared_context.get_max_usable_sample_count(preferred)
     }
 
