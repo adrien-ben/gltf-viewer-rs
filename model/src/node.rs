@@ -41,8 +41,8 @@ impl Nodes {
     fn new(nodes: Vec<Node>, roots_indices: Vec<usize>) -> Self {
         let depth_first_taversal_indices = build_graph_run_indices(&roots_indices, &nodes);
         Self {
-            roots_indices,
             nodes,
+            roots_indices,
             depth_first_taversal_indices,
         }
     }

@@ -224,7 +224,7 @@ impl Model {
     }
 }
 
-fn compute_aabb(nodes: &Nodes, meshes: &[Mesh]) -> AABB<f32> {
+fn compute_aabb(nodes: &Nodes, meshes: &[Mesh]) -> Aabb<f32> {
     let aabbs = nodes
         .nodes()
         .iter()
@@ -234,10 +234,10 @@ fn compute_aabb(nodes: &Nodes, meshes: &[Mesh]) -> AABB<f32> {
             mesh.aabb() * n.transform()
         })
         .collect::<Vec<_>>();
-    AABB::union(&aabbs).unwrap()
+    Aabb::union(&aabbs).unwrap()
 }
 
-fn compute_unit_cube_at_origin_transform(aabb: AABB<f32>) -> Matrix4<f32> {
+fn compute_unit_cube_at_origin_transform(aabb: Aabb<f32>) -> Matrix4<f32> {
     let larger_side = aabb.get_larger_side_size();
     let scale_factor = (1.0_f32 / larger_side) * 10.0;
 

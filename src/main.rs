@@ -121,9 +121,9 @@ fn run(config: Config, enable_debug: bool, path: Option<PathBuf>) {
                         model.reset_animation();
                     } else {
                         let playback_mode = if gui.is_infinite_animation_checked() {
-                            PlaybackMode::LOOP
+                            PlaybackMode::Loop
                         } else {
-                            PlaybackMode::ONCE
+                            PlaybackMode::Once
                         };
 
                         model.set_animation_playback_mode(playback_mode);

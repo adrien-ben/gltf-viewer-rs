@@ -4,21 +4,21 @@ use std::ops::Mul;
 
 /// Axis aligned bounding box.
 #[derive(Copy, Clone, Debug)]
-pub struct AABB<S> {
+pub struct Aabb<S> {
     min: Vector3<S>,
     max: Vector3<S>,
 }
 
-impl<S> AABB<S> {
+impl<S> Aabb<S> {
     /// Create a new AABB.
     pub fn new(min: Vector3<S>, max: Vector3<S>) -> Self {
-        AABB { min, max }
+        Aabb { min, max }
     }
 }
 
-impl<S: BaseFloat> AABB<S> {
+impl<S: BaseFloat> Aabb<S> {
     /// Compute the union of several AABBs.
-    pub fn union(aabbs: &[AABB<S>]) -> Option<Self> {
+    pub fn union(aabbs: &[Aabb<S>]) -> Option<Self> {
         if aabbs.is_empty() {
             None
         } else if aabbs.len() == 1 {
@@ -34,7 +34,7 @@ impl<S: BaseFloat> AABB<S> {
             let max_z = partial_max(aabbs.iter().map(|aabb| aabb.max.z)).unwrap();
             let max = Vector3::new(max_x, max_y, max_z);
 
-            Some(AABB::new(min, max))
+            Some(Aabb::new(min, max))
         }
     }
 
@@ -62,8 +62,8 @@ impl<S: BaseFloat> AABB<S> {
 }
 
 /// Transform the AABB by multiplying it with a Matrix4.
-impl<S: BaseFloat> Mul<Matrix4<S>> for AABB<S> {
-    type Output = AABB<S>;
+impl<S: BaseFloat> Mul<Matrix4<S>> for Aabb<S> {
+    type Output = Aabb<S>;
 
     fn mul(self, rhs: Matrix4<S>) -> Self::Output {
         let min = self.min;
@@ -72,15 +72,15 @@ impl<S: BaseFloat> Mul<Matrix4<S>> for AABB<S> {
         let max = self.max;
         let max = rhs * Vector4::new(max.x, max.y, max.z, S::one());
 
-        AABB::new(min.truncate(), max.truncate())
+        Aabb::new(min.truncate(), max.truncate())
     }
 }
 
 /// Scale the AABB by multiplying it by a BaseFloat
-impl<S: BaseFloat> Mul<S> for AABB<S> {
-    type Output = AABB<S>;
+impl<S: BaseFloat> Mul<S> for Aabb<S> {
+    type Output = Aabb<S>;
 
     fn mul(self, rhs: S) -> Self::Output {
-        AABB::new(self.min * rhs, self.max * rhs)
+        Aabb::new(self.min * rhs, self.max * rhs)
     }
 }

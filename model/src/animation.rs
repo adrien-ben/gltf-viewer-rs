@@ -193,8 +193,8 @@ pub struct PlaybackState {
 impl PlaybackState {
     fn advance(&mut self, delta_time: f32) {
         self.time = match self.playback_mode {
-            PlaybackMode::LOOP => (self.time + delta_time) % self.total_time,
-            PlaybackMode::ONCE => f32::min(self.time + delta_time, self.total_time),
+            PlaybackMode::Loop => (self.time + delta_time) % self.total_time,
+            PlaybackMode::Once => f32::min(self.time + delta_time, self.total_time),
         };
     }
 
@@ -209,8 +209,8 @@ impl PlaybackState {
 
 #[derive(Debug, Copy, Clone)]
 pub enum PlaybackMode {
-    LOOP,
-    ONCE,
+    Loop,
+    Once,
 }
 
 impl Animations {
@@ -324,7 +324,7 @@ pub fn load_animations(gltf_animations: GltfAnimations, data: &[Data]) -> Option
             time: 0.0,
             total_time,
             paused: false,
-            playback_mode: PlaybackMode::LOOP,
+            playback_mode: PlaybackMode::Loop,
         },
     })
 }

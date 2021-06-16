@@ -461,7 +461,7 @@ fn build_animation_player_window(
                         im_str!("{}: {}", a.index, name)
                     })
                     .collect::<Vec<_>>();
-                let combo_labels = animations_labels.iter().map(|l| l).collect::<Vec<_>>();
+                let combo_labels = animations_labels.iter().collect::<Vec<_>>();
                 ComboBox::new(im_str!("Select animation")).build_simple_string(
                     ui,
                     &mut state.selected_animation,

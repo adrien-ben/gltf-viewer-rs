@@ -12,13 +12,13 @@ use vulkan::*;
 
 pub struct Mesh {
     primitives: Vec<Primitive>,
-    aabb: AABB<f32>,
+    aabb: Aabb<f32>,
 }
 
 impl Mesh {
     fn new(primitives: Vec<Primitive>) -> Self {
         let aabbs = primitives.iter().map(|p| p.aabb()).collect::<Vec<_>>();
-        let aabb = AABB::union(&aabbs).unwrap();
+        let aabb = Aabb::union(&aabbs).unwrap();
         Mesh { primitives, aabb }
     }
 }
@@ -32,7 +32,7 @@ impl Mesh {
         self.primitives.len()
     }
 
-    pub fn aabb(&self) -> AABB<f32> {
+    pub fn aabb(&self) -> Aabb<f32> {
         self.aabb
     }
 }
@@ -42,7 +42,7 @@ pub struct Primitive {
     vertices: VertexBuffer,
     indices: Option<IndexBuffer>,
     material: Material,
-    aabb: AABB<f32>,
+    aabb: Aabb<f32>,
 }
 
 impl Primitive {
@@ -62,7 +62,7 @@ impl Primitive {
         self.material
     }
 
-    pub fn aabb(&self) -> AABB<f32> {
+    pub fn aabb(&self) -> Aabb<f32> {
         self.aabb
     }
 }
@@ -78,7 +78,7 @@ struct PrimitiveData {
     indices: Option<IndexBufferPart>,
     vertices: VertexBufferPart,
     material: Material,
-    aabb: AABB<f32>,
+    aabb: Aabb<f32>,
 }
 
 pub struct Meshes {
@@ -254,14 +254,14 @@ where
         .map(|indices| indices.into_u32().collect::<Vec<_>>())
 }
 
-fn get_aabb(bounds: &Bounds<[f32; 3]>) -> AABB<f32> {
+fn get_aabb(bounds: &Bounds<[f32; 3]>) -> Aabb<f32> {
     let min = bounds.min;
     let min = Vector3::new(min[0], min[1], min[2]);
 
     let max = bounds.max;
     let max = Vector3::new(max[0], max[1], max[2]);
 
-    AABB::new(min, max)
+    Aabb::new(min, max)
 }
 
 fn read_positions<'a, 's, F>(reader: &Reader<'a, 's, F>) -> Vec<[f32; 3]>
