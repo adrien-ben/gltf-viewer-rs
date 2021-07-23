@@ -9,10 +9,10 @@ vulkan = { path = "../vulkan" }
 math = { path = "../math" }
 
 log = "0.4"
-env_logger = "0.8"
+env_logger = "0.9"
 byteorder = "1.4"
 mikktspace = "0.2"
 
 [dependencies.gltf]
-version = "0.15"
+version = "0.16"
 features = ["KHR_lights_punctual", "KHR_materials_unlit", "KHR_materials_pbrSpecularGlossiness"]

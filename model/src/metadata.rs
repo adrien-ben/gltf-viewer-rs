@@ -295,7 +295,7 @@ impl From<GltfMaterial<'_>> for Material {
         Material {
             index: material.index(),
             name: material.name().map(String::from),
-            alpha_cutoff: material.alpha_cutoff(),
+            alpha_cutoff: material.alpha_cutoff().unwrap_or(0.5),
             alpha_mode: AlphaMode::from(material.alpha_mode()),
             double_sided: material.double_sided(),
             base_color: material.pbr_metallic_roughness().base_color_factor(),

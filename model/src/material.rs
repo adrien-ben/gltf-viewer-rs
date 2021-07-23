@@ -200,7 +200,7 @@ impl<'a> From<GltfMaterial<'a>> for Material {
         };
 
         let alpha_mode = get_alpha_mode_index(material.alpha_mode());
-        let alpha_cutoff = material.alpha_cutoff();
+        let alpha_cutoff = material.alpha_cutoff().unwrap_or(0.5);
 
         let double_sided = material.double_sided();
 
