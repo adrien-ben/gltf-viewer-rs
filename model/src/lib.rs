@@ -86,7 +86,7 @@ impl Model {
                 .iter()
                 .for_each(|(index, transform)| {
                     let skin = &mut skins[*index];
-                    skin.compute_joints_matrices(*transform, &nodes.nodes());
+                    skin.compute_joints_matrices(*transform, nodes.nodes());
                 });
             transform
         };
@@ -141,7 +141,7 @@ impl Model {
                 .iter()
                 .for_each(|(index, transform)| {
                     let skin = &mut self.skins[*index];
-                    skin.compute_joints_matrices(*transform, &self.nodes.nodes());
+                    skin.compute_joints_matrices(*transform, self.nodes.nodes());
                 });
         }
 

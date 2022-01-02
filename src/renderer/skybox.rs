@@ -1,5 +1,5 @@
 use super::{create_renderer_pipeline, LightRenderPass, RendererPipelineParameters};
-use ash::{version::DeviceV1_0, vk, Device};
+use ash::{vk, Device};
 use environment::*;
 use std::sync::Arc;
 use vulkan::*;
@@ -22,7 +22,7 @@ impl SkyboxRenderer {
         render_pass: &LightRenderPass,
     ) -> Self {
         let model = SkyboxModel::new(&context);
-        let descriptors = create_descriptors(&context, camera_buffers, &environment);
+        let descriptors = create_descriptors(&context, camera_buffers, environment);
         let pipeline_layout = create_pipeline_layout(context.device(), descriptors.layout());
         let pipeline = create_skybox_pipeline(
             &context,
@@ -258,7 +258,12 @@ fn create_skybox_pipeline(
         .back(Default::default());
 
     let color_blend_attachments = [vk::PipelineColorBlendAttachmentState::builder()
-        .color_write_mask(vk::ColorComponentFlags::all())
+        .color_write_mask(
+            vk::ColorComponentFlags::R
+                | vk::ColorComponentFlags::G
+                | vk::ColorComponentFlags::B
+                | vk::ColorComponentFlags::A,
+        )
         .blend_enable(false)
         .src_color_blend_factor(vk::BlendFactor::ONE)
         .dst_color_blend_factor(vk::BlendFactor::ZERO)

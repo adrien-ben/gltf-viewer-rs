@@ -1,5 +1,5 @@
 use super::{Context, ShaderModule, Vertex};
-use ash::{version::DeviceV1_0, vk};
+use ash::vk;
 use std::{ffi::CString, sync::Arc};
 
 #[derive(Copy, Clone)]

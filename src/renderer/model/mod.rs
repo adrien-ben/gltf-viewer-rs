@@ -94,7 +94,7 @@ impl ModelData {
             let buffer = &mut self.skin_ubos[frame_index];
             unsafe {
                 let data_ptr = buffer.map_memory();
-                mem_copy_aligned(data_ptr, u64::from(*elem_size), &skin_matrices);
+                mem_copy_aligned(data_ptr, u64::from(*elem_size), skin_matrices);
             }
         }
 

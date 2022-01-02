@@ -1,5 +1,5 @@
 use std::sync::Arc;
-use vulkan::ash::{version::DeviceV1_0, vk, Device};
+use vulkan::ash::{vk, Device};
 use vulkan::{Context, Image, ImageParameters, Texture};
 
 const COLOR_FORMAT: vk::Format = vk::Format::R32G32B32A32_SFLOAT;
@@ -43,7 +43,7 @@ impl RenderPass {
     pub fn get_color_attachment(&self) -> &Texture {
         self.color_resolve_attachment
             .as_ref()
-            .map_or(&self.color_attachment, |a| &a)
+            .map_or(&self.color_attachment, |a| a)
     }
 
     pub fn get_render_pass(&self) -> vk::RenderPass {

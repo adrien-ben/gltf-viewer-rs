@@ -337,22 +337,22 @@ fn map_animation(gltf_animation: &GltfAnimation, data: &[Data]) -> Animation {
     let max_translation_time = translation_channels
         .iter()
         .map(Channel::get_max_time)
-        .max_by(|c0, c1| c0.partial_cmp(&c1).unwrap_or(Ordering::Equal))
+        .max_by(|c0, c1| c0.partial_cmp(c1).unwrap_or(Ordering::Equal))
         .unwrap_or(0.0);
     let max_rotation_time = rotation_channels
         .iter()
         .map(Channel::get_max_time)
-        .max_by(|c0, c1| c0.partial_cmp(&c1).unwrap_or(Ordering::Equal))
+        .max_by(|c0, c1| c0.partial_cmp(c1).unwrap_or(Ordering::Equal))
         .unwrap_or(0.0);
     let max_scale_time = scale_channels
         .iter()
         .map(Channel::get_max_time)
-        .max_by(|c0, c1| c0.partial_cmp(&c1).unwrap_or(Ordering::Equal))
+        .max_by(|c0, c1| c0.partial_cmp(c1).unwrap_or(Ordering::Equal))
         .unwrap_or(0.0);
 
     let total_time = *[max_translation_time, max_rotation_time, max_scale_time]
         .iter()
-        .max_by(|c0, c1| c0.partial_cmp(&c1).unwrap_or(Ordering::Equal))
+        .max_by(|c0, c1| c0.partial_cmp(c1).unwrap_or(Ordering::Equal))
         .unwrap_or(&0.0);
 
     Animation {

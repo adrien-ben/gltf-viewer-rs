@@ -25,10 +25,13 @@ pub fn setup_debug_messenger(
     entry: &Entry,
     instance: &Instance,
 ) -> (DebugUtils, vk::DebugUtilsMessengerEXT) {
+    use vk::DebugUtilsMessageSeverityFlagsEXT as Severity;
+    use vk::DebugUtilsMessageTypeFlagsEXT as MsgType;
+
     let create_info = vk::DebugUtilsMessengerCreateInfoEXT::builder()
-        .flags(vk::DebugUtilsMessengerCreateFlagsEXT::all())
-        .message_severity(vk::DebugUtilsMessageSeverityFlagsEXT::all())
-        .message_type(vk::DebugUtilsMessageTypeFlagsEXT::all())
+        .flags(vk::DebugUtilsMessengerCreateFlagsEXT::empty())
+        .message_severity(Severity::VERBOSE | Severity::INFO | Severity::WARNING | Severity::ERROR)
+        .message_type(MsgType::GENERAL | MsgType::VALIDATION | MsgType::PERFORMANCE)
         .pfn_user_callback(Some(vulkan_debug_callback));
     let debug_utils = DebugUtils::new(entry, instance);
     let debug_utils_messenger = unsafe {

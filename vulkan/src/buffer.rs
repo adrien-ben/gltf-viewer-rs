@@ -1,5 +1,5 @@
 use super::{context::*, util::*};
-use ash::{version::DeviceV1_0, vk};
+use ash::vk;
 use std::{
     ffi::c_void,
     marker::{Send, Sync},

@@ -11,7 +11,7 @@ use renderpass::RenderPass;
 use std::mem::size_of;
 use std::sync::Arc;
 use util::any_as_u8_slice;
-use vulkan::ash::{version::DeviceV1_0, vk, Device};
+use vulkan::ash::{vk, Device};
 use vulkan::{
     create_device_local_buffer_with_data, Buffer, Context, SamplerParameters, SwapchainProperties,
     Texture,
@@ -129,7 +129,7 @@ fn create_kernel_buffer(context: &Arc<Context>, kernel_size: u32) -> Buffer {
             let z = rand::random::<f32>();
 
             let scale = i as f32 / kernel_size as f32;
-            let scale = (0.1f32).lerp(1.0f32, scale * scale);
+            let scale = Lerp::lerp(0.1f32, 1.0f32, scale * scale);
 
             let v = Vector3::new(x, y, z).normalize() * rand::random::<f32>() * scale;
             [v.x, v.y, v.z, 0.0]
@@ -137,7 +137,7 @@ fn create_kernel_buffer(context: &Arc<Context>, kernel_size: u32) -> Buffer {
         .collect::<Vec<_>>();
 
     create_device_local_buffer_with_data::<u8, _>(
-        &context,
+        context,
         vk::BufferUsageFlags::UNIFORM_BUFFER,
         &kernel,
     )
@@ -673,7 +673,12 @@ fn create_pipeline(
         .back(Default::default());
 
     let color_blend_attachments = [vk::PipelineColorBlendAttachmentState::builder()
-        .color_write_mask(vk::ColorComponentFlags::all())
+        .color_write_mask(
+            vk::ColorComponentFlags::R
+                | vk::ColorComponentFlags::G
+                | vk::ColorComponentFlags::B
+                | vk::ColorComponentFlags::A,
+        )
         .blend_enable(false)
         .src_color_blend_factor(vk::BlendFactor::ONE)
         .dst_color_blend_factor(vk::BlendFactor::ZERO)

@@ -9,7 +9,7 @@ use std::path::Path;
 use std::sync::Arc;
 use std::time::Instant;
 use util::*;
-use vulkan::ash::{version::DeviceV1_0, vk};
+use vulkan::ash::vk;
 use vulkan::{Context, SamplerParameters, Texture};
 
 pub(crate) fn create_skybox_cubemap<P: AsRef<Path>>(

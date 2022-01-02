@@ -6,7 +6,6 @@ use super::{
 use ash::{
     extensions::khr::{Surface, Swapchain as SwapchainLoader},
     prelude::VkResult,
-    version::DeviceV1_0,
     vk, Device,
 };
 use std::sync::Arc;

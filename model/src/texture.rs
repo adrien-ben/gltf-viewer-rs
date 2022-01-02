@@ -3,7 +3,7 @@ use gltf::iter::Textures as GltfTextures;
 use gltf::json::texture::{MagFilter, MinFilter, WrappingMode};
 use gltf::texture::Sampler;
 use std::sync::Arc;
-use vulkan::ash::{version::DeviceV1_0, vk};
+use vulkan::ash::vk;
 use vulkan::{Buffer, Context, Image, Texture as VulkanTexture};
 
 pub(crate) struct Textures {
@@ -46,13 +46,13 @@ pub(crate) fn create_textures_from_gltf(
         .iter()
         .map(|image| (image.width, image.height, build_rgba_buffer(image)))
         .map(|(width, height, pixels)| {
-            VulkanTexture::cmd_from_rgba(&context, command_buffer, width, height, &pixels)
+            VulkanTexture::cmd_from_rgba(context, command_buffer, width, height, &pixels)
         })
         .unzip::<_, _, Vec<_>, _>();
 
     let textures = textures
         .map(|t| {
-            let context = Arc::clone(&context);
+            let context = Arc::clone(context);
             let image = &images[t.source().index()];
             let view = image.view;
             let sampler = map_sampler(&context, &image.image, &t.sampler());

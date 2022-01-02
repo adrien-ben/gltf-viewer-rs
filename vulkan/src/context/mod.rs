@@ -2,8 +2,7 @@ mod shared;
 
 use self::shared::*;
 use crate::MsaaSamples;
-use ash::{extensions::khr::Surface, version::DeviceV1_0, vk, Device, Instance};
-use imgui_rs_vulkan_renderer::RendererVkContext;
+use ash::{extensions::khr::Surface, vk, Device, Instance};
 use std::sync::Arc;
 use winit::window::Window;
 
@@ -17,12 +16,12 @@ impl Context {
     pub fn new(window: &Window, enable_debug: bool) -> Self {
         let shared_context = Arc::new(SharedContext::new(window, enable_debug));
         let general_command_pool = create_command_pool(
-            &shared_context.device(),
+            shared_context.device(),
             shared_context.queue_families_indices,
             vk::CommandPoolCreateFlags::RESET_COMMAND_BUFFER,
         );
         let transient_command_pool = create_command_pool(
-            &shared_context.device(),
+            shared_context.device(),
             shared_context.queue_families_indices,
             vk::CommandPoolCreateFlags::TRANSIENT,
         );
@@ -37,12 +36,12 @@ impl Context {
     pub fn new_thread(&self) -> Self {
         let shared_context = Arc::clone(&self.shared_context);
         let general_command_pool = create_command_pool(
-            &shared_context.device(),
+            shared_context.device(),
             shared_context.queue_families_indices,
             vk::CommandPoolCreateFlags::empty(),
         );
         let transient_command_pool = create_command_pool(
-            &shared_context.device(),
+            shared_context.device(),
             shared_context.queue_families_indices,
             vk::CommandPoolCreateFlags::TRANSIENT,
         );
@@ -145,28 +144,6 @@ impl Context {
 
     pub fn graphics_queue_wait_idle(&self) {
         self.shared_context.graphics_queue_wait_idle()
-    }
-}
-
-impl RendererVkContext for Context {
-    fn instance(&self) -> &Instance {
-        &self.shared_context.instance()
-    }
-
-    fn physical_device(&self) -> vk::PhysicalDevice {
-        self.shared_context.physical_device()
-    }
-
-    fn device(&self) -> &Device {
-        &self.shared_context.device()
-    }
-
-    fn queue(&self) -> vk::Queue {
-        self.shared_context.graphics_queue()
-    }
-
-    fn command_pool(&self) -> vk::CommandPool {
-        self.transient_command_pool
     }
 }
 

@@ -12,7 +12,7 @@ use pre_filtered::create_pre_filtered_map;
 use std::mem::size_of;
 use std::path::Path;
 use std::sync::Arc;
-use vulkan::ash::{version::DeviceV1_0, vk};
+use vulkan::ash::vk;
 use vulkan::{
     create_device_local_buffer_with_data, create_pipeline, Buffer, Context, Descriptors,
     PipelineParameters, ShaderParameters, Texture, Vertex,
@@ -27,10 +27,10 @@ pub struct Environment {
 
 impl Environment {
     pub fn new<P: AsRef<Path>>(context: &Arc<Context>, path: P, resolution: u32) -> Self {
-        let skybox = create_skybox_cubemap(&context, path, resolution);
-        let irradiance = create_irradiance_map(&context, &skybox, 32);
-        let pre_filtered = create_pre_filtered_map(&context, &skybox, 512);
-        let brdf_lookup = create_brdf_lookup(&context, 512);
+        let skybox = create_skybox_cubemap(context, path, resolution);
+        let irradiance = create_irradiance_map(context, &skybox, 32);
+        let pre_filtered = create_pre_filtered_map(context, &skybox, 512);
+        let brdf_lookup = create_brdf_lookup(context, 512);
 
         Self {
             skybox,
@@ -298,7 +298,12 @@ fn create_env_pipeline<V: Vertex>(
         .alpha_to_one_enable(false);
 
     let color_blend_attachments = [vk::PipelineColorBlendAttachmentState::builder()
-        .color_write_mask(vk::ColorComponentFlags::all())
+        .color_write_mask(
+            vk::ColorComponentFlags::R
+                | vk::ColorComponentFlags::G
+                | vk::ColorComponentFlags::B
+                | vk::ColorComponentFlags::A,
+        )
         .blend_enable(false)
         .src_color_blend_factor(vk::BlendFactor::ONE)
         .dst_color_blend_factor(vk::BlendFactor::ZERO)

@@ -1,8 +1,5 @@
 use super::{buffer::*, context::*, swapchain::SwapchainProperties};
-use ash::{
-    version::{DeviceV1_0, InstanceV1_0},
-    vk, Device,
-};
+use ash::{vk, Device};
 use std::sync::Arc;
 
 #[derive(Copy, Clone)]

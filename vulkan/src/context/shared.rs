@@ -4,7 +4,6 @@ use ash::{
         ext::DebugUtils,
         khr::{Surface, Swapchain as SwapchainLoader},
     },
-    version::{DeviceV1_0, EntryV1_0, InstanceV1_0},
     vk, Device, Entry, Instance,
 };
 use std::{
@@ -28,7 +27,7 @@ pub struct SharedContext {
 
 impl SharedContext {
     pub fn new(window: &Window, enable_debug: bool) -> Self {
-        let entry = unsafe { Entry::new().expect("Failed to create entry.") };
+        let entry = unsafe { Entry::load().unwrap() };
         let instance = create_instance(&entry, window, enable_debug);
 
         let surface = Surface::new(&entry, &instance);
@@ -72,10 +71,10 @@ fn create_instance(entry: &Entry, window: &Window, enable_debug: bool) -> Instan
     let engine_name = CString::new("No Engine").unwrap();
     let app_info = vk::ApplicationInfo::builder()
         .application_name(app_name.as_c_str())
-        .application_version(vk::make_version(0, 1, 0))
+        .application_version(vk::make_api_version(0, 0, 1, 0))
         .engine_name(engine_name.as_c_str())
-        .engine_version(vk::make_version(0, 1, 0))
-        .api_version(vk::make_version(1, 0, 0));
+        .engine_version(vk::make_api_version(0, 0, 1, 0))
+        .api_version(vk::make_api_version(0, 1, 0, 0));
 
     let extension_names = ash_window::enumerate_required_extensions(window)
         .expect("Failed to enumerate required extensions");

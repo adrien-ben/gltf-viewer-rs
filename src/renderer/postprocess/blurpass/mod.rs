@@ -3,7 +3,7 @@ mod renderpass;
 use crate::renderer::{create_renderer_pipeline, fullscreen::*, RendererPipelineParameters};
 use renderpass::RenderPass;
 use std::sync::Arc;
-use vulkan::ash::{version::DeviceV1_0, vk, Device};
+use vulkan::ash::{vk, Device};
 use vulkan::{Context, Descriptors, SwapchainProperties, Texture};
 
 /// Blur pass
@@ -144,7 +144,7 @@ impl BlurPass {
                 vk::PipelineBindPoint::GRAPHICS,
                 self.pipeline_layout,
                 0,
-                &self.descriptors.sets(),
+                self.descriptors.sets(),
                 &[],
             )
         };
@@ -282,7 +282,12 @@ fn create_pipeline(
         .back(Default::default());
 
     let color_blend_attachments = [vk::PipelineColorBlendAttachmentState::builder()
-        .color_write_mask(vk::ColorComponentFlags::all())
+        .color_write_mask(
+            vk::ColorComponentFlags::R
+                | vk::ColorComponentFlags::G
+                | vk::ColorComponentFlags::B
+                | vk::ColorComponentFlags::A,
+        )
         .blend_enable(false)
         .src_color_blend_factor(vk::BlendFactor::ONE)
         .dst_color_blend_factor(vk::BlendFactor::ZERO)

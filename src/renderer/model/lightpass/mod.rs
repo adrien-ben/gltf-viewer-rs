@@ -9,7 +9,7 @@ use math::cgmath::Matrix4;
 use model::{Model, ModelVertex, Primitive, Texture, Workflow};
 use std::{mem::size_of, sync::Arc};
 use util::*;
-use vulkan::ash::{version::DeviceV1_0, vk, Device};
+use vulkan::ash::{vk, Device};
 use vulkan::{Buffer, Context, SwapchainProperties, Texture as VulkanTexture};
 
 const DYNAMIC_DATA_SET_INDEX: u32 = 0;
@@ -950,7 +950,12 @@ fn create_opaque_pipeline(
         .back(Default::default());
 
     let color_blend_attachments = [vk::PipelineColorBlendAttachmentState::builder()
-        .color_write_mask(vk::ColorComponentFlags::all())
+        .color_write_mask(
+            vk::ColorComponentFlags::R
+                | vk::ColorComponentFlags::G
+                | vk::ColorComponentFlags::B
+                | vk::ColorComponentFlags::A,
+        )
         .blend_enable(false)
         .src_color_blend_factor(vk::BlendFactor::ONE)
         .dst_color_blend_factor(vk::BlendFactor::ZERO)
@@ -1006,7 +1011,12 @@ fn create_transparent_pipeline(
         .back(Default::default());
 
     let color_blend_attachments = [vk::PipelineColorBlendAttachmentState::builder()
-        .color_write_mask(vk::ColorComponentFlags::all())
+        .color_write_mask(
+            vk::ColorComponentFlags::R
+                | vk::ColorComponentFlags::G
+                | vk::ColorComponentFlags::B
+                | vk::ColorComponentFlags::A,
+        )
         .blend_enable(true)
         .src_color_blend_factor(vk::BlendFactor::SRC_ALPHA)
         .dst_color_blend_factor(vk::BlendFactor::ONE_MINUS_SRC_ALPHA)
@@ -1114,7 +1124,7 @@ fn register_model_draw_commands<F>(
                 vk::PipelineBindPoint::GRAPHICS,
                 pipeline_layout,
                 DYNAMIC_DATA_SET_INDEX,
-                &dynamic_descriptors,
+                dynamic_descriptors,
                 &[
                     model_transform_ubo_offset * index as u32,
                     model_skin_ubo_offset * skin_index as u32,
@@ -1165,7 +1175,7 @@ fn register_model_draw_commands<F>(
                     pipeline_layout,
                     vk::ShaderStageFlags::FRAGMENT,
                     0,
-                    &material_contants,
+                    material_contants,
                 );
             };
 

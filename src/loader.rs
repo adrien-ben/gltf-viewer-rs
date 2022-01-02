@@ -19,7 +19,6 @@ use std::sync::mpsc::{Receiver, Sender};
 use std::sync::Arc;
 use std::thread;
 use std::thread::JoinHandle;
-use vulkan::ash::version::DeviceV1_0;
 use vulkan::ash::vk;
 use vulkan::{Context, PreLoadedResource};
 

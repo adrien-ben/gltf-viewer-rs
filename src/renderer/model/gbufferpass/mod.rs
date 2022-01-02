@@ -8,7 +8,7 @@ use math::cgmath::Matrix4;
 use model::{Material, Model, ModelVertex, Primitive, Texture};
 use std::{mem::size_of, sync::Arc};
 use util::any_as_u8_slice;
-use vulkan::ash::{version::DeviceV1_0, vk, Device};
+use vulkan::ash::{vk, Device};
 use vulkan::{Buffer, Context, SwapchainProperties, Texture as VulkanTexture};
 
 const DYNAMIC_DATA_SET_INDEX: u32 = 0;
@@ -488,7 +488,12 @@ fn create_pipeline(
         .back(Default::default());
 
     let color_blend_attachments = [vk::PipelineColorBlendAttachmentState::builder()
-        .color_write_mask(vk::ColorComponentFlags::all())
+        .color_write_mask(
+            vk::ColorComponentFlags::R
+                | vk::ColorComponentFlags::G
+                | vk::ColorComponentFlags::B
+                | vk::ColorComponentFlags::A,
+        )
         .blend_enable(false)
         .src_color_blend_factor(vk::BlendFactor::ONE)
         .dst_color_blend_factor(vk::BlendFactor::ZERO)
@@ -550,7 +555,7 @@ fn register_model_draw_commands<F>(
                 vk::PipelineBindPoint::GRAPHICS,
                 pipeline_layout,
                 DYNAMIC_DATA_SET_INDEX,
-                &dynamic_descriptors,
+                dynamic_descriptors,
                 &[
                     model_transform_ubo_offset * index as u32,
                     model_skin_ubo_offset * skin_index as u32,
@@ -601,7 +606,7 @@ fn register_model_draw_commands<F>(
                     pipeline_layout,
                     vk::ShaderStageFlags::FRAGMENT,
                     0,
-                    &material_contants,
+                    material_contants,
                 );
             };
 

@@ -1,5 +1,5 @@
 use super::Context;
-use ash::{version::DeviceV1_0, vk, Device};
+use ash::{vk, Device};
 use std::sync::Arc;
 
 pub struct SimpleRenderPass {

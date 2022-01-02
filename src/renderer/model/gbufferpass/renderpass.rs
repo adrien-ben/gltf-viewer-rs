@@ -1,5 +1,5 @@
 use std::sync::Arc;
-use vulkan::ash::{version::DeviceV1_0, vk, Device};
+use vulkan::ash::{vk, Device};
 use vulkan::{Context, Image, ImageParameters, Texture};
 
 const NORMALS_FORMAT: vk::Format = vk::Format::R16G16B16A16_SFLOAT;

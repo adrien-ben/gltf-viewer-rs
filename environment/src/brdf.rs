@@ -2,7 +2,7 @@ use super::{create_env_pipeline, create_render_pass, EnvPipelineParameters};
 use std::mem::size_of;
 use std::sync::Arc;
 use std::time::Instant;
-use vulkan::ash::{version::DeviceV1_0, vk};
+use vulkan::ash::vk;
 use vulkan::{create_device_local_buffer_with_data, Buffer, Context, Texture, Vertex};
 
 #[derive(Clone, Copy)]
@@ -71,7 +71,7 @@ pub(crate) fn create_brdf_lookup(context: &Arc<Context>, size: u32) -> Texture {
 
     let device = context.device();
 
-    let quad_model = QuadModel::new(&context);
+    let quad_model = QuadModel::new(context);
 
     let render_pass = create_render_pass(context, vk::Format::R16G16_SFLOAT);
 
@@ -132,8 +132,7 @@ pub(crate) fn create_brdf_lookup(context: &Arc<Context>, size: u32) -> Texture {
         (layout, pipeline)
     };
 
-    let lookup =
-        Texture::create_renderable_texture(&context, size, size, vk::Format::R16G16_SFLOAT);
+    let lookup = Texture::create_renderable_texture(context, size, size, vk::Format::R16G16_SFLOAT);
 
     let framebuffer = {
         let attachments = [lookup.view];

@@ -1,5 +1,5 @@
 use super::{buffer::*, context::*, image::*, util::*};
-use ash::{version::DeviceV1_0, vk};
+use ash::vk;
 use std::{mem::size_of, sync::Arc};
 
 pub struct Texture {
@@ -71,7 +71,7 @@ impl Texture {
 
         unsafe {
             let ptr = buffer.map_memory();
-            mem_copy(ptr, &data);
+            mem_copy(ptr, data);
         }
 
         let image = Image::create(
@@ -160,7 +160,7 @@ impl Texture {
 
         unsafe {
             let ptr = buffer.map_memory();
-            mem_copy(ptr, &data);
+            mem_copy(ptr, data);
         }
 
         let usage = if with_mipmaps {

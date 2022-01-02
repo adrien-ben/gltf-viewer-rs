@@ -18,7 +18,6 @@ pub use self::{
 };
 
 pub use ash;
-use ash::version::DeviceV1_0;
 use ash::vk;
 use std::sync::Arc;
 pub use winit;

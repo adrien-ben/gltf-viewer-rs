@@ -16,13 +16,12 @@ pub use self::{postprocess::*, skybox::*};
 use super::camera::{Camera, CameraUBO};
 use super::config::Config;
 use super::gui::Gui;
-use ash::{version::DeviceV1_0, vk, Device};
+use ash::{vk, Device};
 use environment::Environment;
 use imgui::{Context as GuiContext, DrawData};
 use imgui_rs_vulkan_renderer::Renderer as GuiRenderer;
 use math::cgmath::{Deg, Matrix4, SquareMatrix, Vector3};
 use model_crate::Model;
-use std::borrow::Borrow;
 use std::cell::RefCell;
 use std::mem::size_of;
 use std::rc::Rc;
@@ -69,7 +68,6 @@ impl Default for RendererSettings {
 // TODO: at some point I'll need to put vulkan's render passes and frame buffers into the pass structure
 // TODO: try and remember why I did not
 pub struct Renderer {
-    context: Arc<Context>,
     settings: RendererSettings,
     depth_format: vk::Format,
     msaa_samples: vk::SampleCountFlags,
@@ -90,6 +88,7 @@ pub struct Renderer {
     quad_model: QuadModel,
     final_pass: FinalPass,
     gui_renderer: GuiRenderer,
+    context: Arc<Context>,
 }
 
 impl Renderer {
@@ -186,8 +185,12 @@ impl Renderer {
             settings,
         );
 
-        let gui_renderer = GuiRenderer::new::<Context>(
-            context.borrow(),
+        let gui_renderer = GuiRenderer::with_default_allocator(
+            context.instance(),
+            context.physical_device(),
+            context.device().clone(),
+            context.graphics_queue(),
+            context.general_command_pool(),
             MAX_FRAMES_IN_FLIGHT as _,
             simple_render_pass.get_render_pass(),
             gui_context,
@@ -352,7 +355,7 @@ impl Renderer {
                 };
             }
 
-            let draw_data = gui.render(&window);
+            let draw_data = gui.render(window);
 
             self.cmd_draw(command_buffer, frame_index, draw_data);
 
@@ -553,7 +556,7 @@ impl Renderer {
 
             // Draw UI
             self.gui_renderer
-                .cmd_draw::<Context>(self.context.borrow(), command_buffer, draw_data)
+                .cmd_draw(command_buffer, draw_data)
                 .unwrap();
 
             unsafe { device.cmd_end_render_pass(command_buffer) };
@@ -860,9 +863,6 @@ impl Renderer {
 
 impl Drop for Renderer {
     fn drop(&mut self) {
-        self.gui_renderer
-            .destroy::<Context>(self.context.borrow())
-            .expect("Failed to destroy renderer");
         unsafe {
             self.context
                 .device()

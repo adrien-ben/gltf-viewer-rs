@@ -8,7 +8,7 @@ use std::mem::size_of;
 use std::sync::Arc;
 use std::time::Instant;
 use util::*;
-use vulkan::ash::{version::DeviceV1_0, vk};
+use vulkan::ash::vk;
 use vulkan::{Context, Texture};
 
 pub(crate) fn create_irradiance_map(
@@ -25,7 +25,7 @@ pub(crate) fn create_irradiance_map(
 
     let render_pass = create_render_pass(context, vk::Format::R32G32B32A32_SFLOAT);
 
-    let descriptors = create_descriptors(context, &cubemap);
+    let descriptors = create_descriptors(context, cubemap);
 
     let (pipeline_layout, pipeline) = {
         let layout = {

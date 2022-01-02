@@ -4,7 +4,6 @@ use math::cgmath::{Matrix4, Quaternion, Vector3};
 #[derive(Clone, Debug)]
 pub struct Nodes {
     nodes: Vec<Node>,
-    roots_indices: Vec<usize>,
     depth_first_taversal_indices: Vec<(usize, Option<usize>)>,
 }
 
@@ -42,7 +41,6 @@ impl Nodes {
         let depth_first_taversal_indices = build_graph_run_indices(&roots_indices, &nodes);
         Self {
             nodes,
-            roots_indices,
             depth_first_taversal_indices,
         }
     }
