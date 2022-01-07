@@ -19,7 +19,7 @@ use super::gui::Gui;
 use ash::{vk, Device};
 use environment::Environment;
 use imgui::{Context as GuiContext, DrawData};
-use imgui_rs_vulkan_renderer::Renderer as GuiRenderer;
+use imgui_rs_vulkan_renderer::{Options, Renderer as GuiRenderer};
 use math::cgmath::{Deg, Matrix4, SquareMatrix, Vector3};
 use model_crate::Model;
 use std::cell::RefCell;
@@ -191,9 +191,12 @@ impl Renderer {
             context.device().clone(),
             context.graphics_queue(),
             context.general_command_pool(),
-            MAX_FRAMES_IN_FLIGHT as _,
             simple_render_pass.get_render_pass(),
             gui_context,
+            Some(Options {
+                in_flight_frames: MAX_FRAMES_IN_FLIGHT as _,
+                ..Default::default()
+            }),
         )
         .expect("Failed to create gui renderer");
 
