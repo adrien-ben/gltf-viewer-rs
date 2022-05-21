@@ -1,19 +1,19 @@
 resolution:
-  width: 1920
-  height: 1080
+  width: 1024
+  height: 768
 
 # Enable vertical synchronization (if supported). Optional(default = false)
-vsync: false
+vsync: true
 
 # 64, 32, 16, 8, 4, 2, 1. Optional(default = 1)
 # If the requested value is not supported it will drop until one is found.
 # MSAA is VERY memory intensive !
-msaa: 8
+msaa: 1
 
 # Environment configuration. Optional(default = "assets/env/equi.hdr"@1024)
 env: 
   # Path to an HDRi file to use as environment map.
-  path: C:\\Users\\adrie\\Pictures\\HDR\\ulmer_muenster_4k.hdr
+  path: assets/env/equi.hdr
 
   # Resolution of the skybox. Optional(default = 1024)
   resolution: 1024
