@@ -1,5 +1,4 @@
-use image::hdr::HdrDecoder;
-use image::Rgb;
+use image::{codecs::hdr::HdrDecoder, Rgb};
 use std::{fs::File, io::BufReader, path::Path};
 
 /// Return a `&[u8]` for any sized object passed in.

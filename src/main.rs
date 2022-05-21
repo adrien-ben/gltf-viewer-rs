@@ -7,7 +7,7 @@ mod loader;
 mod renderer;
 
 use crate::{camera::*, config::Config, controls::*, gui::Gui, loader::*, renderer::*};
-use clap::{App, Arg};
+use clap::{Arg, Command};
 use environment::*;
 use model::{Model, PlaybackMode};
 use std::{cell::RefCell, error::Error, path::PathBuf, rc::Rc, sync::Arc, time::Instant};
@@ -199,30 +199,30 @@ fn run(config: Config, enable_debug: bool, path: Option<PathBuf>) {
     });
 }
 
-fn create_app<'a, 'b>() -> App<'a, 'b> {
-    App::new("GLTF Viewer")
+fn create_app<'a>() -> Command<'a> {
+    Command::new("GLTF Viewer")
         .version("1.0")
         .author("Adrien Bennadji")
         .about("Viewer for GLTF 2.0 files.")
         .arg(
-            Arg::with_name("config")
-                .short("c")
+            Arg::new("config")
+                .short('c')
                 .long("config")
                 .value_name("FILE")
                 .help("Set the path to the configuration file")
                 .takes_value(true),
         )
         .arg(
-            Arg::with_name("file")
-                .short("f")
+            Arg::new("file")
+                .short('f')
                 .long("file")
                 .value_name("FILE")
                 .help("Set the path to gltf model to view")
                 .takes_value(true),
         )
         .arg(
-            Arg::with_name("debug")
-                .short("d")
+            Arg::new("debug")
+                .short('d')
                 .long("debug")
                 .value_name("DEBUG")
                 .help("Enable vulkan debug printing")

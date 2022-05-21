@@ -11,8 +11,8 @@ math = { path = "../math" }
 log = "0.4"
 env_logger = "0.9"
 byteorder = "1.4"
-mikktspace = "0.2"
+mikktspace = "0.3"
 
 [dependencies.gltf]
-version = "0.16"
+version = "1.0"
 features = ["KHR_lights_punctual", "KHR_materials_unlit", "KHR_materials_pbrSpecularGlossiness"]

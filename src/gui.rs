@@ -255,7 +255,7 @@ fn build_summary_block_ui(ui: &Ui, metadata: &Metadata) {
     {
         ui.text(format!("Name: {}", metadata.name()));
         if ui.is_item_hovered() {
-            ui.tooltip_text(metadata.path().to_string());
+            ui.tooltip_text(metadata.path());
         }
         ui.text(format!("Scene count: {}", metadata.scene_count()));
         ui.text(format!("Node count: {}", metadata.node_count()));
@@ -473,7 +473,7 @@ fn build_animation_player_window(
                         "Pause"
                     };
 
-                    state.toggle_animation = ui.button(toggle_text.to_string());
+                    state.toggle_animation = ui.button(toggle_text);
                     ui.same_line();
                     state.stop_animation = ui.button("Stop");
                     ui.same_line();
