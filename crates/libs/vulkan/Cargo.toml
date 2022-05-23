@@ -12,4 +12,3 @@ env_logger = "0.9"
 ash = { version = "0.37", features = ["loaded"] }
 ash-window = "0.10"
 winit = "0.26"
-imgui = "0.8"
