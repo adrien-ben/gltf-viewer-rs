@@ -190,7 +190,7 @@ fn init_imgui(window: &WinitWindow) -> (Context, WinitPlatform) {
             }),
         },
         FontSource::TtfData {
-            data: include_bytes!("../assets/fonts/mplus-1p-regular.ttf"),
+            data: include_bytes!("../../../assets/fonts/mplus-1p-regular.ttf"),
             size_pixels: font_size,
             config: Some(FontConfig {
                 rasterizer_multiply: 1.75,
