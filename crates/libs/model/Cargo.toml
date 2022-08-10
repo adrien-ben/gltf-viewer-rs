@@ -2,7 +2,7 @@
 name = "model"
 version = "0.1.0"
 authors = ["Adrien Bennadji <adrien.bennadji@live.fr>"]
-edition = "2018"
+edition = "2021"
 
 [dependencies]
 vulkan = { path = "../vulkan" }

@@ -2,7 +2,7 @@
 name = "math"
 version = "0.1.0"
 authors = ["Adrien Bennadji <adrien.bennadji@live.fr>"]
-edition = "2018"
+edition = "2021"
 
 [dependencies]
 log = "0.4"
