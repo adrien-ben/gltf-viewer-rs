@@ -43,7 +43,7 @@ impl RenderPass {
     pub fn get_color_attachment(&self) -> &Texture {
         self.color_resolve_attachment
             .as_ref()
-            .map_or(&self.color_attachment, |a| a)
+            .unwrap_or(&self.color_attachment)
     }
 
     pub fn get_render_pass(&self) -> vk::RenderPass {

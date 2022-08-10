@@ -189,7 +189,7 @@ impl Renderer {
             context.instance(),
             context.physical_device(),
             context.device().clone(),
-            context.graphics_queue(),
+            context.graphics_compute_queue(),
             context.general_command_pool(),
             simple_render_pass.get_render_pass(),
             gui_context,
@@ -391,7 +391,7 @@ impl Renderer {
                 self.context
                     .device()
                     .queue_submit(
-                        self.context.graphics_queue(),
+                        self.context.graphics_compute_queue(),
                         &submit_infos,
                         in_flight_fence,
                     )

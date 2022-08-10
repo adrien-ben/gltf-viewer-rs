@@ -95,8 +95,8 @@ impl Context {
         self.shared_context.queue_families_indices()
     }
 
-    pub fn graphics_queue(&self) -> vk::Queue {
-        self.shared_context.graphics_queue()
+    pub fn graphics_compute_queue(&self) -> vk::Queue {
+        self.shared_context.graphics_compute_queue()
     }
 
     pub fn present_queue(&self) -> vk::Queue {

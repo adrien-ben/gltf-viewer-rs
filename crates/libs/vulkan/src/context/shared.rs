@@ -21,7 +21,7 @@ pub struct SharedContext {
     physical_device: vk::PhysicalDevice,
     device: Device,
     pub queue_families_indices: QueueFamiliesIndices,
-    graphics_queue: vk::Queue,
+    graphics_compute_queue: vk::Queue,
     present_queue: vk::Queue,
 }
 
@@ -45,11 +45,12 @@ impl SharedContext {
         let (physical_device, queue_families_indices) =
             pick_physical_device(&instance, &surface, surface_khr);
 
-        let (device, graphics_queue, present_queue) = create_logical_device_with_graphics_queue(
-            &instance,
-            physical_device,
-            queue_families_indices,
-        );
+        let (device, graphics_compute_queue, present_queue) =
+            create_logical_device_with_graphics_queue(
+                &instance,
+                physical_device,
+                queue_families_indices,
+            );
 
         Self {
             _entry: entry,
@@ -60,7 +61,7 @@ impl SharedContext {
             physical_device,
             device,
             queue_families_indices,
-            graphics_queue,
+            graphics_compute_queue,
             present_queue,
         }
     }
@@ -125,9 +126,9 @@ fn pick_physical_device(
         CStr::from_ptr(props.device_name.as_ptr())
     });
 
-    let (graphics, present) = find_queue_families(instance, surface, surface_khr, device);
+    let (graphics_compute, present) = find_queue_families(instance, surface, surface_khr, device);
     let queue_families_indices = QueueFamiliesIndices {
-        graphics_index: graphics.unwrap(),
+        graphics_index: graphics_compute.unwrap(),
         present_index: present.unwrap(),
     };
 
@@ -140,14 +141,14 @@ fn is_device_suitable(
     surface_khr: vk::SurfaceKHR,
     device: vk::PhysicalDevice,
 ) -> bool {
-    let (graphics, present) = find_queue_families(instance, surface, surface_khr, device);
+    let (graphics_compute, present) = find_queue_families(instance, surface, surface_khr, device);
     let extention_support = check_device_extension_support(instance, device);
     let is_swapchain_adequate = {
         let details = SwapchainSupportDetails::new(device, surface, surface_khr);
         !details.formats.is_empty() && !details.present_modes.is_empty()
     };
     let features = unsafe { instance.get_physical_device_features(device) };
-    graphics.is_some()
+    graphics_compute.is_some()
         && present.is_some()
         && extention_support
         && is_swapchain_adequate
@@ -181,7 +182,7 @@ fn get_required_device_extensions() -> [&'static CStr; 1] {
     [SwapchainLoader::name()]
 }
 
-/// Find a queue family with at least one graphics queue and one with
+/// Find a queue family with at least one graphics & compute queue and one with
 /// at least one presentation queue from `device`.
 ///
 /// #Returns
@@ -193,7 +194,7 @@ fn find_queue_families(
     surface_khr: vk::SurfaceKHR,
     device: vk::PhysicalDevice,
 ) -> (Option<u32>, Option<u32>) {
-    let mut graphics = None;
+    let mut graphics_compute = None;
     let mut present = None;
 
     let props = unsafe { instance.get_physical_device_queue_family_properties(device) };
@@ -202,9 +203,9 @@ fn find_queue_families(
 
         if family.queue_flags.contains(vk::QueueFlags::GRAPHICS)
             && family.queue_flags.contains(vk::QueueFlags::COMPUTE)
-            && graphics.is_none()
+            && graphics_compute.is_none()
         {
-            graphics = Some(index);
+            graphics_compute = Some(index);
         }
 
         let present_support = unsafe {
@@ -216,12 +217,12 @@ fn find_queue_families(
             present = Some(index);
         }
 
-        if graphics.is_some() && present.is_some() {
+        if graphics_compute.is_some() && present.is_some() {
             break;
         }
     }
 
-    (graphics, present)
+    (graphics_compute, present)
 }
 
 /// Create the logical device to interact with `device`, a graphics queue
@@ -278,10 +279,10 @@ fn create_logical_device_with_graphics_queue(
             .create_device(device, &device_create_info, None)
             .expect("Failed to create logical device.")
     };
-    let graphics_queue = unsafe { device.get_device_queue(graphics_family_index, 0) };
+    let graphics_compute_queue = unsafe { device.get_device_queue(graphics_family_index, 0) };
     let present_queue = unsafe { device.get_device_queue(present_family_index, 0) };
 
-    (device, graphics_queue, present_queue)
+    (device, graphics_compute_queue, present_queue)
 }
 
 impl SharedContext {
@@ -309,8 +310,8 @@ impl SharedContext {
         self.queue_families_indices
     }
 
-    pub fn graphics_queue(&self) -> vk::Queue {
-        self.graphics_queue
+    pub fn graphics_compute_queue(&self) -> vk::Queue {
+        self.graphics_compute_queue
     }
 
     pub fn present_queue(&self) -> vk::Queue {
@@ -439,7 +440,7 @@ impl SharedContext {
                 .build();
             let submit_infos = [submit_info];
             unsafe {
-                let queue = self.graphics_queue();
+                let queue = self.graphics_compute_queue();
                 self.device
                     .queue_submit(queue, &submit_infos, vk::Fence::null())
                     .expect("Failed to submit to queue");
@@ -458,7 +459,7 @@ impl SharedContext {
     pub fn graphics_queue_wait_idle(&self) {
         unsafe {
             self.device
-                .queue_wait_idle(self.graphics_queue())
+                .queue_wait_idle(self.graphics_compute_queue())
                 .expect("Failed to wait for queue to be idle")
         }
     }
