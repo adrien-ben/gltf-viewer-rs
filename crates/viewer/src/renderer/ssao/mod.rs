@@ -43,6 +43,12 @@ pub struct SSAOPass {
     ssao_strength: f32,
 }
 
+#[allow(dead_code)]
+struct ConfigUniform {
+    ssao_radius: f32,
+    ssao_strength: f32,
+}
+
 impl SSAOPass {
     pub fn create(
         context: Arc<Context>,
@@ -96,12 +102,9 @@ impl SSAOPass {
         let pipeline_layout = create_pipeline_layout(context.device(), &descriptors);
         let pipeline = create_pipeline(
             &context,
-            swapchain_props,
             render_pass.get_render_pass(),
             pipeline_layout,
             settings.ssao_kernel_size,
-            settings.ssao_radius,
-            settings.ssao_strength,
         );
 
         SSAOPass {
@@ -145,16 +148,9 @@ fn create_kernel_buffer(context: &Arc<Context>, kernel_size: u32) -> Buffer {
 
 impl SSAOPass {
     pub fn set_inputs(&mut self, normals: &Texture, depth: &Texture) {
-        unsafe {
-            self.context
-                .device()
-                .free_descriptor_sets(self.descriptors.pool, &[self.descriptors.static_set])
-                .expect("Failed to free descriptor sets");
-        }
-        self.descriptors.static_set = create_static_set(
+        update_static_set(
             &self.context,
-            self.descriptors.pool,
-            self.descriptors.static_set_layout,
+            self.descriptors.static_set,
             normals,
             depth,
             &self.noise_texture,
@@ -162,21 +158,14 @@ impl SSAOPass {
     }
 
     pub fn set_ssao_kernel_size(&mut self, kernel_size: u32) {
-        unsafe {
-            self.context
-                .device()
-                .free_descriptor_sets(self.descriptors.pool, &[self.descriptors.dynamic_set])
-                .expect("Failed to free descriptor sets");
-        }
-
         self.kernel_size = kernel_size;
         self.kernel_buffer = create_kernel_buffer(&self.context, kernel_size);
-        self.descriptors.dynamic_set = create_dynamic_set(
+        update_dynamic_set(
             &self.context,
-            self.descriptors.pool,
-            self.descriptors.dynamic_set_layout,
+            self.descriptors.dynamic_set,
             &self.kernel_buffer,
         );
+        self.rebuild_pipelines();
     }
 
     pub fn set_ssao_radius(&mut self, radius: f32) {
@@ -199,7 +188,7 @@ impl SSAOPass {
         self.framebuffer = self.render_pass.create_framebuffer();
     }
 
-    pub fn rebuild_pipelines(&mut self, swapchain_properties: SwapchainProperties) {
+    pub fn rebuild_pipelines(&mut self) {
         let device = self.context.device();
 
         unsafe {
@@ -208,12 +197,9 @@ impl SSAOPass {
 
         self.pipeline = create_pipeline(
             &self.context,
-            swapchain_properties,
             self.render_pass.get_render_pass(),
             self.pipeline_layout,
             self.kernel_size,
-            self.ssao_radius,
-            self.ssao_strength,
         )
     }
 
@@ -303,6 +289,23 @@ impl SSAOPass {
                 &self.descriptors.per_frame_sets[frame_index..=frame_index],
                 &[],
             )
+        };
+
+        // Push material constants
+        unsafe {
+            let config = ConfigUniform {
+                ssao_radius: self.ssao_radius,
+                ssao_strength: self.ssao_strength,
+            };
+            let data = any_as_u8_slice(&config);
+
+            device.cmd_push_constants(
+                command_buffer,
+                self.pipeline_layout,
+                vk::ShaderStageFlags::FRAGMENT,
+                0,
+                data,
+            );
         };
 
         // Draw
@@ -464,6 +467,18 @@ fn create_static_set(
             .unwrap()[0]
     };
 
+    update_static_set(context, set, normals, depth, noise_texture);
+
+    set
+}
+
+fn update_static_set(
+    context: &Arc<Context>,
+    set: vk::DescriptorSet,
+    normals: &Texture,
+    depth: &Texture,
+    noise_texture: &Texture,
+) {
     let normals_info = [vk::DescriptorImageInfo::builder()
         .image_layout(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL)
         .image_view(normals.view)
@@ -516,8 +531,6 @@ fn create_static_set(
             .device()
             .update_descriptor_sets(&descriptor_writes, &[])
     }
-
-    set
 }
 
 fn create_dynamic_set_layout(device: &Device) -> vk::DescriptorSetLayout {
@@ -555,6 +568,12 @@ fn create_dynamic_set(
             .unwrap()[0]
     };
 
+    update_dynamic_set(context, set, kernel_buffer);
+
+    set
+}
+
+fn update_dynamic_set(context: &Arc<Context>, set: vk::DescriptorSet, kernel_buffer: &Buffer) {
     let kernel_info = [vk::DescriptorBufferInfo::builder()
         .buffer(kernel_buffer.buffer)
         .offset(0)
@@ -573,8 +592,6 @@ fn create_dynamic_set(
             .device()
             .update_descriptor_sets(&descriptor_writes, &[])
     }
-
-    set
 }
 
 fn create_per_frame_set_layout(device: &Device) -> vk::DescriptorSetLayout {
@@ -645,21 +662,27 @@ fn create_pipeline_layout(device: &Device, descriptors: &Descriptors) -> vk::Pip
         descriptors.dynamic_set_layout,
         descriptors.per_frame_set_layout,
     ];
-    let layout_info = vk::PipelineLayoutCreateInfo::builder().set_layouts(&layouts);
+
+    let push_constant_ranges = [vk::PushConstantRange {
+        stage_flags: vk::ShaderStageFlags::FRAGMENT,
+        offset: 0,
+        size: size_of::<ConfigUniform>() as _,
+    }];
+
+    let layout_info = vk::PipelineLayoutCreateInfo::builder()
+        .set_layouts(&layouts)
+        .push_constant_ranges(&push_constant_ranges);
     unsafe { device.create_pipeline_layout(&layout_info, None).unwrap() }
 }
 
 fn create_pipeline(
     context: &Arc<Context>,
-    swapchain_properties: SwapchainProperties,
     render_pass: vk::RenderPass,
     layout: vk::PipelineLayout,
     kernel_size: u32,
-    ssao_radius: f32,
-    ssao_strength: f32,
 ) -> vk::Pipeline {
     let (specialization_info, _map_entries, _data) =
-        create_ssao_frag_shader_specialization(kernel_size, ssao_radius, ssao_strength);
+        create_ssao_frag_shader_specialization(kernel_size);
 
     let depth_stencil_info = vk::PipelineDepthStencilStateCreateInfo::builder()
         .depth_test_enable(false)
@@ -695,7 +718,6 @@ fn create_pipeline(
             fragment_shader_name: "ssao",
             vertex_shader_specialization: None,
             fragment_shader_specialization: Some(&specialization_info),
-            swapchain_properties,
             msaa_samples: vk::SampleCountFlags::TYPE_1,
             render_pass,
             subpass: 0,
@@ -710,8 +732,6 @@ fn create_pipeline(
 
 fn create_ssao_frag_shader_specialization(
     saao_samples_count: u32,
-    ssao_radius: f32,
-    ssao_strength: f32,
 ) -> (
     vk::SpecializationInfo,
     Vec<vk::SpecializationMapEntry>,
@@ -724,24 +744,9 @@ fn create_ssao_frag_shader_specialization(
             offset: 0,
             size: size_of::<u32>(),
         },
-        // Radius
-        vk::SpecializationMapEntry {
-            constant_id: 1,
-            offset: size_of::<u32>() as _,
-            size: size_of::<f32>(),
-        },
-        // Strength
-        vk::SpecializationMapEntry {
-            constant_id: 2,
-            offset: (2 * size_of::<u32>()) as _,
-            size: size_of::<f32>(),
-        },
     ];
 
-    let mut data = Vec::new();
-    data.extend_from_slice(unsafe { any_as_u8_slice(&saao_samples_count) });
-    data.extend_from_slice(unsafe { any_as_u8_slice(&ssao_radius) });
-    data.extend_from_slice(unsafe { any_as_u8_slice(&ssao_strength) });
+    let data = unsafe { any_as_u8_slice(&saao_samples_count) }.to_vec();
 
     let specialization_info = vk::SpecializationInfo::builder()
         .map_entries(&map_entries)

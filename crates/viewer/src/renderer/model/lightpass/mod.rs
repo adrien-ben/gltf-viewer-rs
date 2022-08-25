@@ -10,7 +10,7 @@ use model::{Model, ModelVertex, Primitive, Texture, Workflow};
 use std::{mem::size_of, sync::Arc};
 use util::*;
 use vulkan::ash::{vk, Device};
-use vulkan::{Buffer, Context, SwapchainProperties, Texture as VulkanTexture};
+use vulkan::{Buffer, Context, Texture as VulkanTexture};
 
 const DYNAMIC_DATA_SET_INDEX: u32 = 0;
 const STATIC_DATA_SET_INDEX: u32 = 1;
@@ -31,6 +31,8 @@ const OCCLUSION_SAMPLER_BINDING: u32 = 10;
 const EMISSIVE_SAMPLER_BINDING: u32 = 11;
 const AO_MAP_SAMPLER_BINDING: u32 = 12;
 
+const MAX_LIGHT_COUNT: u32 = 8;
+
 pub struct LightPass {
     context: Arc<Context>,
     dummy_texture: VulkanTexture,
@@ -39,9 +41,11 @@ pub struct LightPass {
     opaque_pipeline: vk::Pipeline,
     opaque_unculled_pipeline: vk::Pipeline,
     transparent_pipeline: vk::Pipeline,
+    output_mode: OutputMode,
+    emissive_intensity: f32,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum OutputMode {
     Final = 0,
     Color,
@@ -86,12 +90,18 @@ impl OutputMode {
     }
 }
 
+#[allow(dead_code)]
+struct ConfigUniform {
+    light_count: u32,
+    output_mode: u32,
+    emissive_intensity: f32,
+}
+
 impl LightPass {
     pub fn create(
         context: Arc<Context>,
         model_data: &ModelData,
         camera_buffers: &[Buffer],
-        swapchain_props: SwapchainProperties,
         environment: &Environment,
         ao_map: Option<&VulkanTexture>,
         msaa_samples: vk::SampleCountFlags,
@@ -123,38 +133,26 @@ impl LightPass {
         let pipeline_layout = create_pipeline_layout(context.device(), &descriptors);
         let opaque_pipeline = create_opaque_pipeline(
             &context,
-            swapchain_props,
             msaa_samples,
             true,
             render_pass.get_render_pass(),
             pipeline_layout,
-            &model_rc.borrow(),
-            settings.output_mode,
-            settings.emissive_intensity,
         );
 
         let opaque_unculled_pipeline = create_opaque_pipeline(
             &context,
-            swapchain_props,
             msaa_samples,
             false,
             render_pass.get_render_pass(),
             pipeline_layout,
-            &model_rc.borrow(),
-            settings.output_mode,
-            settings.emissive_intensity,
         );
 
         let transparent_pipeline = create_transparent_pipeline(
             &context,
-            swapchain_props,
             msaa_samples,
             render_pass.get_render_pass(),
             pipeline_layout,
             opaque_pipeline,
-            &model_rc.borrow(),
-            settings.output_mode,
-            settings.emissive_intensity,
         );
 
         LightPass {
@@ -165,84 +163,57 @@ impl LightPass {
             opaque_pipeline,
             opaque_unculled_pipeline,
             transparent_pipeline,
+            output_mode: settings.output_mode,
+            emissive_intensity: settings.emissive_intensity,
         }
     }
 
     pub fn set_ao_map(&mut self, ao_map: Option<&VulkanTexture>) {
-        unsafe {
-            self.context
-                .device()
-                .free_descriptor_sets(self.descriptors.pool, &[self.descriptors.input_set])
-                .expect("Failed to free descriptor sets");
-        }
-        self.descriptors.input_set = create_input_descriptor_set(
+        update_input_descriptor_set(
             &self.context,
-            self.descriptors.pool,
-            self.descriptors.input_layout,
+            self.descriptors.input_set,
             ao_map.unwrap_or(&self.dummy_texture),
         );
     }
 
-    pub fn rebuild_pipelines(
-        &mut self,
-        model_data: &ModelData,
-        swapchain_props: SwapchainProperties,
-        msaa_samples: vk::SampleCountFlags,
-        render_pass: &LightRenderPass,
-        output_mode: OutputMode,
-        emissive_intensity: f32,
-    ) {
-        let device = self.context.device();
-        let model = model_data
-            .model
-            .upgrade()
-            .expect("Cannot rebuild renderer's pipeline because model was dropped");
+    pub fn set_output_mode(&mut self, output_mode: OutputMode) {
+        self.output_mode = output_mode;
+    }
 
-        unsafe {
-            device.destroy_pipeline(self.opaque_pipeline, None);
-            device.destroy_pipeline(self.opaque_unculled_pipeline, None);
-            device.destroy_pipeline(self.transparent_pipeline, None);
-        }
-
-        self.opaque_pipeline = create_opaque_pipeline(
-            &self.context,
-            swapchain_props,
-            msaa_samples,
-            true,
-            render_pass.get_render_pass(),
-            self.pipeline_layout,
-            &model.borrow(),
-            output_mode,
-            emissive_intensity,
-        );
-
-        self.opaque_unculled_pipeline = create_opaque_pipeline(
-            &self.context,
-            swapchain_props,
-            msaa_samples,
-            false,
-            render_pass.get_render_pass(),
-            self.pipeline_layout,
-            &model.borrow(),
-            output_mode,
-            emissive_intensity,
-        );
-
-        self.transparent_pipeline = create_transparent_pipeline(
-            &self.context,
-            swapchain_props,
-            msaa_samples,
-            render_pass.get_render_pass(),
-            self.pipeline_layout,
-            self.opaque_pipeline,
-            &model.borrow(),
-            output_mode,
-            emissive_intensity,
-        );
+    pub fn set_emissive_intensity(&mut self, emissive_intensity: f32) {
+        self.emissive_intensity = emissive_intensity;
     }
 }
 
 impl LightPass {
+    pub fn set_model(
+        &mut self,
+        model_data: &ModelData,
+        camera_buffers: &[Buffer],
+        environment: &Environment,
+        ao_map: Option<&VulkanTexture>,
+    ) {
+        let model_rc = model_data
+            .model
+            .upgrade()
+            .expect("Cannot create model renderer because model was dropped");
+
+        self.descriptors = create_descriptors(
+            &self.context,
+            DescriptorsResources {
+                camera_buffers,
+                model_transform_buffers: &model_data.transform_ubos,
+                model_skin_buffers: &model_data.skin_ubos,
+                light_buffers: &model_data.light_buffers,
+                dummy_texture: &self.dummy_texture,
+                environment,
+
+                model: &model_rc.borrow(),
+            },
+            ao_map.unwrap_or(&self.dummy_texture),
+        );
+    }
+
     pub fn cmd_draw(
         &self,
         command_buffer: vk::CommandBuffer,
@@ -290,15 +261,9 @@ impl LightPass {
         };
 
         // Draw opaque primitives
-        register_model_draw_commands(
-            &self.context,
-            self.pipeline_layout,
-            command_buffer,
-            &model,
-            &self.descriptors.dynamic_data_sets[frame_index..=frame_index],
-            &self.descriptors.per_primitive_sets,
-            |p| !p.material().is_transparent() && !p.material().is_double_sided(),
-        );
+        self.register_model_draw_commands(command_buffer, frame_index, &model, |p| {
+            !p.material().is_transparent() && !p.material().is_double_sided()
+        });
 
         // Bind opaque without culling pipeline
         unsafe {
@@ -310,15 +275,9 @@ impl LightPass {
         };
 
         // Draw opaque, double sided primitives
-        register_model_draw_commands(
-            &self.context,
-            self.pipeline_layout,
-            command_buffer,
-            &model,
-            &self.descriptors.dynamic_data_sets[frame_index..=frame_index],
-            &self.descriptors.per_primitive_sets,
-            |p| !p.material().is_transparent() && p.material().is_double_sided(),
-        );
+        self.register_model_draw_commands(command_buffer, frame_index, &model, |p| {
+            !p.material().is_transparent() && p.material().is_double_sided()
+        });
 
         // Bind transparent pipeline
         unsafe {
@@ -329,15 +288,140 @@ impl LightPass {
             )
         };
         // Draw transparent primitives
-        register_model_draw_commands(
-            &self.context,
-            self.pipeline_layout,
-            command_buffer,
-            &model,
-            &self.descriptors.dynamic_data_sets[frame_index..=frame_index],
-            &self.descriptors.per_primitive_sets,
-            |p| p.material().is_transparent(),
-        );
+        self.register_model_draw_commands(command_buffer, frame_index, &model, |p| {
+            p.material().is_transparent()
+        });
+    }
+
+    fn register_model_draw_commands<F>(
+        &self,
+        command_buffer: vk::CommandBuffer,
+        frame_index: usize,
+        model: &Model,
+        primitive_filter: F,
+    ) where
+        F: FnMut(&&Primitive) -> bool + Copy,
+    {
+        let device = self.context.device();
+        let model_transform_ubo_offset = self.context.get_ubo_alignment::<Matrix4<f32>>();
+        let model_skin_ubo_offset = self.context.get_ubo_alignment::<JointsBuffer>();
+
+        for (index, node) in model
+            .nodes()
+            .nodes()
+            .iter()
+            .filter(|n| n.mesh_index().is_some())
+            .enumerate()
+        {
+            let mesh = model.mesh(node.mesh_index().unwrap());
+            let skin_index = node.skin_index().unwrap_or(0);
+
+            // Bind descriptor sets
+            unsafe {
+                device.cmd_bind_descriptor_sets(
+                    command_buffer,
+                    vk::PipelineBindPoint::GRAPHICS,
+                    self.pipeline_layout,
+                    DYNAMIC_DATA_SET_INDEX,
+                    &self.descriptors.dynamic_data_sets[frame_index..=frame_index],
+                    &[
+                        model_transform_ubo_offset * index as u32,
+                        model_skin_ubo_offset * skin_index as u32,
+                    ],
+                )
+            };
+
+            for primitive in mesh.primitives().iter().filter(primitive_filter) {
+                let primitive_index = primitive.index();
+
+                // Bind descriptor sets
+                unsafe {
+                    device.cmd_bind_descriptor_sets(
+                        command_buffer,
+                        vk::PipelineBindPoint::GRAPHICS,
+                        self.pipeline_layout,
+                        PER_PRIMITIVE_DATA_SET_INDEX,
+                        &self.descriptors.per_primitive_sets[primitive_index..=primitive_index],
+                        &[],
+                    )
+                };
+
+                unsafe {
+                    device.cmd_bind_vertex_buffers(
+                        command_buffer,
+                        0,
+                        &[primitive.vertices().buffer().buffer],
+                        &[primitive.vertices().offset()],
+                    );
+                }
+
+                if let Some(index_buffer) = primitive.indices() {
+                    unsafe {
+                        device.cmd_bind_index_buffer(
+                            command_buffer,
+                            index_buffer.buffer().buffer,
+                            index_buffer.offset(),
+                            index_buffer.index_type(),
+                        );
+                    }
+                }
+
+                // Push material constants
+                unsafe {
+                    let material: MaterialUniform = primitive.material().into();
+                    let mut data = any_as_u8_slice(&material).to_vec();
+
+                    let light_count = model
+                        .nodes()
+                        .nodes()
+                        .iter()
+                        .filter(|n| n.light_index().is_some())
+                        .count() as u32;
+
+                    let config = ConfigUniform {
+                        light_count,
+                        output_mode: self.output_mode as _,
+                        emissive_intensity: self.emissive_intensity,
+                    };
+                    data.extend_from_slice(any_as_u8_slice(&config));
+
+                    device.cmd_push_constants(
+                        command_buffer,
+                        self.pipeline_layout,
+                        vk::ShaderStageFlags::FRAGMENT,
+                        0,
+                        data.as_slice(),
+                    );
+                };
+
+                // Draw geometry
+                match primitive.indices() {
+                    Some(index_buffer) => {
+                        unsafe {
+                            device.cmd_draw_indexed(
+                                command_buffer,
+                                index_buffer.element_count(),
+                                1,
+                                0,
+                                0,
+                                0,
+                            )
+                        };
+                    }
+                    None => {
+                        unsafe {
+                            device.cmd_draw(
+                                command_buffer,
+                                primitive.vertices().element_count(),
+                                1,
+                                0,
+                                0,
+                            )
+                        };
+                    }
+                }
+            }
+        }
     }
 }
 
@@ -404,7 +488,7 @@ fn create_descriptors(
 
     let static_data_layout = create_static_data_descriptor_set_layout(context.device());
     let static_data_set =
-        create_static_data_descriptor_sets(context, pool, static_data_layout, resources);
+        create_static_data_descriptor_set(context, pool, static_data_layout, resources);
 
     let per_primitive_layout = create_per_primitive_descriptor_set_layout(context.device());
     let per_primitive_sets =
@@ -617,7 +701,7 @@ fn create_static_data_descriptor_set_layout(device: &Device) -> vk::DescriptorSe
     }
 }
 
-fn create_static_data_descriptor_sets(
+fn create_static_data_descriptor_set(
     context: &Arc<Context>,
     pool: vk::DescriptorPool,
     layout: vk::DescriptorSetLayout,
@@ -865,6 +949,16 @@ fn create_input_descriptor_set(
             .unwrap()[0]
     };
 
+    update_input_descriptor_set(context, set, ao_map);
+
+    set
+}
+
+fn update_input_descriptor_set(
+    context: &Arc<Context>,
+    set: vk::DescriptorSet,
+    ao_map: &VulkanTexture,
+) {
     let ao_map_info = [vk::DescriptorImageInfo::builder()
         .image_layout(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL)
         .image_view(ao_map.view)
@@ -883,8 +977,6 @@ fn create_input_descriptor_set(
             .device()
             .update_descriptor_sets(&descriptor_writes, &[])
     }
-
-    set
 }
 
 fn create_descriptor_image_info(
@@ -912,10 +1004,12 @@ fn create_pipeline_layout(device: &Device, descriptors: &Descriptors) -> vk::Pip
         descriptors.per_primitive_layout,
         descriptors.input_layout,
     ];
+
+    let size = size_of::<MaterialUniform>() + size_of::<ConfigUniform>();
     let push_constant_range = [vk::PushConstantRange {
         stage_flags: vk::ShaderStageFlags::FRAGMENT,
         offset: 0,
-        size: size_of::<MaterialUniform>() as _,
+        size: size as _,
     }];
     let layout_info = vk::PipelineLayoutCreateInfo::builder()
         .set_layouts(&layouts)
@@ -926,17 +1020,12 @@ fn create_pipeline_layout(device: &Device, descriptors: &Descriptors) -> vk::Pip
 
 fn create_opaque_pipeline(
     context: &Arc<Context>,
-    swapchain_properties: SwapchainProperties,
     msaa_samples: vk::SampleCountFlags,
     enable_face_culling: bool,
     render_pass: vk::RenderPass,
     layout: vk::PipelineLayout,
-    model: &Model,
-    output_mode: OutputMode,
-    emissive_intensity: f32,
 ) -> vk::Pipeline {
-    let (specialization_info, _map_entries, _data) =
-        create_model_frag_shader_specialization(model, output_mode, emissive_intensity);
+    let (specialization_info, _map_entries, _data) = create_model_frag_shader_specialization();
 
     let depth_stencil_info = vk::PipelineDepthStencilStateCreateInfo::builder()
         .depth_test_enable(true)
@@ -972,7 +1061,6 @@ fn create_opaque_pipeline(
             fragment_shader_name: "model",
             vertex_shader_specialization: None,
             fragment_shader_specialization: Some(&specialization_info),
-            swapchain_properties,
             msaa_samples,
             render_pass,
             subpass: 0,
@@ -987,17 +1075,12 @@ fn create_opaque_pipeline(
 
 fn create_transparent_pipeline(
     context: &Arc<Context>,
-    swapchain_properties: SwapchainProperties,
     msaa_samples: vk::SampleCountFlags,
     render_pass: vk::RenderPass,
     layout: vk::PipelineLayout,
     parent: vk::Pipeline,
-    model: &Model,
-    output_mode: OutputMode,
-    emissive_intensity: f32,
 ) -> vk::Pipeline {
-    let (specialization_info, _map_entries, _data) =
-        create_model_frag_shader_specialization(model, output_mode, emissive_intensity);
+    let (specialization_info, _map_entries, _data) = create_model_frag_shader_specialization();
 
     let depth_stencil_info = vk::PipelineDepthStencilStateCreateInfo::builder()
         .depth_test_enable(true)
@@ -1033,7 +1116,6 @@ fn create_transparent_pipeline(
             fragment_shader_name: "model",
             vertex_shader_specialization: None,
             fragment_shader_specialization: Some(&specialization_info),
-            swapchain_properties,
             msaa_samples,
             render_pass,
             subpass: 0,
@@ -1046,43 +1128,19 @@ fn create_transparent_pipeline(
     )
 }
 
-fn create_model_frag_shader_specialization(
-    model: &Model,
-    output_mode: OutputMode,
-    emissive_intensity: f32,
-) -> (
+fn create_model_frag_shader_specialization() -> (
     vk::SpecializationInfo,
     Vec<vk::SpecializationMapEntry>,
     Vec<u8>,
 ) {
-    let map_entries = vec![
-        vk::SpecializationMapEntry {
-            constant_id: 0,
-            offset: 0,
-            size: size_of::<u32>(),
-        },
-        vk::SpecializationMapEntry {
-            constant_id: 1,
-            offset: size_of::<u32>() as _,
-            size: size_of::<u32>(),
-        },
-        vk::SpecializationMapEntry {
-            constant_id: 2,
-            offset: (2 * size_of::<u32>()) as _,
-            size: size_of::<f32>(),
-        },
-    ];
+    let map_entries = vec![vk::SpecializationMapEntry {
+        constant_id: 0,
+        offset: 0,
+        size: size_of::<u32>(),
+    }];
 
-    let light_count = model
-        .nodes()
-        .nodes()
-        .iter()
-        .filter(|n| n.light_index().is_some())
-        .count() as u32;
-
-    let data = [light_count, output_mode as _];
-    let mut data = Vec::from(unsafe { any_as_u8_slice(&data) });
-    data.extend_from_slice(unsafe { any_as_u8_slice(&[emissive_intensity]) });
+    let data = [MAX_LIGHT_COUNT];
+    let data = Vec::from(unsafe { any_as_u8_slice(&data) });
 
     let specialization_info = vk::SpecializationInfo::builder()
         .map_entries(&map_entries)
@@ -1090,121 +1148,4 @@ fn create_model_frag_shader_specialization(
         .build();
 
     (specialization_info, map_entries, data)
-}
-
-fn register_model_draw_commands<F>(
-    context: &Context,
-    pipeline_layout: vk::PipelineLayout,
-    command_buffer: vk::CommandBuffer,
-    model: &Model,
-    dynamic_descriptors: &[vk::DescriptorSet],
-    per_primitive_descriptors: &[vk::DescriptorSet],
-    primitive_filter: F,
-) where
-    F: FnMut(&&Primitive) -> bool + Copy,
-{
-    let device = context.device();
-    let model_transform_ubo_offset = context.get_ubo_alignment::<Matrix4<f32>>();
-    let model_skin_ubo_offset = context.get_ubo_alignment::<JointsBuffer>();
-
-    for (index, node) in model
-        .nodes()
-        .nodes()
-        .iter()
-        .filter(|n| n.mesh_index().is_some())
-        .enumerate()
-    {
-        let mesh = model.mesh(node.mesh_index().unwrap());
-        let skin_index = node.skin_index().unwrap_or(0);
-
-        // Bind descriptor sets
-        unsafe {
-            device.cmd_bind_descriptor_sets(
-                command_buffer,
-                vk::PipelineBindPoint::GRAPHICS,
-                pipeline_layout,
-                DYNAMIC_DATA_SET_INDEX,
-                dynamic_descriptors,
-                &[
-                    model_transform_ubo_offset * index as u32,
-                    model_skin_ubo_offset * skin_index as u32,
-                ],
-            )
-        };
-
-        for primitive in mesh.primitives().iter().filter(primitive_filter) {
-            let primitive_index = primitive.index();
-
-            // Bind descriptor sets
-            unsafe {
-                device.cmd_bind_descriptor_sets(
-                    command_buffer,
-                    vk::PipelineBindPoint::GRAPHICS,
-                    pipeline_layout,
-                    PER_PRIMITIVE_DATA_SET_INDEX,
-                    &per_primitive_descriptors[primitive_index..=primitive_index],
-                    &[],
-                )
-            };
-
-            unsafe {
-                device.cmd_bind_vertex_buffers(
-                    command_buffer,
-                    0,
-                    &[primitive.vertices().buffer().buffer],
-                    &[primitive.vertices().offset()],
-                );
-            }
-
-            if let Some(index_buffer) = primitive.indices() {
-                unsafe {
-                    device.cmd_bind_index_buffer(
-                        command_buffer,
-                        index_buffer.buffer().buffer,
-                        index_buffer.offset(),
-                        index_buffer.index_type(),
-                    );
-                }
-            }
-            // Push material constants
-            unsafe {
-                let material: MaterialUniform = primitive.material().into();
-                let material_contants = any_as_u8_slice(&material);
-                device.cmd_push_constants(
-                    command_buffer,
-                    pipeline_layout,
-                    vk::ShaderStageFlags::FRAGMENT,
-                    0,
-                    material_contants,
-                );
-            };
-
-            // Draw geometry
-            match primitive.indices() {
-                Some(index_buffer) => {
-                    unsafe {
-                        device.cmd_draw_indexed(
-                            command_buffer,
-                            index_buffer.element_count(),
-                            1,
-                            0,
-                            0,
-                            0,
-                        )
-                    };
-                }
-                None => {
-                    unsafe {
-                        device.cmd_draw(
-                            command_buffer,
-                            primitive.vertices().element_count(),
-                            1,
-                            0,
-                            0,
-                        )
-                    };
-                }
-            }
-        }
-    }
 }

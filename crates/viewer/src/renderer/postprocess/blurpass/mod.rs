@@ -28,12 +28,7 @@ impl BlurPass {
 
         let descriptors = create_descriptors(&context, input_image);
         let pipeline_layout = create_pipeline_layout(context.device(), descriptors.layout());
-        let pipeline = create_pipeline(
-            &context,
-            swapchain_props,
-            render_pass.get_render_pass(),
-            pipeline_layout,
-        );
+        let pipeline = create_pipeline(&context, render_pass.get_render_pass(), pipeline_layout);
 
         BlurPass {
             context,
@@ -49,18 +44,10 @@ impl BlurPass {
 
 impl BlurPass {
     pub fn set_input_image(&mut self, input_image: &Texture) {
-        unsafe {
-            self.context
-                .device()
-                .free_descriptor_sets(self.descriptors.pool(), self.descriptors.sets())
-                .expect("Failed to free descriptor sets");
-        }
-        self.descriptors.set_sets(create_descriptor_sets(
-            &self.context,
-            self.descriptors.pool(),
-            self.descriptors.layout(),
-            input_image,
-        ));
+        self.descriptors
+            .sets()
+            .iter()
+            .for_each(|s| update_descriptor_set(&self.context, *s, input_image));
     }
 
     pub fn set_extent(&mut self, extent: vk::Extent2D) {
@@ -73,21 +60,6 @@ impl BlurPass {
         self.extent = extent;
         self.render_pass = RenderPass::create(Arc::clone(&self.context), extent);
         self.framebuffer = self.render_pass.create_framebuffer();
-    }
-
-    pub fn rebuild_pipelines(&mut self, swapchain_properties: SwapchainProperties) {
-        let device = self.context.device();
-
-        unsafe {
-            device.destroy_pipeline(self.pipeline, None);
-        }
-
-        self.pipeline = create_pipeline(
-            &self.context,
-            swapchain_properties,
-            self.render_pass.get_render_pass(),
-            self.pipeline_layout,
-        )
     }
 
     pub fn cmd_draw(&self, command_buffer: vk::CommandBuffer, quad_model: &QuadModel) {
@@ -229,6 +201,12 @@ fn create_descriptor_sets(
             .unwrap()
     };
 
+    update_descriptor_set(context, sets[0], input_image);
+
+    sets
+}
+
+fn update_descriptor_set(context: &Arc<Context>, set: vk::DescriptorSet, input_image: &Texture) {
     let input_image_info = [vk::DescriptorImageInfo::builder()
         .image_layout(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL)
         .image_view(input_image.view)
@@ -240,7 +218,7 @@ fn create_descriptor_sets(
         .build()];
 
     let descriptor_writes = [vk::WriteDescriptorSet::builder()
-        .dst_set(sets[0])
+        .dst_set(set)
         .dst_binding(0)
         .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
         .image_info(&input_image_info)
@@ -251,8 +229,6 @@ fn create_descriptor_sets(
             .device()
             .update_descriptor_sets(&descriptor_writes, &[])
     }
-
-    sets
 }
 
 fn create_pipeline_layout(
@@ -266,7 +242,6 @@ fn create_pipeline_layout(
 
 fn create_pipeline(
     context: &Arc<Context>,
-    swapchain_properties: SwapchainProperties,
     render_pass: vk::RenderPass,
     layout: vk::PipelineLayout,
 ) -> vk::Pipeline {
@@ -304,7 +279,6 @@ fn create_pipeline(
             fragment_shader_name: "blur",
             vertex_shader_specialization: None,
             fragment_shader_specialization: None,
-            swapchain_properties,
             msaa_samples: vk::SampleCountFlags::TYPE_1,
             render_pass,
             subpass: 0,

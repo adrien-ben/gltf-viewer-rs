@@ -9,7 +9,7 @@ use model::{Material, Model, ModelVertex, Primitive, Texture};
 use std::{mem::size_of, sync::Arc};
 use util::any_as_u8_slice;
 use vulkan::ash::{vk, Device};
-use vulkan::{Buffer, Context, SwapchainProperties, Texture as VulkanTexture};
+use vulkan::{Buffer, Context, Texture as VulkanTexture};
 
 const DYNAMIC_DATA_SET_INDEX: u32 = 0;
 const PER_PRIMITIVE_DATA_SET_INDEX: u32 = 1;
@@ -21,7 +21,7 @@ const COLOR_SAMPLER_BINDING: u32 = 3;
 
 pub struct GBufferPass {
     context: Arc<Context>,
-    _dummy_texture: VulkanTexture,
+    dummy_texture: VulkanTexture,
     descriptors: Descriptors,
     pipeline_layout: vk::PipelineLayout,
     culled_pipeline: vk::Pipeline,
@@ -33,7 +33,6 @@ impl GBufferPass {
         context: Arc<Context>,
         model_data: &ModelData,
         camera_buffers: &[Buffer],
-        swapchain_props: SwapchainProperties,
         render_pass: &GBufferRenderPass,
     ) -> Self {
         let dummy_texture = VulkanTexture::from_rgba(&context, 1, 1, &[std::u8::MAX; 4]);
@@ -57,14 +56,12 @@ impl GBufferPass {
         let pipeline_layout = create_pipeline_layout(context.device(), &descriptors);
         let culled_pipeline = create_pipeline(
             &context,
-            swapchain_props,
             render_pass.get_render_pass(),
             pipeline_layout,
             true,
         );
         let unculled_pipeline = create_pipeline(
             &context,
-            swapchain_props,
             render_pass.get_render_pass(),
             pipeline_layout,
             false,
@@ -72,45 +69,34 @@ impl GBufferPass {
 
         GBufferPass {
             context,
-            _dummy_texture: dummy_texture,
+            dummy_texture,
             descriptors,
             pipeline_layout,
             culled_pipeline,
             unculled_pipeline,
         }
     }
-
-    pub fn rebuild_pipelines(
-        &mut self,
-        swapchain_props: SwapchainProperties,
-        render_pass: &GBufferRenderPass,
-    ) {
-        let device = self.context.device();
-
-        unsafe {
-            device.destroy_pipeline(self.unculled_pipeline, None);
-            device.destroy_pipeline(self.culled_pipeline, None);
-        }
-
-        self.culled_pipeline = create_pipeline(
-            &self.context,
-            swapchain_props,
-            render_pass.get_render_pass(),
-            self.pipeline_layout,
-            true,
-        );
-
-        self.unculled_pipeline = create_pipeline(
-            &self.context,
-            swapchain_props,
-            render_pass.get_render_pass(),
-            self.pipeline_layout,
-            false,
-        );
-    }
 }
 
 impl GBufferPass {
+    pub fn set_model(&mut self, model_data: &ModelData, camera_buffers: &[Buffer]) {
+        let model_rc = model_data
+            .model
+            .upgrade()
+            .expect("Cannot create model renderer because model was dropped");
+
+        self.descriptors = create_descriptors(
+            &self.context,
+            DescriptorsResources {
+                camera_buffers,
+                model_transform_buffers: &model_data.transform_ubos,
+                model_skin_buffers: &model_data.skin_ubos,
+                model: &model_rc.borrow(),
+                dummy_texture: &self.dummy_texture,
+            },
+        );
+    }
+
     pub fn cmd_draw(
         &self,
         command_buffer: vk::CommandBuffer,
@@ -471,7 +457,6 @@ fn create_pipeline_layout(device: &Device, descriptors: &Descriptors) -> vk::Pip
 
 fn create_pipeline(
     context: &Arc<Context>,
-    swapchain_properties: SwapchainProperties,
     render_pass: vk::RenderPass,
     layout: vk::PipelineLayout,
     enable_face_culling: bool,
@@ -510,7 +495,6 @@ fn create_pipeline(
             fragment_shader_name: "gbuffer",
             vertex_shader_specialization: None,
             fragment_shader_specialization: None,
-            swapchain_properties,
             msaa_samples: vk::SampleCountFlags::TYPE_1,
             render_pass,
             subpass: 0,
@@ -653,7 +637,7 @@ impl MaterialUniform {
     const NO_TEXTURE_ID: u32 = std::u8::MAX as u32;
 }
 
-impl<'a> From<Material> for MaterialUniform {
+impl From<Material> for MaterialUniform {
     fn from(material: Material) -> MaterialUniform {
         let alpha = material.get_color()[3];
         let color_texture_channel = material

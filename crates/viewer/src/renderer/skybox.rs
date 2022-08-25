@@ -16,7 +16,6 @@ impl SkyboxRenderer {
     pub fn create(
         context: Arc<Context>,
         camera_buffers: &[Buffer],
-        swapchain_props: SwapchainProperties,
         environment: &Environment,
         msaa_samples: vk::SampleCountFlags,
         render_pass: &LightRenderPass,
@@ -26,7 +25,6 @@ impl SkyboxRenderer {
         let pipeline_layout = create_pipeline_layout(context.device(), descriptors.layout());
         let pipeline = create_skybox_pipeline(
             &context,
-            swapchain_props,
             msaa_samples,
             render_pass.get_render_pass(),
             pipeline_layout,
@@ -39,26 +37,6 @@ impl SkyboxRenderer {
             pipeline_layout,
             pipeline,
         }
-    }
-
-    pub fn rebuild_pipeline(
-        &mut self,
-        swapchain_props: SwapchainProperties,
-        msaa_samples: vk::SampleCountFlags,
-        render_pass: &LightRenderPass,
-    ) {
-        let device = self.context.device();
-        unsafe {
-            device.destroy_pipeline(self.pipeline, None);
-        }
-
-        self.pipeline = create_skybox_pipeline(
-            &self.context,
-            swapchain_props,
-            msaa_samples,
-            render_pass.get_render_pass(),
-            self.pipeline_layout,
-        );
     }
 }
 
@@ -241,7 +219,6 @@ fn create_pipeline_layout(
 
 fn create_skybox_pipeline(
     context: &Arc<Context>,
-    swapchain_properties: SwapchainProperties,
     msaa_samples: vk::SampleCountFlags,
     render_pass: vk::RenderPass,
     layout: vk::PipelineLayout,
@@ -280,7 +257,6 @@ fn create_skybox_pipeline(
             fragment_shader_name: "skybox",
             vertex_shader_specialization: None,
             fragment_shader_specialization: None,
-            swapchain_properties,
             msaa_samples,
             render_pass,
             subpass: 0,

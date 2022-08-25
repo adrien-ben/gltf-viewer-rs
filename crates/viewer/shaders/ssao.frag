@@ -2,8 +2,11 @@
 #extension GL_ARB_separate_shader_objects : enable
 
 layout (constant_id = 0) const uint SSAO_KERNEL_SIZE = 32;
-layout (constant_id = 1) const float SSAO_RADIUS = 0.15;
-layout (constant_id = 2) const float SSAO_STRENGTH = 1.0;
+
+layout(push_constant) uniform Config {
+    float ssaoRadius;
+    float ssaoStrength;
+} config;
 
 layout(location = 0) in vec2 oCoords;
 layout(location = 1) in vec3 oViewRay;
@@ -58,7 +61,7 @@ void main() {
     for (int i = 0; i < SSAO_KERNEL_SIZE; i++) {
         // get sample position:
         vec3 kSample = tbn * ssaoKernel.samples[i].xyz;
-        kSample = kSample * SSAO_RADIUS + position;
+        kSample = kSample * config.ssaoRadius + position;
         
         // project sample position:
         vec4 offset = vec4(kSample, 1.0);
@@ -69,10 +72,10 @@ void main() {
         float depth = -linearDepth(offset.xy);
 
         // range check & accumulate:
-        float rangeCheck = smoothstep(0.0f, 1.0f, SSAO_RADIUS / abs(depth - position.z));
+        float rangeCheck = smoothstep(0.0f, 1.0f, config.ssaoRadius / abs(depth - position.z));
 		occlusion += (depth >= kSample.z + bias ? 1.0f : 0.0f) * rangeCheck;
     }
     occlusion = 1.0 - (occlusion / float(SSAO_KERNEL_SIZE));
     
-    finalColor = pow(occlusion, SSAO_STRENGTH);
+    finalColor = pow(occlusion, config.ssaoStrength);
 }

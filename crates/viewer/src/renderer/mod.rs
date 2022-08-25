@@ -146,7 +146,6 @@ impl Renderer {
         let skybox_renderer = SkyboxRenderer::create(
             Arc::clone(&context),
             &camera_uniform_buffers,
-            swapchain_properties,
             &environment,
             msaa_samples,
             &light_render_pass,
@@ -179,7 +178,6 @@ impl Renderer {
 
         let final_pass = FinalPass::create(
             Arc::clone(&context),
-            swapchain_properties,
             &simple_render_pass,
             light_render_pass.get_color_attachment(),
             settings,
@@ -356,6 +354,28 @@ impl Renderer {
                         .begin_command_buffer(command_buffer, &command_buffer_begin_info)
                         .unwrap()
                 };
+            }
+
+            // Update viewport/scissors
+            unsafe {
+                self.context.device().cmd_set_viewport(
+                    command_buffer,
+                    0,
+                    &[vk::Viewport {
+                        width: self.swapchain.properties().extent.width as _,
+                        height: self.swapchain.properties().extent.height as _,
+                        max_depth: 1.0,
+                        ..Default::default()
+                    }],
+                );
+                self.context.device().cmd_set_scissor(
+                    command_buffer,
+                    0,
+                    &[vk::Rect2D {
+                        extent: self.swapchain.properties().extent,
+                        ..Default::default()
+                    }],
+                )
             }
 
             let draw_data = gui.render(window);
@@ -567,46 +587,55 @@ impl Renderer {
     }
 
     pub fn set_model(&mut self, model: &Rc<RefCell<Model>>) {
-        self.model_renderer.take();
-
-        let swapchain_properties = self.swapchain.properties();
-
         let model_data = ModelData::create(
             Arc::clone(&self.context),
             Rc::downgrade(model),
             self.swapchain.image_count() as u32,
         );
 
-        let gbuffer_pass = GBufferPass::create(
-            Arc::clone(&self.context),
-            &model_data,
-            &self.camera_uniform_buffers,
-            swapchain_properties,
-            &self.gbuffer_render_pass,
-        );
+        let ao_map = self
+            .settings
+            .ssao_enabled
+            .then(|| self.ssao_blur_pass.get_output());
 
-        let ao_map = if self.settings.ssao_enabled {
-            Some(self.ssao_blur_pass.get_output())
+        if let Some(model_renderer) = self.model_renderer.as_mut() {
+            model_renderer
+                .gbuffer_pass
+                .set_model(&model_data, &self.camera_uniform_buffers);
+
+            model_renderer.light_pass.set_model(
+                &model_data,
+                &self.camera_uniform_buffers,
+                &self.environment,
+                ao_map,
+            );
+
+            model_renderer.data = model_data;
         } else {
-            None
-        };
-        let light_pass = LightPass::create(
-            Arc::clone(&self.context),
-            &model_data,
-            &self.camera_uniform_buffers,
-            swapchain_properties,
-            &self.environment,
-            ao_map,
-            self.msaa_samples,
-            &self.light_render_pass,
-            self.settings,
-        );
+            let gbuffer_pass = GBufferPass::create(
+                Arc::clone(&self.context),
+                &model_data,
+                &self.camera_uniform_buffers,
+                &self.gbuffer_render_pass,
+            );
 
-        self.model_renderer = Some(ModelRenderer {
-            data: model_data,
-            gbuffer_pass,
-            light_pass,
-        });
+            let light_pass = LightPass::create(
+                Arc::clone(&self.context),
+                &model_data,
+                &self.camera_uniform_buffers,
+                &self.environment,
+                ao_map,
+                self.msaa_samples,
+                &self.light_render_pass,
+                self.settings,
+            );
+
+            self.model_renderer = Some(ModelRenderer {
+                data: model_data,
+                gbuffer_pass,
+                light_pass,
+            });
+        }
     }
 
     pub fn recreate_swapchain(&mut self, dimensions: [u32; 2], vsync: bool) {
@@ -675,13 +704,11 @@ impl Renderer {
             gbuffer_render_pass.get_normals_attachment(),
             gbuffer_render_pass.get_depth_attachment(),
         );
-        self.ssao_pass.rebuild_pipelines(swapchain_properties);
 
         // SSAO Blur
         self.ssao_blur_pass.set_extent(swapchain_properties.extent);
         self.ssao_blur_pass
             .set_input_image(self.ssao_pass.get_output());
-        self.ssao_blur_pass.rebuild_pipelines(swapchain_properties);
 
         // Light
         let light_render_pass = LightRenderPass::create(
@@ -692,44 +719,19 @@ impl Renderer {
         );
         let lightpass_framebuffer = light_render_pass.create_framebuffer();
 
-        // Skybox
-        self.skybox_renderer.rebuild_pipeline(
-            swapchain_properties,
-            self.msaa_samples,
-            &light_render_pass,
-        );
-
         // Model
         if let Some(renderer) = self.model_renderer.as_mut() {
-            renderer
-                .gbuffer_pass
-                .rebuild_pipelines(swapchain_properties, &gbuffer_render_pass);
-
             let ao_map = if self.settings.ssao_enabled {
                 Some(self.ssao_blur_pass.get_output())
             } else {
                 None
             };
             renderer.light_pass.set_ao_map(ao_map);
-
-            renderer.light_pass.rebuild_pipelines(
-                &renderer.data,
-                swapchain_properties,
-                self.msaa_samples,
-                &light_render_pass,
-                self.settings.output_mode,
-                self.settings.emissive_intensity,
-            )
         }
 
         // Final
         self.final_pass
             .set_input_image(light_render_pass.get_color_attachment());
-        self.final_pass.rebuild_pipelines(
-            swapchain_properties,
-            &self.simple_render_pass,
-            self.settings.tone_map_mode,
-        );
 
         self.gbuffer_render_pass = gbuffer_render_pass;
         self.gbuffer_framebuffer = gbuffer_framebuffer;
@@ -766,37 +768,21 @@ impl Renderer {
     fn set_emissive_intensity(&mut self, emissive_intensity: f32) {
         self.settings.emissive_intensity = emissive_intensity;
         if let Some(renderer) = self.model_renderer.as_mut() {
-            renderer.light_pass.rebuild_pipelines(
-                &renderer.data,
-                self.swapchain.properties(),
-                self.msaa_samples,
-                &self.light_render_pass,
-                self.settings.output_mode,
-                emissive_intensity,
-            );
+            renderer
+                .light_pass
+                .set_emissive_intensity(emissive_intensity);
         }
     }
 
     fn set_tone_map_mode(&mut self, tone_map_mode: ToneMapMode) {
         self.settings.tone_map_mode = tone_map_mode;
-        self.final_pass.rebuild_pipelines(
-            self.swapchain.properties(),
-            &self.simple_render_pass,
-            tone_map_mode,
-        );
+        self.final_pass.set_tone_map_mode(tone_map_mode);
     }
 
     fn set_output_mode(&mut self, output_mode: OutputMode) {
         self.settings.output_mode = output_mode;
         if let Some(renderer) = self.model_renderer.as_mut() {
-            renderer.light_pass.rebuild_pipelines(
-                &renderer.data,
-                self.swapchain.properties(),
-                self.msaa_samples,
-                &self.light_render_pass,
-                output_mode,
-                self.settings.emissive_intensity,
-            );
+            renderer.light_pass.set_output_mode(output_mode);
         }
     }
 
@@ -804,32 +790,25 @@ impl Renderer {
         if self.settings.ssao_enabled != enable {
             self.settings.ssao_enabled = enable;
             if let Some(renderer) = self.model_renderer.as_mut() {
-                let ao_map = if enable {
-                    Some(self.ssao_blur_pass.get_output())
-                } else {
-                    None
-                };
+                let ao_map = enable.then(|| self.ssao_blur_pass.get_output());
                 renderer.light_pass.set_ao_map(ao_map);
             }
         }
     }
 
     fn set_ssao_kernel_size(&mut self, size: u32) {
+        self.settings.ssao_kernel_size = size;
         self.ssao_pass.set_ssao_kernel_size(size);
-        self.ssao_pass
-            .rebuild_pipelines(self.swapchain.properties());
     }
 
     fn set_ssao_radius(&mut self, radius: f32) {
+        self.settings.ssao_radius = radius;
         self.ssao_pass.set_ssao_radius(radius);
-        self.ssao_pass
-            .rebuild_pipelines(self.swapchain.properties());
     }
 
     fn set_ssao_strength(&mut self, strength: f32) {
+        self.settings.ssao_strength = strength;
         self.ssao_pass.set_ssao_strength(strength);
-        self.ssao_pass
-            .rebuild_pipelines(self.swapchain.properties());
     }
 
     pub fn update_ubos(&mut self, frame_index: usize, camera: Camera) {
@@ -884,7 +863,6 @@ struct RendererPipelineParameters<'a> {
     fragment_shader_name: &'static str,
     vertex_shader_specialization: Option<&'a vk::SpecializationInfo>,
     fragment_shader_specialization: Option<&'a vk::SpecializationInfo>,
-    swapchain_properties: SwapchainProperties,
     msaa_samples: vk::SampleCountFlags,
     render_pass: vk::RenderPass,
     subpass: u32,
@@ -917,21 +895,9 @@ fn create_renderer_pipeline<V: Vertex>(
         .alpha_to_coverage_enable(false)
         .alpha_to_one_enable(false);
 
-    let viewports = [vk::Viewport {
-        x: 0.0,
-        y: 0.0,
-        width: params.swapchain_properties.extent.width as _,
-        height: params.swapchain_properties.extent.height as _,
-        min_depth: 0.0,
-        max_depth: 1.0,
-    }];
-    let scissors = [vk::Rect2D {
-        offset: vk::Offset2D { x: 0, y: 0 },
-        extent: params.swapchain_properties.extent,
-    }];
     let viewport_info = vk::PipelineViewportStateCreateInfo::builder()
-        .viewports(&viewports)
-        .scissors(&scissors);
+        .viewport_count(1)
+        .scissor_count(1);
 
     let cull_mode = if params.enable_face_culling {
         vk::CullModeFlags::BACK
@@ -951,6 +917,10 @@ fn create_renderer_pipeline<V: Vertex>(
         .depth_bias_clamp(0.0)
         .depth_bias_slope_factor(0.0);
 
+    let dynamic_states = [vk::DynamicState::VIEWPORT, vk::DynamicState::SCISSOR];
+    let dynamic_state_info =
+        vk::PipelineDynamicStateCreateInfo::builder().dynamic_states(&dynamic_states);
+
     create_pipeline::<V>(
         context,
         PipelineParameters {
@@ -959,7 +929,7 @@ fn create_renderer_pipeline<V: Vertex>(
             multisampling_info: &multisampling_info,
             viewport_info: &viewport_info,
             rasterizer_info: &rasterizer_info,
-            dynamic_state_info: None,
+            dynamic_state_info: Some(&dynamic_state_info),
             depth_stencil_info: Some(params.depth_stencil_info),
             color_blend_attachments: params.color_blend_attachments,
             render_pass: params.render_pass,

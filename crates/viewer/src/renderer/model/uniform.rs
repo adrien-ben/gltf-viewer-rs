@@ -105,7 +105,7 @@ pub struct MaterialUniform {
     alpha_cutoff: f32,
 }
 
-impl<'a> From<Material> for MaterialUniform {
+impl From<Material> for MaterialUniform {
     fn from(material: Material) -> MaterialUniform {
         let color = material.get_color();
         let emissive_factor = material.get_emissive();

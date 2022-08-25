@@ -112,9 +112,19 @@ fn pick_physical_device(
     surface_khr: vk::SurfaceKHR,
 ) -> (vk::PhysicalDevice, QueueFamiliesIndices) {
     let devices = unsafe {
-        instance
+        let mut devices = instance
             .enumerate_physical_devices()
-            .expect("Failed to enumerate physical devices")
+            .expect("Failed to enumerate physical devices");
+        devices.sort_by_key(|d| {
+            let props = instance.get_physical_device_properties(*d);
+            match props.device_type {
+                vk::PhysicalDeviceType::DISCRETE_GPU => 0,
+                vk::PhysicalDeviceType::INTEGRATED_GPU => 1,
+                _ => 10,
+            }
+        });
+
+        devices
     };
     let device = devices
         .into_iter()

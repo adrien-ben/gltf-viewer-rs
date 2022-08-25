@@ -2,9 +2,7 @@
 #extension GL_ARB_separate_shader_objects : enable
 
 // -- Constants --
-layout(constant_id = 0) const uint LIGHT_COUNT = 1;
-layout(constant_id = 1) const uint OUTPUT_MODE = 0;
-layout(constant_id = 2) const float EMISSIVE_INTENSITY = 1.0;
+layout(constant_id = 0) const uint MAX_LIGHT_COUNT = 1;
 
 const uint OUTPUT_MODE_FINAL = 0;
 const uint OUTPUT_MODE_COLOR = 1;
@@ -101,6 +99,9 @@ layout(push_constant) uniform MaterialUniform {
     // [24-31] Workflow (metallic/roughness or specular/glossiness)
     uint occlusionTextureChannelAlphaModeUnlitFlagAndWorkflow;
     float alphaCutoff;
+    uint lightCount;
+    uint outputMode;
+    float emissiveIntensity;
 } material;
 
 // -- Descriptors --
@@ -113,7 +114,7 @@ layout(binding = 0, set = 0) uniform Camera {
     float zFar;
 } cameraUBO;
 layout(binding = 1, set = 0) uniform Lights {
-    Light lights[LIGHT_COUNT + 1];
+    Light lights[MAX_LIGHT_COUNT];
 } lights;
 layout(binding = 4, set = 1) uniform samplerCube irradianceMapSampler;
 layout(binding = 5, set = 1) uniform samplerCube preFilteredSampler;
@@ -214,7 +215,7 @@ vec3 getEmissiveColor(TextureChannels textureChannels) {
         vec2 uv = getUV(textureChannels.emissive);
         emissive *= pow(texture(emissiveSampler, uv).rgb, vec3(2.2));
     }
-    return emissive * EMISSIVE_INTENSITY;
+    return emissive * material.emissiveIntensity;
 }
 
 vec3 getNormal(TextureChannels textureChannels) {
@@ -454,7 +455,7 @@ void main() {
 
     vec3 color = vec3(0.0);
 
-    for (int i = 0; i < LIGHT_COUNT; i++) {
+    for (int i = 0; i < material.lightCount; i++) {
 
         Light light = lights.lights[i];
         uint lightType = light.type;
@@ -472,29 +473,29 @@ void main() {
 
     color += emissive + occludeAmbientColor(ambient, textureChannels);
 
-    if (OUTPUT_MODE == OUTPUT_MODE_FINAL) {
+    if (material.outputMode == OUTPUT_MODE_FINAL) {
         outColor = vec4(color, alpha);
-    } else if (OUTPUT_MODE == OUTPUT_MODE_COLOR) {
+    } else if (material.outputMode == OUTPUT_MODE_COLOR) {
         outColor = vec4(baseColor.rgb, 1.0);
-    } else if (OUTPUT_MODE == OUTPUT_MODE_EMISSIVE) {
+    } else if (material.outputMode == OUTPUT_MODE_EMISSIVE) {
         outColor = vec4(pow(emissive, vec3(1.0/2.2)), 1.0);
-    } else if (OUTPUT_MODE == OUTPUT_MODE_METALLIC) {
+    } else if (material.outputMode == OUTPUT_MODE_METALLIC) {
         outColor = vec4(vec3(metallic), 1.0);
-    } else if (OUTPUT_MODE == OUTPUT_MODE_SPECULAR) {
+    } else if (material.outputMode == OUTPUT_MODE_SPECULAR) {
         outColor = vec4(specular, 1.0);
-    } else if (OUTPUT_MODE == OUTPUT_MODE_ROUGHNESS) {
+    } else if (material.outputMode == OUTPUT_MODE_ROUGHNESS) {
         outColor = vec4(vec3(roughness), 1.0);
-    } else if (OUTPUT_MODE == OUTPUT_MODE_OCCLUSION) {
+    } else if (material.outputMode == OUTPUT_MODE_OCCLUSION) {
         outColor = vec4(occludeAmbientColor(vec3(1.0), textureChannels), 1.0);
-    } else if (OUTPUT_MODE == OUTPUT_MODE_NORMAL) {
+    } else if (material.outputMode == OUTPUT_MODE_NORMAL) {
         outColor = vec4(n*0.5 + 0.5, 1.0);
-    } else if (OUTPUT_MODE == OUTPUT_MODE_ALPHA) {
+    } else if (material.outputMode == OUTPUT_MODE_ALPHA) {
         outColor = vec4(vec3(baseColor.a), 1.0);
-    } else if (OUTPUT_MODE == OUTPUT_MODE_UVS0) {
+    } else if (material.outputMode == OUTPUT_MODE_UVS0) {
         outColor = vec4(vec2(oTexcoords0), 0.0, 1.0);
-    } else if (OUTPUT_MODE == OUTPUT_MODE_UVS1) {
+    } else if (material.outputMode == OUTPUT_MODE_UVS1) {
         outColor = vec4(vec2(oTexcoords1), 0.0, 1.0);
-    } else if (OUTPUT_MODE == OUTPUT_MODE_SSAO) {
+    } else if (material.outputMode == OUTPUT_MODE_SSAO) {
         float ao = sampleAOMap();
         outColor = vec4(vec3(ao), 1.0);
     }
