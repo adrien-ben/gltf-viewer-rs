@@ -315,20 +315,25 @@ impl SwapchainSupportDetails {
 
     /// Choose the swapchain present mode.
     ///
-    /// Will favor MAILBOX if present otherwise FIFO.
-    /// If none is present it will fallback to IMMEDIATE.
+    /// If only one is supported then defaults to it (must be FIFO by the specs)
+    /// If vsync is requested then we chose the first available among MAILBOX, FIFO_RELAXED, FIFO
+    /// Otherwise we go for immediate
     fn choose_swapchain_surface_present_mode(
         available_present_modes: &[vk::PresentModeKHR],
         preferred_vsync: bool,
     ) -> vk::PresentModeKHR {
-        if preferred_vsync && !available_present_modes.contains(&vk::PresentModeKHR::FIFO) {
-            log::warn!("Vsync was requested but FIFO present mode is not supported");
+        if available_present_modes.len() == 1 {
+            return available_present_modes[0];
         }
 
-        if preferred_vsync && available_present_modes.contains(&vk::PresentModeKHR::FIFO) {
-            vk::PresentModeKHR::FIFO
-        } else if available_present_modes.contains(&vk::PresentModeKHR::MAILBOX) {
-            vk::PresentModeKHR::MAILBOX
+        if preferred_vsync {
+            if available_present_modes.contains(&vk::PresentModeKHR::MAILBOX) {
+                vk::PresentModeKHR::MAILBOX
+            } else if available_present_modes.contains(&vk::PresentModeKHR::FIFO_RELAXED) {
+                vk::PresentModeKHR::FIFO_RELAXED
+            } else {
+                vk::PresentModeKHR::FIFO
+            }
         } else {
             vk::PresentModeKHR::IMMEDIATE
         }
