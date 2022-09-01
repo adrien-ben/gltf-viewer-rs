@@ -1,3 +1,4 @@
+mod attachments;
 mod fullscreen;
 mod model;
 mod postprocess;
@@ -6,9 +7,10 @@ mod ssao;
 
 extern crate model as model_crate;
 
+use self::attachments::Attachments;
 use self::fullscreen::QuadModel;
-use self::model::gbufferpass::{GBufferPass, GBufferRenderPass};
-pub use self::model::lightpass::{LightPass, LightRenderPass, OutputMode};
+use self::model::gbufferpass::GBufferPass;
+pub use self::model::lightpass::{LightPass, OutputMode};
 use self::model::{ModelData, ModelRenderer};
 use self::ssao::*;
 pub use self::{postprocess::*, skybox::*};
@@ -26,6 +28,7 @@ use std::cell::RefCell;
 use std::mem::size_of;
 use std::rc::Rc;
 use std::sync::Arc;
+use vulkan::ash::vk::{RenderingAttachmentInfo, RenderingInfo};
 use vulkan::*;
 use winit::window::Window;
 
@@ -71,17 +74,13 @@ pub struct Renderer {
     settings: RendererSettings,
     depth_format: vk::Format,
     msaa_samples: vk::SampleCountFlags,
-    simple_render_pass: SimpleRenderPass,
     swapchain: Swapchain,
     command_buffers: Vec<vk::CommandBuffer>,
     in_flight_frames: InFlightFrames,
     environment: Environment,
     camera_uniform_buffers: Vec<Buffer>,
-    light_render_pass: LightRenderPass,
-    lightpass_framebuffer: vk::Framebuffer,
+    attachments: Attachments,
     skybox_renderer: SkyboxRenderer,
-    gbuffer_render_pass: GBufferRenderPass,
-    gbuffer_framebuffer: vk::Framebuffer,
     model_renderer: Option<ModelRenderer>,
     ssao_pass: SSAOPass,
     ssao_blur_pass: BlurPass,
@@ -116,15 +115,11 @@ impl Renderer {
             config.msaa()
         );
 
-        let simple_render_pass =
-            SimpleRenderPass::create(Arc::clone(&context), swapchain_properties.format.format);
-
         let swapchain = Swapchain::create(
             Arc::clone(&context),
             swapchain_support_details,
             resolution,
             config.vsync(),
-            &simple_render_pass,
         );
 
         let command_buffers = allocate_command_buffers(&context, swapchain.image_count());
@@ -134,36 +129,26 @@ impl Renderer {
         let camera_uniform_buffers =
             create_camera_uniform_buffers(&context, swapchain.image_count() as u32);
 
-        let light_render_pass = LightRenderPass::create(
-            Arc::clone(&context),
+        let attachments = Attachments::new(
+            &context,
             swapchain_properties.extent,
             depth_format,
             msaa_samples,
         );
-
-        let lightpass_framebuffer = light_render_pass.create_framebuffer();
 
         let skybox_renderer = SkyboxRenderer::create(
             Arc::clone(&context),
             &camera_uniform_buffers,
             &environment,
             msaa_samples,
-            &light_render_pass,
-        );
-
-        let gbuffer_render_pass = GBufferRenderPass::create(
-            Arc::clone(&context),
-            swapchain_properties.extent,
             depth_format,
         );
-
-        let gbuffer_framebuffer = gbuffer_render_pass.create_framebuffer();
 
         let ssao_pass = SSAOPass::create(
             Arc::clone(&context),
             swapchain_properties,
-            gbuffer_render_pass.get_normals_attachment(),
-            gbuffer_render_pass.get_depth_attachment(),
+            &attachments.gbuffer_normals,
+            &attachments.gbuffer_depth,
             &camera_uniform_buffers,
             settings,
         );
@@ -171,15 +156,15 @@ impl Renderer {
         let ssao_blur_pass = BlurPass::create(
             Arc::clone(&context),
             swapchain_properties,
-            ssao_pass.get_output(),
+            &attachments.ssao,
         );
 
         let quad_model = QuadModel::new(&context);
 
         let final_pass = FinalPass::create(
             Arc::clone(&context),
-            &simple_render_pass,
-            light_render_pass.get_color_attachment(),
+            swapchain_properties.format.format,
+            attachments.get_scene_resolved_color(),
             settings,
         );
 
@@ -189,7 +174,7 @@ impl Renderer {
             context.device().clone(),
             context.graphics_compute_queue(),
             context.general_command_pool(),
-            simple_render_pass.get_render_pass(),
+            swapchain_properties.format.format,
             gui_context,
             Some(Options {
                 in_flight_frames: MAX_FRAMES_IN_FLIGHT as _,
@@ -203,17 +188,13 @@ impl Renderer {
             settings,
             depth_format,
             msaa_samples,
-            simple_render_pass,
             swapchain,
             command_buffers,
             in_flight_frames,
             environment,
             camera_uniform_buffers,
-            light_render_pass,
-            lightpass_framebuffer,
+            attachments,
             skybox_renderer,
-            gbuffer_render_pass,
-            gbuffer_framebuffer,
             model_renderer: None,
             ssao_pass,
             ssao_blur_pass,
@@ -446,44 +427,69 @@ impl Renderer {
         frame_index: usize,
         draw_data: &DrawData,
     ) {
-        let device = self.context.device();
-
         let extent = self.swapchain.properties().extent;
 
         if self.settings.ssao_enabled {
             // GBuffer pass
             {
+                // Prepare attachments for gbuffer
                 {
-                    let clear_values = [
-                        vk::ClearValue {
-                            color: vk::ClearColorValue {
-                                float32: [0.0, 0.0, 0.0, 1.0],
-                            },
-                        },
-                        vk::ClearValue {
-                            depth_stencil: vk::ClearDepthStencilValue {
-                                depth: 1.0,
-                                stencil: 0,
-                            },
-                        },
-                    ];
-                    let render_pass_begin_info = vk::RenderPassBeginInfo::builder()
-                        .render_pass(self.gbuffer_render_pass.get_render_pass())
-                        .framebuffer(self.gbuffer_framebuffer)
-                        .render_area(vk::Rect2D {
-                            offset: vk::Offset2D { x: 0, y: 0 },
-                            extent,
-                        })
-                        .clear_values(&clear_values);
-
-                    unsafe {
-                        device.cmd_begin_render_pass(
+                    self.attachments
+                        .gbuffer_normals
+                        .image
+                        .cmd_transition_image_layout(
                             command_buffer,
-                            &render_pass_begin_info,
-                            vk::SubpassContents::INLINE,
-                        )
-                    };
+                            vk::ImageLayout::UNDEFINED,
+                            vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
+                        );
+
+                    self.attachments
+                        .gbuffer_depth
+                        .image
+                        .cmd_transition_image_layout(
+                            command_buffer,
+                            vk::ImageLayout::UNDEFINED,
+                            vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
+                        );
                 }
+
+                let color_attachment_info = RenderingAttachmentInfo::builder()
+                    .clear_value(vk::ClearValue {
+                        color: vk::ClearColorValue {
+                            float32: [0.0, 0.0, 0.0, 1.0],
+                        },
+                    })
+                    .image_layout(vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL)
+                    .image_view(self.attachments.gbuffer_normals.view)
+                    .load_op(vk::AttachmentLoadOp::CLEAR)
+                    .store_op(vk::AttachmentStoreOp::STORE);
+
+                let depth_attachment_info = RenderingAttachmentInfo::builder()
+                    .clear_value(vk::ClearValue {
+                        depth_stencil: vk::ClearDepthStencilValue {
+                            depth: 1.0,
+                            stencil: 0,
+                        },
+                    })
+                    .image_layout(vk::ImageLayout::DEPTH_ATTACHMENT_OPTIMAL)
+                    .image_view(self.attachments.gbuffer_depth.view)
+                    .load_op(vk::AttachmentLoadOp::CLEAR)
+                    .store_op(vk::AttachmentStoreOp::STORE);
+
+                let rendering_info = RenderingInfo::builder()
+                    .color_attachments(std::slice::from_ref(&color_attachment_info))
+                    .depth_attachment(&depth_attachment_info)
+                    .layer_count(1)
+                    .render_area(vk::Rect2D {
+                        offset: vk::Offset2D { x: 0, y: 0 },
+                        extent,
+                    });
+
+                unsafe {
+                    self.context
+                        .dynamic_rendering()
+                        .cmd_begin_rendering(command_buffer, &rendering_info)
+                };
 
                 if let Some(renderer) = self.model_renderer.as_ref() {
                     renderer
@@ -491,49 +497,149 @@ impl Renderer {
                         .cmd_draw(command_buffer, frame_index, &renderer.data);
                 }
 
-                unsafe { device.cmd_end_render_pass(command_buffer) };
+                unsafe {
+                    self.context
+                        .dynamic_rendering()
+                        .cmd_end_rendering(command_buffer)
+                };
+            }
+
+            // Prepare attachments and inputs for ssao
+            {
+                self.attachments
+                    .gbuffer_normals
+                    .image
+                    .cmd_transition_image_layout(
+                        command_buffer,
+                        vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
+                        vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
+                    );
+
+                self.attachments
+                    .gbuffer_depth
+                    .image
+                    .cmd_transition_image_layout(
+                        command_buffer,
+                        vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
+                        vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
+                    );
+
+                self.attachments.ssao.image.cmd_transition_image_layout(
+                    command_buffer,
+                    vk::ImageLayout::UNDEFINED,
+                    vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
+                );
             }
 
             // SSAO Pass
-            self.ssao_pass
-                .cmd_draw(command_buffer, &self.quad_model, frame_index);
+            self.ssao_pass.cmd_draw(
+                command_buffer,
+                &self.attachments,
+                &self.quad_model,
+                frame_index,
+            );
+
+            // Prepare attachments and inputs for ssao blur
+            {
+                self.attachments.ssao.image.cmd_transition_image_layout(
+                    command_buffer,
+                    vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
+                    vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
+                );
+
+                self.attachments
+                    .ssao_blur
+                    .image
+                    .cmd_transition_image_layout(
+                        command_buffer,
+                        vk::ImageLayout::UNDEFINED,
+                        vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
+                    );
+            }
 
             // SSAO Blur Pass
             self.ssao_blur_pass
-                .cmd_draw(command_buffer, &self.quad_model);
+                .cmd_draw(command_buffer, &self.attachments, &self.quad_model);
+        }
+
+        // Prepare attachments and inputs for lighting pass
+        {
+            self.attachments
+                .get_scene_resolved_color()
+                .image
+                .cmd_transition_image_layout(
+                    command_buffer,
+                    vk::ImageLayout::UNDEFINED,
+                    vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
+                );
+
+            self.attachments
+                .scene_depth
+                .image
+                .cmd_transition_image_layout(
+                    command_buffer,
+                    vk::ImageLayout::UNDEFINED,
+                    vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
+                );
+
+            if self.settings.ssao_enabled {
+                self.attachments
+                    .ssao_blur
+                    .image
+                    .cmd_transition_image_layout(
+                        command_buffer,
+                        vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
+                        vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
+                    );
+            }
         }
 
         // Scene Pass
         {
             {
-                let clear_values = [
-                    vk::ClearValue {
+                let mut color_attachment_info = RenderingAttachmentInfo::builder()
+                    .clear_value(vk::ClearValue {
                         color: vk::ClearColorValue {
                             float32: [1.0, 0.0, 0.0, 1.0],
                         },
-                    },
-                    vk::ClearValue {
+                    })
+                    .image_layout(vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL)
+                    .image_view(self.attachments.scene_color.view)
+                    .load_op(vk::AttachmentLoadOp::CLEAR)
+                    .store_op(vk::AttachmentStoreOp::STORE);
+
+                if let Some(resolve_attachment) = self.attachments.scene_resolve.as_ref() {
+                    color_attachment_info = color_attachment_info
+                        .resolve_image_layout(vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL)
+                        .resolve_mode(vk::ResolveModeFlags::AVERAGE_KHR)
+                        .resolve_image_view(resolve_attachment.view)
+                }
+
+                let depth_attachment_info = RenderingAttachmentInfo::builder()
+                    .clear_value(vk::ClearValue {
                         depth_stencil: vk::ClearDepthStencilValue {
                             depth: 1.0,
                             stencil: 0,
                         },
-                    },
-                ];
-                let render_pass_begin_info = vk::RenderPassBeginInfo::builder()
-                    .render_pass(self.light_render_pass.get_render_pass())
-                    .framebuffer(self.lightpass_framebuffer)
+                    })
+                    .image_layout(vk::ImageLayout::DEPTH_ATTACHMENT_OPTIMAL)
+                    .image_view(self.attachments.scene_depth.view)
+                    .load_op(vk::AttachmentLoadOp::CLEAR)
+                    .store_op(vk::AttachmentStoreOp::STORE);
+
+                let rendering_info = RenderingInfo::builder()
+                    .color_attachments(std::slice::from_ref(&color_attachment_info))
+                    .depth_attachment(&depth_attachment_info)
+                    .layer_count(1)
                     .render_area(vk::Rect2D {
                         offset: vk::Offset2D { x: 0, y: 0 },
                         extent,
-                    })
-                    .clear_values(&clear_values);
+                    });
 
                 unsafe {
-                    device.cmd_begin_render_pass(
-                        command_buffer,
-                        &render_pass_begin_info,
-                        vk::SubpassContents::INLINE,
-                    )
+                    self.context
+                        .dynamic_rendering()
+                        .cmd_begin_rendering(command_buffer, &rendering_info)
                 };
             }
 
@@ -545,32 +651,57 @@ impl Renderer {
                     .cmd_draw(command_buffer, frame_index, &renderer.data);
             }
 
-            unsafe { device.cmd_end_render_pass(command_buffer) };
+            unsafe {
+                self.context
+                    .dynamic_rendering()
+                    .cmd_end_rendering(command_buffer)
+            };
+        }
+
+        // Prepare attachments and inputs for final pass (post-processing + ui)
+        {
+            self.swapchain.images()[frame_index].cmd_transition_image_layout(
+                command_buffer,
+                vk::ImageLayout::UNDEFINED,
+                vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
+            );
+
+            self.attachments
+                .get_scene_resolved_color()
+                .image
+                .cmd_transition_image_layout(
+                    command_buffer,
+                    vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
+                    vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
+                );
         }
 
         // Final pass and UI
         {
             {
-                let clear_values = [vk::ClearValue {
-                    color: vk::ClearColorValue {
-                        float32: [0.0, 0.0, 1.0, 1.0],
-                    },
-                }];
-                let render_pass_begin_info = vk::RenderPassBeginInfo::builder()
-                    .render_pass(self.simple_render_pass.get_render_pass())
-                    .framebuffer(self.swapchain.framebuffers()[frame_index])
+                let color_attachment_info = RenderingAttachmentInfo::builder()
+                    .clear_value(vk::ClearValue {
+                        color: vk::ClearColorValue {
+                            float32: [0.0, 0.0, 0.0, 1.0],
+                        },
+                    })
+                    .image_layout(vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL)
+                    .image_view(self.swapchain.image_views()[frame_index])
+                    .load_op(vk::AttachmentLoadOp::CLEAR)
+                    .store_op(vk::AttachmentStoreOp::STORE);
+
+                let rendering_info = RenderingInfo::builder()
+                    .color_attachments(std::slice::from_ref(&color_attachment_info))
+                    .layer_count(1)
                     .render_area(vk::Rect2D {
                         offset: vk::Offset2D { x: 0, y: 0 },
                         extent,
-                    })
-                    .clear_values(&clear_values);
+                    });
 
                 unsafe {
-                    device.cmd_begin_render_pass(
-                        command_buffer,
-                        &render_pass_begin_info,
-                        vk::SubpassContents::INLINE,
-                    )
+                    self.context
+                        .dynamic_rendering()
+                        .cmd_begin_rendering(command_buffer, &rendering_info)
                 };
             }
 
@@ -582,7 +713,20 @@ impl Renderer {
                 .cmd_draw(command_buffer, draw_data)
                 .unwrap();
 
-            unsafe { device.cmd_end_render_pass(command_buffer) };
+            unsafe {
+                self.context
+                    .dynamic_rendering()
+                    .cmd_end_rendering(command_buffer)
+            };
+        }
+
+        // Transition swapchain image for presentation
+        {
+            self.swapchain.images()[frame_index].cmd_transition_image_layout(
+                command_buffer,
+                vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
+                vk::ImageLayout::PRESENT_SRC_KHR,
+            );
         }
     }
 
@@ -596,7 +740,7 @@ impl Renderer {
         let ao_map = self
             .settings
             .ssao_enabled
-            .then(|| self.ssao_blur_pass.get_output());
+            .then(|| &self.attachments.ssao_blur);
 
         if let Some(model_renderer) = self.model_renderer.as_mut() {
             model_renderer
@@ -616,7 +760,7 @@ impl Renderer {
                 Arc::clone(&self.context),
                 &model_data,
                 &self.camera_uniform_buffers,
-                &self.gbuffer_render_pass,
+                self.depth_format,
             );
 
             let light_pass = LightPass::create(
@@ -626,7 +770,7 @@ impl Renderer {
                 &self.environment,
                 ao_map,
                 self.msaa_samples,
-                &self.light_render_pass,
+                self.depth_format,
                 self.settings,
             );
 
@@ -656,7 +800,6 @@ impl Renderer {
             swapchain_support_details,
             dimensions,
             vsync,
-            &self.simple_render_pass,
         );
 
         self.on_new_swapchain();
@@ -679,50 +822,30 @@ impl Renderer {
     }
 
     fn on_new_swapchain(&mut self) {
-        unsafe {
-            self.context
-                .device()
-                .destroy_framebuffer(self.lightpass_framebuffer, None);
-            self.context
-                .device()
-                .destroy_framebuffer(self.gbuffer_framebuffer, None);
-        }
-
         let swapchain_properties = self.swapchain.properties();
 
-        // GBuffer
-        let gbuffer_render_pass = GBufferRenderPass::create(
-            Arc::clone(&self.context),
-            swapchain_properties.extent,
-            self.depth_format,
-        );
-        let gbuffer_framebuffer = gbuffer_render_pass.create_framebuffer();
-
-        // SSAO
-        self.ssao_pass.set_extent(swapchain_properties.extent);
-        self.ssao_pass.set_inputs(
-            gbuffer_render_pass.get_normals_attachment(),
-            gbuffer_render_pass.get_depth_attachment(),
-        );
-
-        // SSAO Blur
-        self.ssao_blur_pass.set_extent(swapchain_properties.extent);
-        self.ssao_blur_pass
-            .set_input_image(self.ssao_pass.get_output());
-
-        // Light
-        let light_render_pass = LightRenderPass::create(
-            Arc::clone(&self.context),
+        self.attachments = Attachments::new(
+            &self.context,
             swapchain_properties.extent,
             self.depth_format,
             self.msaa_samples,
         );
-        let lightpass_framebuffer = light_render_pass.create_framebuffer();
+
+        // SSAO
+        self.ssao_pass.set_extent(swapchain_properties.extent);
+        self.ssao_pass.set_inputs(
+            &self.attachments.gbuffer_normals,
+            &self.attachments.gbuffer_depth,
+        );
+
+        // SSAO Blur
+        self.ssao_blur_pass.set_extent(swapchain_properties.extent);
+        self.ssao_blur_pass.set_input_image(&self.attachments.ssao);
 
         // Model
         if let Some(renderer) = self.model_renderer.as_mut() {
             let ao_map = if self.settings.ssao_enabled {
-                Some(self.ssao_blur_pass.get_output())
+                Some(&self.attachments.ssao_blur)
             } else {
                 None
             };
@@ -731,12 +854,7 @@ impl Renderer {
 
         // Final
         self.final_pass
-            .set_input_image(light_render_pass.get_color_attachment());
-
-        self.gbuffer_render_pass = gbuffer_render_pass;
-        self.gbuffer_framebuffer = gbuffer_framebuffer;
-        self.light_render_pass = light_render_pass;
-        self.lightpass_framebuffer = lightpass_framebuffer;
+            .set_input_image(self.attachments.get_scene_resolved_color());
     }
 
     pub fn update_settings(&mut self, settings: RendererSettings) {
@@ -790,7 +908,7 @@ impl Renderer {
         if self.settings.ssao_enabled != enable {
             self.settings.ssao_enabled = enable;
             if let Some(renderer) = self.model_renderer.as_mut() {
-                let ao_map = enable.then(|| self.ssao_blur_pass.get_output());
+                let ao_map = enable.then(|| &self.attachments.ssao_blur);
                 renderer.light_pass.set_ao_map(ao_map);
             }
         }
@@ -845,15 +963,7 @@ impl Renderer {
 
 impl Drop for Renderer {
     fn drop(&mut self) {
-        unsafe {
-            self.context
-                .device()
-                .destroy_framebuffer(self.lightpass_framebuffer, None);
-            self.context
-                .device()
-                .destroy_framebuffer(self.gbuffer_framebuffer, None);
-            self.destroy_swapchain();
-        }
+        self.destroy_swapchain();
     }
 }
 
@@ -864,8 +974,8 @@ struct RendererPipelineParameters<'a> {
     vertex_shader_specialization: Option<&'a vk::SpecializationInfo>,
     fragment_shader_specialization: Option<&'a vk::SpecializationInfo>,
     msaa_samples: vk::SampleCountFlags,
-    render_pass: vk::RenderPass,
-    subpass: u32,
+    color_attachment_formats: &'a [vk::Format],
+    depth_attachment_format: Option<vk::Format>,
     layout: vk::PipelineLayout,
     depth_stencil_info: &'a vk::PipelineDepthStencilStateCreateInfo,
     color_blend_attachments: &'a [vk::PipelineColorBlendAttachmentState],
@@ -932,8 +1042,8 @@ fn create_renderer_pipeline<V: Vertex>(
             dynamic_state_info: Some(&dynamic_state_info),
             depth_stencil_info: Some(params.depth_stencil_info),
             color_blend_attachments: params.color_blend_attachments,
-            render_pass: params.render_pass,
-            subpass: params.subpass,
+            color_attachment_formats: params.color_attachment_formats,
+            depth_attachment_format: params.depth_attachment_format,
             layout: params.layout,
             parent: params.parent,
             allow_derivatives: params.parent.is_none(),

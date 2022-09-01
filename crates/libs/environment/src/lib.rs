@@ -159,50 +159,6 @@ fn get_view_matrices() -> [Matrix4<f32>; 6] {
     ]
 }
 
-fn create_render_pass(context: &Arc<Context>, format: vk::Format) -> vk::RenderPass {
-    let attachments_descs = [vk::AttachmentDescription::builder()
-        .format(format)
-        .samples(vk::SampleCountFlags::TYPE_1)
-        .load_op(vk::AttachmentLoadOp::CLEAR)
-        .store_op(vk::AttachmentStoreOp::STORE)
-        .initial_layout(vk::ImageLayout::UNDEFINED)
-        .final_layout(vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL)
-        .build()];
-
-    let color_attachment_ref = [vk::AttachmentReference::builder()
-        .attachment(0)
-        .layout(vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL)
-        .build()];
-
-    let subpass_descs = [vk::SubpassDescription::builder()
-        .pipeline_bind_point(vk::PipelineBindPoint::GRAPHICS)
-        .color_attachments(&color_attachment_ref)
-        .build()];
-
-    let subpass_deps = [vk::SubpassDependency::builder()
-        .src_subpass(vk::SUBPASS_EXTERNAL)
-        .src_stage_mask(vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT)
-        .src_access_mask(vk::AccessFlags::empty())
-        .dst_subpass(0)
-        .dst_stage_mask(vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT)
-        .dst_access_mask(
-            vk::AccessFlags::COLOR_ATTACHMENT_READ | vk::AccessFlags::COLOR_ATTACHMENT_WRITE,
-        )
-        .build()];
-
-    let render_pass_info = vk::RenderPassCreateInfo::builder()
-        .attachments(&attachments_descs)
-        .subpasses(&subpass_descs)
-        .dependencies(&subpass_deps);
-
-    unsafe {
-        context
-            .device()
-            .create_render_pass(&render_pass_info, None)
-            .unwrap()
-    }
-}
-
 fn create_descriptors(context: &Arc<Context>, texture: &Texture) -> Descriptors {
     let device = context.device();
 
@@ -283,7 +239,7 @@ struct EnvPipelineParameters<'a> {
     rasterizer_info: &'a vk::PipelineRasterizationStateCreateInfo,
     dynamic_state_info: Option<&'a vk::PipelineDynamicStateCreateInfo>,
     layout: vk::PipelineLayout,
-    render_pass: vk::RenderPass,
+    format: vk::Format,
 }
 
 fn create_env_pipeline<V: Vertex>(
@@ -324,8 +280,8 @@ fn create_env_pipeline<V: Vertex>(
             dynamic_state_info: params.dynamic_state_info,
             depth_stencil_info: None,
             color_blend_attachments: &color_blend_attachments,
-            render_pass: params.render_pass,
-            subpass: 0,
+            color_attachment_formats: &[params.format],
+            depth_attachment_format: None,
             layout: params.layout,
             parent: None,
             allow_derivatives: false,

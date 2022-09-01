@@ -3,7 +3,7 @@ use crate::renderer::{
 };
 use std::{mem::size_of, sync::Arc};
 use vulkan::ash::{vk, Device};
-use vulkan::{Context, Descriptors, SimpleRenderPass, Texture};
+use vulkan::{Context, Descriptors, Texture};
 
 /// Tone mapping and gamma correction pass
 pub struct FinalPass {
@@ -49,7 +49,7 @@ impl ToneMapMode {
 impl FinalPass {
     pub fn create(
         context: Arc<Context>,
-        render_pass: &SimpleRenderPass,
+        output_format: vk::Format,
         input_image: &Texture,
         settings: RendererSettings,
     ) -> Self {
@@ -57,34 +57,26 @@ impl FinalPass {
         let pipeline_layout = create_pipeline_layout(context.device(), descriptors.layout());
         let default_pipeline = create_pipeline(
             &context,
-            render_pass.get_render_pass(),
+            output_format,
             pipeline_layout,
             ToneMapMode::Default,
         );
         let uncharted_pipeline = create_pipeline(
             &context,
-            render_pass.get_render_pass(),
+            output_format,
             pipeline_layout,
             ToneMapMode::Uncharted,
         );
         let hejl_richard_pipeline = create_pipeline(
             &context,
-            render_pass.get_render_pass(),
+            output_format,
             pipeline_layout,
             ToneMapMode::HejlRichard,
         );
-        let aces_pipeline = create_pipeline(
-            &context,
-            render_pass.get_render_pass(),
-            pipeline_layout,
-            ToneMapMode::Aces,
-        );
-        let none_pipeline = create_pipeline(
-            &context,
-            render_pass.get_render_pass(),
-            pipeline_layout,
-            ToneMapMode::None,
-        );
+        let aces_pipeline =
+            create_pipeline(&context, output_format, pipeline_layout, ToneMapMode::Aces);
+        let none_pipeline =
+            create_pipeline(&context, output_format, pipeline_layout, ToneMapMode::None);
 
         let tone_map_mode = settings.tone_map_mode;
 
@@ -271,7 +263,7 @@ fn create_pipeline_layout(
 
 fn create_pipeline(
     context: &Arc<Context>,
-    render_pass: vk::RenderPass,
+    output_format: vk::Format,
     layout: vk::PipelineLayout,
     tone_map_mode: ToneMapMode,
 ) -> vk::Pipeline {
@@ -313,8 +305,8 @@ fn create_pipeline(
             vertex_shader_specialization: None,
             fragment_shader_specialization: Some(&specialization_info),
             msaa_samples: vk::SampleCountFlags::TYPE_1,
-            render_pass,
-            subpass: 0,
+            color_attachment_formats: &[output_format],
+            depth_attachment_format: None,
             layout,
             depth_stencil_info: &depth_stencil_info,
             color_blend_attachments: &color_blend_attachments,

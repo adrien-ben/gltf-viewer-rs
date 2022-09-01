@@ -1,8 +1,5 @@
-mod renderpass;
-
-pub use renderpass::RenderPass as LightRenderPass;
-
 use super::{uniform::*, JointsBuffer, ModelData};
+use crate::renderer::attachments::SCENE_COLOR_FORMAT;
 use crate::renderer::{create_renderer_pipeline, RendererPipelineParameters, RendererSettings};
 use environment::*;
 use math::cgmath::Matrix4;
@@ -105,7 +102,7 @@ impl LightPass {
         environment: &Environment,
         ao_map: Option<&VulkanTexture>,
         msaa_samples: vk::SampleCountFlags,
-        render_pass: &LightRenderPass,
+        depth_format: vk::Format,
         settings: RendererSettings,
     ) -> Self {
         let dummy_texture = VulkanTexture::from_rgba(&context, 1, 1, &[std::u8::MAX; 4]);
@@ -131,26 +128,16 @@ impl LightPass {
         );
 
         let pipeline_layout = create_pipeline_layout(context.device(), &descriptors);
-        let opaque_pipeline = create_opaque_pipeline(
-            &context,
-            msaa_samples,
-            true,
-            render_pass.get_render_pass(),
-            pipeline_layout,
-        );
+        let opaque_pipeline =
+            create_opaque_pipeline(&context, msaa_samples, true, depth_format, pipeline_layout);
 
-        let opaque_unculled_pipeline = create_opaque_pipeline(
-            &context,
-            msaa_samples,
-            false,
-            render_pass.get_render_pass(),
-            pipeline_layout,
-        );
+        let opaque_unculled_pipeline =
+            create_opaque_pipeline(&context, msaa_samples, false, depth_format, pipeline_layout);
 
         let transparent_pipeline = create_transparent_pipeline(
             &context,
             msaa_samples,
-            render_pass.get_render_pass(),
+            depth_format,
             pipeline_layout,
             opaque_pipeline,
         );
@@ -1022,7 +1009,7 @@ fn create_opaque_pipeline(
     context: &Arc<Context>,
     msaa_samples: vk::SampleCountFlags,
     enable_face_culling: bool,
-    render_pass: vk::RenderPass,
+    depth_format: vk::Format,
     layout: vk::PipelineLayout,
 ) -> vk::Pipeline {
     let (specialization_info, _map_entries, _data) = create_model_frag_shader_specialization();
@@ -1062,8 +1049,8 @@ fn create_opaque_pipeline(
             vertex_shader_specialization: None,
             fragment_shader_specialization: Some(&specialization_info),
             msaa_samples,
-            render_pass,
-            subpass: 0,
+            color_attachment_formats: &[SCENE_COLOR_FORMAT],
+            depth_attachment_format: Some(depth_format),
             layout,
             depth_stencil_info: &depth_stencil_info,
             color_blend_attachments: &color_blend_attachments,
@@ -1076,7 +1063,7 @@ fn create_opaque_pipeline(
 fn create_transparent_pipeline(
     context: &Arc<Context>,
     msaa_samples: vk::SampleCountFlags,
-    render_pass: vk::RenderPass,
+    depth_format: vk::Format,
     layout: vk::PipelineLayout,
     parent: vk::Pipeline,
 ) -> vk::Pipeline {
@@ -1117,8 +1104,8 @@ fn create_transparent_pipeline(
             vertex_shader_specialization: None,
             fragment_shader_specialization: Some(&specialization_info),
             msaa_samples,
-            render_pass,
-            subpass: 0,
+            color_attachment_formats: &[SCENE_COLOR_FORMAT],
+            depth_attachment_format: Some(depth_format),
             layout,
             depth_stencil_info: &depth_stencil_info,
             color_blend_attachments: &color_blend_attachments,

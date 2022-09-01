@@ -2,7 +2,7 @@ use crate::{debug::*, swapchain::*, MsaaSamples};
 use ash::{
     extensions::{
         ext::DebugUtils,
-        khr::{Surface, Swapchain as SwapchainLoader},
+        khr::{DynamicRendering, Surface, Swapchain as SwapchainLoader},
     },
     vk, Device, Entry, Instance,
 };
@@ -23,6 +23,7 @@ pub struct SharedContext {
     pub queue_families_indices: QueueFamiliesIndices,
     graphics_compute_queue: vk::Queue,
     present_queue: vk::Queue,
+    dynamic_rendering: DynamicRendering,
 }
 
 impl SharedContext {
@@ -52,6 +53,8 @@ impl SharedContext {
                 queue_families_indices,
             );
 
+        let dynamic_rendering = DynamicRendering::new(&instance, &device);
+
         Self {
             _entry: entry,
             instance,
@@ -63,6 +66,7 @@ impl SharedContext {
             queue_families_indices,
             graphics_compute_queue,
             present_queue,
+            dynamic_rendering,
         }
     }
 }
@@ -188,8 +192,15 @@ fn check_device_extension_support(instance: &Instance, device: vk::PhysicalDevic
     true
 }
 
-fn get_required_device_extensions() -> [&'static CStr; 1] {
-    [SwapchainLoader::name()]
+fn get_required_device_extensions() -> [&'static CStr; 6] {
+    [
+        SwapchainLoader::name(),
+        DynamicRendering::name(),
+        vk::KhrDepthStencilResolveFn::name(),
+        vk::KhrCreateRenderpass2Fn::name(),
+        vk::KhrMultiviewFn::name(),
+        vk::KhrMaintenance2Fn::name(),
+    ]
 }
 
 /// Find a queue family with at least one graphics & compute queue and one with
@@ -277,11 +288,16 @@ fn create_logical_device_with_graphics_queue(
         .collect::<Vec<_>>();
 
     let device_features = vk::PhysicalDeviceFeatures::builder().sampler_anisotropy(true);
+    let mut dynamic_rendering_feature =
+        vk::PhysicalDeviceDynamicRenderingFeatures::builder().dynamic_rendering(true);
+    let mut device_features_2 = vk::PhysicalDeviceFeatures2::builder()
+        .features(device_features.build())
+        .push_next(&mut dynamic_rendering_feature);
 
     let device_create_info = vk::DeviceCreateInfo::builder()
         .queue_create_infos(&queue_create_infos)
         .enabled_extension_names(&device_extensions_ptrs)
-        .enabled_features(&device_features);
+        .push_next(&mut device_features_2);
 
     // Build device and queues
     let device = unsafe {
@@ -326,6 +342,10 @@ impl SharedContext {
 
     pub fn present_queue(&self) -> vk::Queue {
         self.present_queue
+    }
+
+    pub fn dynamic_rendering(&self) -> &DynamicRendering {
+        &self.dynamic_rendering
     }
 }
 

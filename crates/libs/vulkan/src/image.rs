@@ -232,15 +232,37 @@ impl Image {
                     vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT,
                     vk::PipelineStageFlags::TRANSFER,
                 ),
-                _ => (
-                    vk::AccessFlags::empty(),
-                    vk::AccessFlags::empty(),
-                    vk::PipelineStageFlags::TOP_OF_PIPE,
-                    vk::PipelineStageFlags::TOP_OF_PIPE,
+                (vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL, vk::ImageLayout::PRESENT_SRC_KHR) => (
+                    vk::AccessFlags::COLOR_ATTACHMENT_WRITE,
+                    vk::AccessFlags::COLOR_ATTACHMENT_READ,
+                    vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT,
+                    vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT,
                 ),
+                (
+                    vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
+                    vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
+                ) => (
+                    vk::AccessFlags::DEPTH_STENCIL_ATTACHMENT_WRITE,
+                    vk::AccessFlags::SHADER_READ,
+                    vk::PipelineStageFlags::EARLY_FRAGMENT_TESTS
+                        | vk::PipelineStageFlags::LATE_FRAGMENT_TESTS,
+                    vk::PipelineStageFlags::FRAGMENT_SHADER,
+                ),
+                _ => {
+                    log::warn!("Undefined layout transition {old_layout:?} -> {new_layout:?}");
+
+                    (
+                        vk::AccessFlags::empty(),
+                        vk::AccessFlags::empty(),
+                        vk::PipelineStageFlags::TOP_OF_PIPE,
+                        vk::PipelineStageFlags::TOP_OF_PIPE,
+                    )
+                }
             };
 
-        let aspect_mask = if new_layout == vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL {
+        let aspect_mask = if new_layout == vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL
+            || old_layout == vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL
+        {
             let mut mask = vk::ImageAspectFlags::DEPTH;
             if has_stencil_component(self.format) {
                 mask |= vk::ImageAspectFlags::STENCIL;

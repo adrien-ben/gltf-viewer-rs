@@ -5,7 +5,6 @@ mod descriptor;
 mod image;
 mod msaa;
 mod pipeline;
-mod renderpass;
 mod shader;
 mod swapchain;
 mod texture;
@@ -13,8 +12,8 @@ mod util;
 mod vertex;
 
 pub use self::{
-    buffer::*, context::*, debug::*, descriptor::*, image::*, msaa::*, pipeline::*, renderpass::*,
-    shader::*, swapchain::*, texture::*, util::*, vertex::*,
+    buffer::*, context::*, debug::*, descriptor::*, image::*, msaa::*, pipeline::*, shader::*,
+    swapchain::*, texture::*, util::*, vertex::*,
 };
 
 pub use ash;

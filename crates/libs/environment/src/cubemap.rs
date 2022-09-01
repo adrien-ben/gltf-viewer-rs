@@ -1,6 +1,6 @@
 use super::{
-    create_descriptors, create_env_pipeline, create_render_pass, get_view_matrices,
-    EnvPipelineParameters, SkyboxModel, SkyboxVertex,
+    create_descriptors, create_env_pipeline, get_view_matrices, EnvPipelineParameters, SkyboxModel,
+    SkyboxVertex,
 };
 use cgmath::{Deg, Matrix4};
 use math::*;
@@ -9,7 +9,7 @@ use std::path::Path;
 use std::sync::Arc;
 use std::time::Instant;
 use util::*;
-use vulkan::ash::vk;
+use vulkan::ash::vk::{self, RenderingAttachmentInfo, RenderingInfo};
 use vulkan::{Context, SamplerParameters, Texture};
 
 pub(crate) fn create_skybox_cubemap<P: AsRef<Path>>(
@@ -34,8 +34,6 @@ pub(crate) fn create_skybox_cubemap<P: AsRef<Path>>(
     let cubemap = Texture::create_renderable_cubemap(context, size, mip_levels, cubemap_format);
 
     let skybox_model = SkyboxModel::new(context);
-
-    let render_pass = create_render_pass(context, cubemap_format);
 
     let descriptors = create_descriptors(context, &texture);
 
@@ -98,7 +96,7 @@ pub(crate) fn create_skybox_cubemap<P: AsRef<Path>>(
                     rasterizer_info: &rasterizer_info,
                     dynamic_state_info: None,
                     layout,
-                    render_pass,
+                    format: cubemap_format,
                 },
             )
         };
@@ -124,20 +122,6 @@ pub(crate) fn create_skybox_cubemap<P: AsRef<Path>>(
         })
         .collect::<Vec<_>>();
 
-    let framebuffers = views
-        .iter()
-        .map(|view| {
-            let attachments = [*view];
-            let create_info = vk::FramebufferCreateInfo::builder()
-                .render_pass(render_pass)
-                .attachments(&attachments)
-                .width(size)
-                .height(size)
-                .layers(1);
-            unsafe { device.create_framebuffer(&create_info, None).unwrap() }
-        })
-        .collect::<Vec<_>>();
-
     let view_matrices = get_view_matrices();
 
     let proj = perspective(Deg(90.0), 1.0, 0.1, 10.0);
@@ -145,39 +129,33 @@ pub(crate) fn create_skybox_cubemap<P: AsRef<Path>>(
     // Render
     context.execute_one_time_commands(|buffer| {
         {
-            let clear_values = [
-                vk::ClearValue {
-                    color: vk::ClearColorValue {
-                        float32: [0.0, 0.0, 0.0, 1.0],
-                    },
-                },
-                vk::ClearValue {
-                    depth_stencil: vk::ClearDepthStencilValue {
-                        depth: 1.0,
-                        stencil: 0,
-                    },
-                },
-            ];
-
             for face in 0..6 {
-                let render_pass_begin_info = vk::RenderPassBeginInfo::builder()
-                    .render_pass(render_pass)
-                    .framebuffer(framebuffers[face])
+                let attachment_info = RenderingAttachmentInfo::builder()
+                    .clear_value(vk::ClearValue {
+                        color: vk::ClearColorValue {
+                            float32: [0.0, 0.0, 0.0, 1.0],
+                        },
+                    })
+                    .image_layout(vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL)
+                    .image_view(views[face])
+                    .load_op(vk::AttachmentLoadOp::CLEAR)
+                    .store_op(vk::AttachmentStoreOp::STORE);
+
+                let rendering_info = RenderingInfo::builder()
+                    .color_attachments(std::slice::from_ref(&attachment_info))
+                    .layer_count(1)
                     .render_area(vk::Rect2D {
                         offset: vk::Offset2D { x: 0, y: 0 },
                         extent: vk::Extent2D {
                             width: size,
                             height: size,
                         },
-                    })
-                    .clear_values(&clear_values);
+                    });
 
                 unsafe {
-                    device.cmd_begin_render_pass(
-                        buffer,
-                        &render_pass_begin_info,
-                        vk::SubpassContents::INLINE,
-                    )
+                    context
+                        .dynamic_rendering()
+                        .cmd_begin_rendering(buffer, &rendering_info)
                 };
 
                 unsafe {
@@ -230,7 +208,7 @@ pub(crate) fn create_skybox_cubemap<P: AsRef<Path>>(
                 unsafe { device.cmd_draw_indexed(buffer, 36, 1, 0, 0, 0) };
 
                 // End render pass
-                unsafe { device.cmd_end_render_pass(buffer) };
+                unsafe { context.dynamic_rendering().cmd_end_rendering(buffer) };
             }
         }
     });
@@ -250,12 +228,8 @@ pub(crate) fn create_skybox_cubemap<P: AsRef<Path>>(
         views
             .iter()
             .for_each(|v| device.destroy_image_view(*v, None));
-        framebuffers
-            .iter()
-            .for_each(|fb| device.destroy_framebuffer(*fb, None));
         device.destroy_pipeline(pipeline, None);
         device.destroy_pipeline_layout(pipeline_layout, None);
-        device.destroy_render_pass(render_pass, None);
     }
 
     let time = start.elapsed().as_millis();

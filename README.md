@@ -53,6 +53,7 @@ using [Ash][2]. It runs on Window, Linux and MacOS.
 ## Requirements
 
 - Vulkan 1.0
+- VK_KHR_dynamic_rendering
 
 > You can check your Vulkan feature set using Sascha Willems' [Vulkan Caps Viewer][6]
 

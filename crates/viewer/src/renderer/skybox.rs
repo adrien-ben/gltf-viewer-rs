@@ -1,4 +1,6 @@
-use super::{create_renderer_pipeline, LightRenderPass, RendererPipelineParameters};
+use super::{
+    attachments::SCENE_COLOR_FORMAT, create_renderer_pipeline, RendererPipelineParameters,
+};
 use ash::{vk, Device};
 use environment::*;
 use std::sync::Arc;
@@ -18,17 +20,13 @@ impl SkyboxRenderer {
         camera_buffers: &[Buffer],
         environment: &Environment,
         msaa_samples: vk::SampleCountFlags,
-        render_pass: &LightRenderPass,
+        depth_format: vk::Format,
     ) -> Self {
         let model = SkyboxModel::new(&context);
         let descriptors = create_descriptors(&context, camera_buffers, environment);
         let pipeline_layout = create_pipeline_layout(context.device(), descriptors.layout());
-        let pipeline = create_skybox_pipeline(
-            &context,
-            msaa_samples,
-            render_pass.get_render_pass(),
-            pipeline_layout,
-        );
+        let pipeline =
+            create_skybox_pipeline(&context, msaa_samples, depth_format, pipeline_layout);
 
         Self {
             context,
@@ -220,7 +218,7 @@ fn create_pipeline_layout(
 fn create_skybox_pipeline(
     context: &Arc<Context>,
     msaa_samples: vk::SampleCountFlags,
-    render_pass: vk::RenderPass,
+    depth_format: vk::Format,
     layout: vk::PipelineLayout,
 ) -> vk::Pipeline {
     let depth_stencil_info = vk::PipelineDepthStencilStateCreateInfo::builder()
@@ -258,8 +256,8 @@ fn create_skybox_pipeline(
             vertex_shader_specialization: None,
             fragment_shader_specialization: None,
             msaa_samples,
-            render_pass,
-            subpass: 0,
+            color_attachment_formats: &[SCENE_COLOR_FORMAT],
+            depth_attachment_format: Some(depth_format),
             layout,
             depth_stencil_info: &depth_stencil_info,
             color_blend_attachments: &color_blend_attachments,

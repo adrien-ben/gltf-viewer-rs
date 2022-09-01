@@ -1,8 +1,5 @@
-mod renderpass;
-
-pub use renderpass::RenderPass as GBufferRenderPass;
-
 use super::{JointsBuffer, ModelData};
+use crate::renderer::attachments::GBUFFER_NORMALS_FORMAT;
 use crate::renderer::{create_renderer_pipeline, RendererPipelineParameters};
 use math::cgmath::Matrix4;
 use model::{Material, Model, ModelVertex, Primitive, Texture};
@@ -33,7 +30,7 @@ impl GBufferPass {
         context: Arc<Context>,
         model_data: &ModelData,
         camera_buffers: &[Buffer],
-        render_pass: &GBufferRenderPass,
+        depth_format: vk::Format,
     ) -> Self {
         let dummy_texture = VulkanTexture::from_rgba(&context, 1, 1, &[std::u8::MAX; 4]);
 
@@ -54,18 +51,8 @@ impl GBufferPass {
         );
 
         let pipeline_layout = create_pipeline_layout(context.device(), &descriptors);
-        let culled_pipeline = create_pipeline(
-            &context,
-            render_pass.get_render_pass(),
-            pipeline_layout,
-            true,
-        );
-        let unculled_pipeline = create_pipeline(
-            &context,
-            render_pass.get_render_pass(),
-            pipeline_layout,
-            false,
-        );
+        let culled_pipeline = create_pipeline(&context, depth_format, pipeline_layout, true);
+        let unculled_pipeline = create_pipeline(&context, depth_format, pipeline_layout, false);
 
         GBufferPass {
             context,
@@ -457,7 +444,7 @@ fn create_pipeline_layout(device: &Device, descriptors: &Descriptors) -> vk::Pip
 
 fn create_pipeline(
     context: &Arc<Context>,
-    render_pass: vk::RenderPass,
+    depth_format: vk::Format,
     layout: vk::PipelineLayout,
     enable_face_culling: bool,
 ) -> vk::Pipeline {
@@ -496,8 +483,8 @@ fn create_pipeline(
             vertex_shader_specialization: None,
             fragment_shader_specialization: None,
             msaa_samples: vk::SampleCountFlags::TYPE_1,
-            render_pass,
-            subpass: 0,
+            color_attachment_formats: &[GBUFFER_NORMALS_FORMAT],
+            depth_attachment_format: Some(depth_format),
             layout,
             depth_stencil_info: &depth_stencil_info,
             color_blend_attachments: &color_blend_attachments,

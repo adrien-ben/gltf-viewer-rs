@@ -1,5 +1,4 @@
-mod renderpass;
-
+use super::attachments::Attachments;
 use super::fullscreen::*;
 use super::{create_renderer_pipeline, RendererPipelineParameters, RendererSettings};
 use math::{
@@ -7,15 +6,17 @@ use math::{
     lerp::Lerp,
     rand,
 };
-use renderpass::RenderPass;
 use std::mem::size_of;
 use std::sync::Arc;
 use util::any_as_u8_slice;
+use vulkan::ash::vk::{RenderingAttachmentInfo, RenderingInfo};
 use vulkan::ash::{vk, Device};
 use vulkan::{
     create_device_local_buffer_with_data, Buffer, Context, SamplerParameters, SwapchainProperties,
     Texture,
 };
+
+const AO_MAP_FORMAT: vk::Format = vk::Format::R8_UNORM;
 
 const NOISE_SIZE: u32 = 8;
 
@@ -31,8 +32,6 @@ const CAMERA_UBO_BINDING: u32 = 4;
 pub struct SSAOPass {
     context: Arc<Context>,
     extent: vk::Extent2D,
-    render_pass: RenderPass,
-    framebuffer: vk::Framebuffer,
     kernel_buffer: Buffer,
     noise_texture: Texture,
     descriptors: Descriptors,
@@ -58,9 +57,6 @@ impl SSAOPass {
         camera_buffers: &[Buffer],
         settings: RendererSettings,
     ) -> Self {
-        let render_pass = RenderPass::create(Arc::clone(&context), swapchain_props.extent);
-        let framebuffer = render_pass.create_framebuffer();
-
         let kernel_buffer = create_kernel_buffer(&context, settings.ssao_kernel_size);
 
         let noise_texture = {
@@ -100,18 +96,11 @@ impl SSAOPass {
             camera_buffers,
         );
         let pipeline_layout = create_pipeline_layout(context.device(), &descriptors);
-        let pipeline = create_pipeline(
-            &context,
-            render_pass.get_render_pass(),
-            pipeline_layout,
-            settings.ssao_kernel_size,
-        );
+        let pipeline = create_pipeline(&context, pipeline_layout, settings.ssao_kernel_size);
 
         SSAOPass {
             context,
             extent: swapchain_props.extent,
-            render_pass,
-            framebuffer,
             kernel_buffer,
             noise_texture,
             descriptors,
@@ -177,15 +166,7 @@ impl SSAOPass {
     }
 
     pub fn set_extent(&mut self, extent: vk::Extent2D) {
-        unsafe {
-            self.context
-                .device()
-                .destroy_framebuffer(self.framebuffer, None);
-        }
-
         self.extent = extent;
-        self.render_pass = RenderPass::create(Arc::clone(&self.context), extent);
-        self.framebuffer = self.render_pass.create_framebuffer();
     }
 
     pub fn rebuild_pipelines(&mut self) {
@@ -195,43 +176,42 @@ impl SSAOPass {
             device.destroy_pipeline(self.pipeline, None);
         }
 
-        self.pipeline = create_pipeline(
-            &self.context,
-            self.render_pass.get_render_pass(),
-            self.pipeline_layout,
-            self.kernel_size,
-        )
+        self.pipeline = create_pipeline(&self.context, self.pipeline_layout, self.kernel_size)
     }
 
     pub fn cmd_draw(
         &self,
         command_buffer: vk::CommandBuffer,
+        attachments: &Attachments,
         quad_model: &QuadModel,
         frame_index: usize,
     ) {
         let device = self.context.device();
 
         {
-            let clear_values = [vk::ClearValue {
-                color: vk::ClearColorValue {
-                    float32: [0.0, 0.0, 0.0, 1.0],
-                },
-            }];
-            let render_pass_begin_info = vk::RenderPassBeginInfo::builder()
-                .render_pass(self.render_pass.get_render_pass())
-                .framebuffer(self.framebuffer)
+            let attachment_info = RenderingAttachmentInfo::builder()
+                .clear_value(vk::ClearValue {
+                    color: vk::ClearColorValue {
+                        float32: [0.0, 0.0, 0.0, 1.0],
+                    },
+                })
+                .image_layout(vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL)
+                .image_view(attachments.ssao.view)
+                .load_op(vk::AttachmentLoadOp::CLEAR)
+                .store_op(vk::AttachmentStoreOp::STORE);
+
+            let rendering_info = RenderingInfo::builder()
+                .color_attachments(std::slice::from_ref(&attachment_info))
+                .layer_count(1)
                 .render_area(vk::Rect2D {
                     offset: vk::Offset2D { x: 0, y: 0 },
                     extent: self.extent,
-                })
-                .clear_values(&clear_values);
+                });
 
             unsafe {
-                device.cmd_begin_render_pass(
-                    command_buffer,
-                    &render_pass_begin_info,
-                    vk::SubpassContents::INLINE,
-                )
+                self.context
+                    .dynamic_rendering()
+                    .cmd_begin_rendering(command_buffer, &rendering_info)
             };
         }
 
@@ -311,14 +291,11 @@ impl SSAOPass {
         // Draw
         unsafe { device.cmd_draw_indexed(command_buffer, 6, 1, 0, 0, 1) };
 
-        unsafe { device.cmd_end_render_pass(command_buffer) };
-    }
-}
-
-/// Getters
-impl SSAOPass {
-    pub fn get_output(&self) -> &Texture {
-        self.render_pass.get_ao_attachment()
+        unsafe {
+            self.context
+                .dynamic_rendering()
+                .cmd_end_rendering(command_buffer)
+        };
     }
 }
 
@@ -326,7 +303,6 @@ impl Drop for SSAOPass {
     fn drop(&mut self) {
         let device = self.context.device();
         unsafe {
-            device.destroy_framebuffer(self.framebuffer, None);
             device.destroy_pipeline(self.pipeline, None);
             device.destroy_pipeline_layout(self.pipeline_layout, None);
         }
@@ -677,7 +653,6 @@ fn create_pipeline_layout(device: &Device, descriptors: &Descriptors) -> vk::Pip
 
 fn create_pipeline(
     context: &Arc<Context>,
-    render_pass: vk::RenderPass,
     layout: vk::PipelineLayout,
     kernel_size: u32,
 ) -> vk::Pipeline {
@@ -719,8 +694,8 @@ fn create_pipeline(
             vertex_shader_specialization: None,
             fragment_shader_specialization: Some(&specialization_info),
             msaa_samples: vk::SampleCountFlags::TYPE_1,
-            render_pass,
-            subpass: 0,
+            color_attachment_formats: &[AO_MAP_FORMAT],
+            depth_attachment_format: None,
             layout,
             depth_stencil_info: &depth_stencil_info,
             color_blend_attachments: &color_blend_attachments,

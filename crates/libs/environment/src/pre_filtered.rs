@@ -1,6 +1,6 @@
 use super::{
-    create_descriptors, create_env_pipeline, create_render_pass, get_view_matrices,
-    EnvPipelineParameters, SkyboxModel, SkyboxVertex,
+    create_descriptors, create_env_pipeline, get_view_matrices, EnvPipelineParameters, SkyboxModel,
+    SkyboxVertex,
 };
 use cgmath::{Deg, Matrix4};
 use math::*;
@@ -8,7 +8,7 @@ use std::mem::size_of;
 use std::sync::Arc;
 use std::time::Instant;
 use util::*;
-use vulkan::ash::vk;
+use vulkan::ash::vk::{self, RenderingAttachmentInfo, RenderingInfo};
 use vulkan::{Context, Texture};
 
 pub(crate) fn create_pre_filtered_map(
@@ -25,9 +25,7 @@ pub(crate) fn create_pre_filtered_map(
 
     let max_mip_levels = (size as f32).log2().floor() as u32 + 1;
 
-    let cubemap_formap = vk::Format::R16G16B16A16_SFLOAT;
-
-    let render_pass = create_render_pass(context, cubemap_formap);
+    let cubemap_format = vk::Format::R16G16B16A16_SFLOAT;
 
     let descriptors = create_descriptors(context, cubemap);
 
@@ -83,7 +81,7 @@ pub(crate) fn create_pre_filtered_map(
                     rasterizer_info: &rasterizer_info,
                     dynamic_state_info: Some(&dynamic_state_info),
                     layout,
-                    render_pass,
+                    format: cubemap_format,
                 },
             )
         };
@@ -93,20 +91,16 @@ pub(crate) fn create_pre_filtered_map(
 
     // create cubemap
     let pre_filtered =
-        Texture::create_renderable_cubemap(context, size, max_mip_levels, cubemap_formap);
+        Texture::create_renderable_cubemap(context, size, max_mip_levels, cubemap_format);
 
     let mut views = Vec::new();
-    let mut framebuffers = Vec::new();
     for lod in 0..max_mip_levels {
-        let mip_factor = 1.0_f32 / (2.0_f32.powi(lod as i32));
-        let viewport_size = (size as f32 * mip_factor) as u32;
-
         let lod_views = (0..6)
             .map(|i| {
                 let create_info = vk::ImageViewCreateInfo::builder()
                     .image(pre_filtered.image.image)
                     .view_type(vk::ImageViewType::TYPE_2D)
-                    .format(cubemap_formap)
+                    .format(cubemap_format)
                     .subresource_range(vk::ImageSubresourceRange {
                         aspect_mask: vk::ImageAspectFlags::COLOR,
                         base_mip_level: lod,
@@ -119,22 +113,7 @@ pub(crate) fn create_pre_filtered_map(
             })
             .collect::<Vec<_>>();
 
-        let lod_framebuffers = lod_views
-            .iter()
-            .map(|view| {
-                let attachments = [*view];
-                let create_info = vk::FramebufferCreateInfo::builder()
-                    .render_pass(render_pass)
-                    .attachments(&attachments)
-                    .width(viewport_size)
-                    .height(viewport_size)
-                    .layers(1);
-                unsafe { device.create_framebuffer(&create_info, None).unwrap() }
-            })
-            .collect::<Vec<_>>();
-
         views.push(lod_views);
-        framebuffers.push(lod_framebuffers);
     }
 
     let view_matrices = get_view_matrices();
@@ -144,20 +123,6 @@ pub(crate) fn create_pre_filtered_map(
     // Render
     context.execute_one_time_commands(|buffer| {
         {
-            let clear_values = [
-                vk::ClearValue {
-                    color: vk::ClearColorValue {
-                        float32: [0.0, 0.0, 0.0, 1.0],
-                    },
-                },
-                vk::ClearValue {
-                    depth_stencil: vk::ClearDepthStencilValue {
-                        depth: 1.0,
-                        stencil: 0,
-                    },
-                },
-            ];
-
             let scissor = [vk::Rect2D {
                 offset: vk::Offset2D { x: 0, y: 0 },
                 extent: vk::Extent2D {
@@ -182,26 +147,34 @@ pub(crate) fn create_pre_filtered_map(
                 unsafe { device.cmd_set_viewport(buffer, 0, &viewport) };
 
                 for (face, view) in view_matrices.iter().enumerate() {
-                    let framebuffer = framebuffers[lod as usize][face];
+                    let image_view = views[lod as usize][face];
 
-                    let render_pass_begin_info = vk::RenderPassBeginInfo::builder()
-                        .render_pass(render_pass)
-                        .framebuffer(framebuffer)
+                    let attachment_info = RenderingAttachmentInfo::builder()
+                        .clear_value(vk::ClearValue {
+                            color: vk::ClearColorValue {
+                                float32: [0.0, 0.0, 0.0, 1.0],
+                            },
+                        })
+                        .image_layout(vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL)
+                        .image_view(image_view)
+                        .load_op(vk::AttachmentLoadOp::CLEAR)
+                        .store_op(vk::AttachmentStoreOp::STORE);
+
+                    let rendering_info = RenderingInfo::builder()
+                        .color_attachments(std::slice::from_ref(&attachment_info))
+                        .layer_count(1)
                         .render_area(vk::Rect2D {
                             offset: vk::Offset2D { x: 0, y: 0 },
                             extent: vk::Extent2D {
                                 width: viewport_size,
                                 height: viewport_size,
                             },
-                        })
-                        .clear_values(&clear_values);
+                        });
 
                     unsafe {
-                        device.cmd_begin_render_pass(
-                            buffer,
-                            &render_pass_begin_info,
-                            vk::SubpassContents::INLINE,
-                        )
+                        context
+                            .dynamic_rendering()
+                            .cmd_begin_rendering(buffer, &rendering_info)
                     };
 
                     unsafe {
@@ -263,7 +236,7 @@ pub(crate) fn create_pre_filtered_map(
                     unsafe { device.cmd_draw_indexed(buffer, 36, 1, 0, 0, 0) };
 
                     // End render pass
-                    unsafe { device.cmd_end_render_pass(buffer) };
+                    unsafe { context.dynamic_rendering().cmd_end_rendering(buffer) };
                 }
             }
         }
@@ -280,13 +253,8 @@ pub(crate) fn create_pre_filtered_map(
             .iter()
             .flatten()
             .for_each(|v| device.destroy_image_view(*v, None));
-        framebuffers
-            .iter()
-            .flatten()
-            .for_each(|fb| device.destroy_framebuffer(*fb, None));
         device.destroy_pipeline(pipeline, None);
         device.destroy_pipeline_layout(pipeline_layout, None);
-        device.destroy_render_pass(render_pass, None);
     }
 
     let time = start.elapsed().as_millis();
