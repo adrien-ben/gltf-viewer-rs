@@ -92,7 +92,6 @@ fn run(config: Config, enable_debug: bool, path: Option<PathBuf>) {
             }
             // End of event processing
             Event::MainEventsCleared => {
-                // log::info!("Tick");
                 let new_time = Instant::now();
                 let delta_s = (new_time - time).as_secs_f64();
                 time = new_time;

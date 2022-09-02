@@ -42,7 +42,7 @@ using [Ash][2]. It runs on Window, Linux and MacOS.
   - [x] Gamma correction
   - [x] Tone mapping
   - [x] Ambient occlusion
-  - [ ] Bloom
+  - [x] Bloom
   - [ ] Depth of field
 - [x] Imgui integration
   - [x] Model description
@@ -119,6 +119,8 @@ HDRi textures have been downloaded from [hdriheaven][5].
 
 SSAO tutorial from John Chapman's [blog][7].
 
+Bloom tutorial on [Learn OpenGL][8]
+
 [0]: https://github.com/KhronosGroup/glTF
 [1]: https://www.khronos.org/vulkan/
 [2]: https://github.com/MaikKlein/ash
@@ -127,6 +129,7 @@ SSAO tutorial from John Chapman's [blog][7].
 [5]: https://hdrihaven.com/
 [6]: https://vulkan.gpuinfo.org/download.php
 [7]: http://john-chapman-graphics.blogspot.com/2013/01/ssao-tutorial.html
+[8]: https://learnopengl.com/Guest-Articles/2022/Phys.-Based-Bloom
 
 ## Screenshots
 

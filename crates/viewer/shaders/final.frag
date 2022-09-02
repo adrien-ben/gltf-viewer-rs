@@ -4,6 +4,7 @@
 layout(location = 0) in vec2 oCoords;
 
 layout(binding = 0) uniform sampler2D inputImage;
+layout(binding = 1) uniform sampler2D bloomImage;
 
 layout(location = 0) out vec4 finalColor;
 
@@ -12,6 +13,10 @@ const uint TONE_MAP_MODE_DEFAULT = 0;
 const uint TONE_MAP_MODE_UNCHARTED = 1;
 const uint TONE_MAP_MODE_HEJL_RICHARD = 2;
 const uint TONE_MAP_MODE_ACES = 3;
+
+layout(push_constant) uniform Constants {
+    float bloomStrength;
+} c;
 
 const float GAMMA = 2.2;
 const float INV_GAMMA = 1.0 / GAMMA;
@@ -64,17 +69,19 @@ vec3 defaultToneMap(vec3 color) {
 
 void main() {
     vec3 color = texture(inputImage, oCoords).rgb;
+    vec3 bloom = texture(bloomImage, oCoords).rgb;
+    vec3 bloomed = mix(color, bloom, c.bloomStrength);
 
     if (TONE_MAP_MODE == TONE_MAP_MODE_DEFAULT) {
-        color = defaultToneMap(color);
+        color = defaultToneMap(bloomed);
     } else if (TONE_MAP_MODE == TONE_MAP_MODE_UNCHARTED) {
-        color = toneMapUncharted(color);
+        color = toneMapUncharted(bloomed);
     } else if (TONE_MAP_MODE == TONE_MAP_MODE_HEJL_RICHARD) {
-        color = toneMapHejlRichard(color);
+        color = toneMapHejlRichard(bloomed);
     } else if (TONE_MAP_MODE == TONE_MAP_MODE_ACES) {
-        color = toneMapACES(color);
+        color = toneMapACES(bloomed);
     } else {
-        color = LINEARtoSRGB(color);
+        color = LINEARtoSRGB(bloomed);
     }
 
     finalColor = vec4(color, 1.0);

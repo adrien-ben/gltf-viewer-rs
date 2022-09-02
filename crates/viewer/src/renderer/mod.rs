@@ -38,6 +38,7 @@ const DEFAULT_EMISSIVE_INTENSITY: f32 = 1.0;
 const DEFAULT_SSAO_KERNEL_SIZE: u32 = 32;
 const DEFAULT_SSAO_RADIUS: f32 = 0.15;
 const DEFAULT_SSAO_STRENGTH: f32 = 1.0;
+pub const DEFAULT_BLOOM_STRENGTH: f32 = 0.04;
 
 pub enum RenderError {
     DirtySwapchain,
@@ -52,6 +53,7 @@ pub struct RendererSettings {
     pub ssao_strength: f32,
     pub tone_map_mode: ToneMapMode,
     pub output_mode: OutputMode,
+    pub bloom_strength: f32,
 }
 
 impl Default for RendererSettings {
@@ -64,12 +66,11 @@ impl Default for RendererSettings {
             ssao_strength: DEFAULT_SSAO_STRENGTH,
             tone_map_mode: ToneMapMode::Default,
             output_mode: OutputMode::Final,
+            bloom_strength: DEFAULT_BLOOM_STRENGTH,
         }
     }
 }
 
-// TODO: at some point I'll need to put vulkan's render passes and frame buffers into the pass structure
-// TODO: try and remember why I did not
 pub struct Renderer {
     settings: RendererSettings,
     depth_format: vk::Format,
@@ -85,6 +86,7 @@ pub struct Renderer {
     ssao_pass: SSAOPass,
     ssao_blur_pass: BlurPass,
     quad_model: QuadModel,
+    bloom_pass: BloomPass,
     final_pass: FinalPass,
     gui_renderer: GuiRenderer,
     context: Arc<Context>,
@@ -156,10 +158,12 @@ impl Renderer {
 
         let quad_model = QuadModel::new(&context);
 
+        let bloom_pass = BloomPass::create(Arc::clone(&context), &attachments);
+
         let final_pass = FinalPass::create(
             Arc::clone(&context),
             swapchain_properties.format.format,
-            attachments.get_scene_resolved_color(),
+            &attachments,
             settings,
         );
 
@@ -194,6 +198,7 @@ impl Renderer {
             ssao_pass,
             ssao_blur_pass,
             quad_model,
+            bloom_pass,
             final_pass,
             gui_renderer,
         }
@@ -658,6 +663,12 @@ impl Renderer {
             };
         }
 
+        // Bloom pass
+        {
+            self.bloom_pass
+                .cmd_draw(command_buffer, &self.attachments, extent, &self.quad_model);
+        }
+
         // Prepare attachments and inputs for final pass (post-processing + ui)
         {
             self.swapchain.images()[frame_index].cmd_transition_image_layout(
@@ -665,15 +676,6 @@ impl Renderer {
                 vk::ImageLayout::UNDEFINED,
                 vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
             );
-
-            self.attachments
-                .get_scene_resolved_color()
-                .image
-                .cmd_transition_image_layout(
-                    command_buffer,
-                    vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
-                    vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
-                );
         }
 
         // Final pass and UI
@@ -850,9 +852,11 @@ impl Renderer {
             renderer.light_pass.set_ao_map(ao_map);
         }
 
+        // Bloom
+        self.bloom_pass.set_attachments(&self.attachments);
+
         // Final
-        self.final_pass
-            .set_input_image(self.attachments.get_scene_resolved_color());
+        self.final_pass.set_attachments(&self.attachments);
     }
 
     pub fn update_settings(&mut self, settings: RendererSettings) {
@@ -878,6 +882,9 @@ impl Renderer {
         }
         if (self.settings.ssao_strength - settings.ssao_strength).abs() > f32::EPSILON {
             self.set_ssao_strength(settings.ssao_strength);
+        }
+        if (self.settings.bloom_strength - settings.bloom_strength).abs() > f32::EPSILON {
+            self.set_bloom_strength(settings.bloom_strength);
         }
     }
 
@@ -925,6 +932,11 @@ impl Renderer {
     fn set_ssao_strength(&mut self, strength: f32) {
         self.settings.ssao_strength = strength;
         self.ssao_pass.set_ssao_strength(strength);
+    }
+
+    fn set_bloom_strength(&mut self, strength: f32) {
+        self.settings.bloom_strength = strength;
+        self.final_pass.set_bloom_strength(strength);
     }
 
     pub fn update_ubos(&mut self, frame_index: usize, camera: Camera) {

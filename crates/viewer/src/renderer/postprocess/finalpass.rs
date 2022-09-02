@@ -1,9 +1,9 @@
-use crate::renderer::{
-    create_renderer_pipeline, fullscreen::*, RendererPipelineParameters, RendererSettings,
-};
+use crate::renderer::attachments::Attachments;
+use crate::renderer::{fullscreen::*, RendererSettings};
 use std::{mem::size_of, sync::Arc};
+use util::any_as_u8_slice;
 use vulkan::ash::{vk, Device};
-use vulkan::{Context, Descriptors, Texture};
+use vulkan::{Context, Descriptors};
 
 /// Tone mapping and gamma correction pass
 pub struct FinalPass {
@@ -16,6 +16,7 @@ pub struct FinalPass {
     aces_pipeline: vk::Pipeline,
     none_pipeline: vk::Pipeline,
     tone_map_mode: ToneMapMode,
+    bloom_strength: f32,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -50,10 +51,10 @@ impl FinalPass {
     pub fn create(
         context: Arc<Context>,
         output_format: vk::Format,
-        input_image: &Texture,
+        attachments: &Attachments,
         settings: RendererSettings,
     ) -> Self {
-        let descriptors = create_descriptors(&context, input_image);
+        let descriptors = create_descriptors(&context, attachments);
         let pipeline_layout = create_pipeline_layout(context.device(), descriptors.layout());
         let default_pipeline = create_pipeline(
             &context,
@@ -79,6 +80,7 @@ impl FinalPass {
             create_pipeline(&context, output_format, pipeline_layout, ToneMapMode::None);
 
         let tone_map_mode = settings.tone_map_mode;
+        let bloom_strength = settings.bloom_strength;
 
         FinalPass {
             context,
@@ -90,6 +92,7 @@ impl FinalPass {
             aces_pipeline,
             none_pipeline,
             tone_map_mode,
+            bloom_strength,
         }
     }
 }
@@ -99,11 +102,15 @@ impl FinalPass {
         self.tone_map_mode = tone_map_mode;
     }
 
-    pub fn set_input_image(&mut self, input_image: &Texture) {
+    pub fn set_bloom_strength(&mut self, bloom_strength: f32) {
+        self.bloom_strength = bloom_strength;
+    }
+
+    pub fn set_attachments(&mut self, attachments: &Attachments) {
         self.descriptors
             .sets()
             .iter()
-            .for_each(|s| update_descriptor_set(&self.context, *s, input_image))
+            .for_each(|s| update_descriptor_set(&self.context, *s, attachments))
     }
 
     pub fn cmd_draw(&self, command_buffer: vk::CommandBuffer, quad_model: &QuadModel) {
@@ -148,6 +155,19 @@ impl FinalPass {
             )
         };
 
+        // Push constants
+        unsafe {
+            let data = [self.bloom_strength];
+            let data = any_as_u8_slice(&data);
+            device.cmd_push_constants(
+                command_buffer,
+                self.pipeline_layout,
+                vk::ShaderStageFlags::FRAGMENT,
+                0,
+                data,
+            );
+        }
+
         // Draw
         unsafe { device.cmd_draw_indexed(command_buffer, 6, 1, 0, 0, 1) };
     }
@@ -167,20 +187,28 @@ impl Drop for FinalPass {
     }
 }
 
-fn create_descriptors(context: &Arc<Context>, input_image: &Texture) -> Descriptors {
+fn create_descriptors(context: &Arc<Context>, attachments: &Attachments) -> Descriptors {
     let layout = create_descriptor_set_layout(context.device());
     let pool = create_descriptor_pool(context.device());
-    let sets = create_descriptor_sets(context, pool, layout, input_image);
+    let sets = create_descriptor_sets(context, pool, layout, attachments);
     Descriptors::new(Arc::clone(context), layout, pool, sets)
 }
 
 fn create_descriptor_set_layout(device: &Device) -> vk::DescriptorSetLayout {
-    let bindings = [vk::DescriptorSetLayoutBinding::builder()
-        .binding(0)
-        .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
-        .descriptor_count(1)
-        .stage_flags(vk::ShaderStageFlags::FRAGMENT)
-        .build()];
+    let bindings = [
+        vk::DescriptorSetLayoutBinding::builder()
+            .binding(0)
+            .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
+            .descriptor_count(1)
+            .stage_flags(vk::ShaderStageFlags::FRAGMENT)
+            .build(),
+        vk::DescriptorSetLayoutBinding::builder()
+            .binding(1)
+            .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
+            .descriptor_count(1)
+            .stage_flags(vk::ShaderStageFlags::FRAGMENT)
+            .build(),
+    ];
 
     let layout_info = vk::DescriptorSetLayoutCreateInfo::builder().bindings(&bindings);
 
@@ -191,15 +219,14 @@ fn create_descriptor_set_layout(device: &Device) -> vk::DescriptorSetLayout {
     }
 }
 fn create_descriptor_pool(device: &Device) -> vk::DescriptorPool {
-    let descriptor_count = 1;
     let pool_sizes = [vk::DescriptorPoolSize {
         ty: vk::DescriptorType::COMBINED_IMAGE_SAMPLER,
-        descriptor_count,
+        descriptor_count: 2,
     }];
 
     let create_info = vk::DescriptorPoolCreateInfo::builder()
         .pool_sizes(&pool_sizes)
-        .max_sets(descriptor_count)
+        .max_sets(1)
         .flags(vk::DescriptorPoolCreateFlags::FREE_DESCRIPTOR_SET);
 
     unsafe { device.create_descriptor_pool(&create_info, None).unwrap() }
@@ -209,7 +236,7 @@ fn create_descriptor_sets(
     context: &Arc<Context>,
     pool: vk::DescriptorPool,
     layout: vk::DescriptorSetLayout,
-    input_image: &Texture,
+    attachments: &Attachments,
 ) -> Vec<vk::DescriptorSet> {
     let layouts = [layout];
     let allocate_info = vk::DescriptorSetAllocateInfo::builder()
@@ -222,28 +249,47 @@ fn create_descriptor_sets(
             .unwrap()
     };
 
-    update_descriptor_set(context, sets[0], input_image);
+    update_descriptor_set(context, sets[0], attachments);
 
     sets
 }
 
-fn update_descriptor_set(context: &Arc<Context>, set: vk::DescriptorSet, input_image: &Texture) {
+fn update_descriptor_set(
+    context: &Arc<Context>,
+    set: vk::DescriptorSet,
+    attachments: &Attachments,
+) {
     let input_image_info = [vk::DescriptorImageInfo::builder()
         .image_layout(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL)
-        .image_view(input_image.view)
+        .image_view(attachments.get_scene_resolved_color().view)
         .sampler(
-            input_image
+            attachments
+                .get_scene_resolved_color()
                 .sampler
                 .expect("Post process input image must have a sampler"),
         )
         .build()];
 
-    let descriptor_writes = [vk::WriteDescriptorSet::builder()
-        .dst_set(set)
-        .dst_binding(0)
-        .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
-        .image_info(&input_image_info)
+    let bloom_info = [vk::DescriptorImageInfo::builder()
+        .image_layout(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL)
+        .image_view(attachments.bloom.mips_views[0])
+        .sampler(attachments.bloom.sampler)
         .build()];
+
+    let descriptor_writes = [
+        vk::WriteDescriptorSet::builder()
+            .dst_set(set)
+            .dst_binding(0)
+            .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
+            .image_info(&input_image_info)
+            .build(),
+        vk::WriteDescriptorSet::builder()
+            .dst_set(set)
+            .dst_binding(1)
+            .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
+            .image_info(&bloom_info)
+            .build(),
+    ];
 
     unsafe {
         context
@@ -257,7 +303,14 @@ fn create_pipeline_layout(
     descriptor_set_layout: vk::DescriptorSetLayout,
 ) -> vk::PipelineLayout {
     let layouts = [descriptor_set_layout];
-    let layout_info = vk::PipelineLayoutCreateInfo::builder().set_layouts(&layouts);
+    let push_constant_ranges = [vk::PushConstantRange {
+        offset: 0,
+        size: size_of::<f32>() as _,
+        stage_flags: vk::ShaderStageFlags::FRAGMENT,
+    }];
+    let layout_info = vk::PipelineLayoutCreateInfo::builder()
+        .set_layouts(&layouts)
+        .push_constant_ranges(&push_constant_ranges);
     unsafe { device.create_pipeline_layout(&layout_info, None).unwrap() }
 }
 
@@ -270,49 +323,12 @@ fn create_pipeline(
     let (specialization_info, _map_entries, _data) =
         create_model_frag_shader_specialization(tone_map_mode);
 
-    let depth_stencil_info = vk::PipelineDepthStencilStateCreateInfo::builder()
-        .depth_test_enable(false)
-        .depth_write_enable(false)
-        .depth_compare_op(vk::CompareOp::LESS_OR_EQUAL)
-        .depth_bounds_test_enable(false)
-        .min_depth_bounds(0.0)
-        .max_depth_bounds(1.0)
-        .stencil_test_enable(false)
-        .front(Default::default())
-        .back(Default::default());
-
-    let color_blend_attachments = [vk::PipelineColorBlendAttachmentState::builder()
-        .color_write_mask(
-            vk::ColorComponentFlags::R
-                | vk::ColorComponentFlags::G
-                | vk::ColorComponentFlags::B
-                | vk::ColorComponentFlags::A,
-        )
-        .blend_enable(false)
-        .src_color_blend_factor(vk::BlendFactor::ONE)
-        .dst_color_blend_factor(vk::BlendFactor::ZERO)
-        .color_blend_op(vk::BlendOp::ADD)
-        .src_alpha_blend_factor(vk::BlendFactor::ONE)
-        .dst_alpha_blend_factor(vk::BlendFactor::ZERO)
-        .alpha_blend_op(vk::BlendOp::ADD)
-        .build()];
-
-    create_renderer_pipeline::<QuadVertex>(
+    create_fullscreen_pipeline(
         context,
-        RendererPipelineParameters {
-            vertex_shader_name: "fullscreen",
-            fragment_shader_name: "final",
-            vertex_shader_specialization: None,
-            fragment_shader_specialization: Some(&specialization_info),
-            msaa_samples: vk::SampleCountFlags::TYPE_1,
-            color_attachment_formats: &[output_format],
-            depth_attachment_format: None,
-            layout,
-            depth_stencil_info: &depth_stencil_info,
-            color_blend_attachments: &color_blend_attachments,
-            enable_face_culling: true,
-            parent: None,
-        },
+        output_format,
+        layout,
+        "final",
+        Some(&specialization_info),
     )
 }
 

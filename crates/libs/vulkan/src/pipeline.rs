@@ -131,12 +131,12 @@ fn get_shader_file_extension(stage: vk::ShaderStageFlags) -> &'static str {
 
 #[derive(Copy, Clone, Debug)]
 pub struct ShaderParameters<'a> {
-    name: &'static str,
+    name: &'a str,
     specialization: Option<&'a vk::SpecializationInfo>,
 }
 
 impl<'a> ShaderParameters<'a> {
-    pub fn new(name: &'static str) -> Self {
+    pub fn new(name: &'a str) -> Self {
         Self {
             name,
             specialization: None,

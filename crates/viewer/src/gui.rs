@@ -1,5 +1,5 @@
 use crate::camera::Camera;
-use crate::renderer::{OutputMode, RendererSettings, ToneMapMode};
+use crate::renderer::{OutputMode, RendererSettings, ToneMapMode, DEFAULT_BLOOM_STRENGTH};
 use imgui::*;
 use imgui_winit_support::{HiDpiMode, WinitPlatform};
 use model::{metadata::*, PlaybackState};
@@ -159,6 +159,7 @@ impl Gui {
                     .expect("Unknown tone map mode"),
                 output_mode: OutputMode::from_value(self.state.selected_output_mode)
                     .expect("Unknown outpout mode"),
+                bloom_strength: self.state.bloom_strength as f32 / 100f32,
             })
         } else {
             None
@@ -270,6 +271,10 @@ fn build_renderer_settings_window(ui: &Ui, state: &mut State) {
                 .build(ui, &mut state.emissive_intensity);
             state.renderer_settings_changed = emissive_intensity_changed;
 
+            let bloom_strength_changed =
+                Slider::new("Bloom strength", 0u32, 10).build(ui, &mut state.bloom_strength);
+            state.renderer_settings_changed |= bloom_strength_changed;
+
             state.renderer_settings_changed |= ui.checkbox("Enable SSAO", &mut state.ssao_enabled);
             if state.ssao_enabled {
                 let ssao_kernel_size_changed = ui.combo(
@@ -336,6 +341,7 @@ struct State {
     ssao_radius: f32,
     ssao_strength: f32,
     ssao_kernel_size_index: usize,
+    bloom_strength: u32,
     renderer_settings_changed: bool,
 
     hovered: bool,
@@ -388,6 +394,7 @@ impl Default for State {
             ssao_radius: 0.15,
             ssao_strength: 1.0,
             ssao_kernel_size_index: 1,
+            bloom_strength: (DEFAULT_BLOOM_STRENGTH * 100f32) as _,
             renderer_settings_changed: false,
 
             hovered: false,

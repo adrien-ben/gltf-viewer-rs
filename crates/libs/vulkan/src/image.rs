@@ -38,10 +38,10 @@ pub struct Image {
     context: Arc<Context>,
     pub image: vk::Image,
     memory: Option<vk::DeviceMemory>,
-    extent: vk::Extent3D,
-    format: vk::Format,
-    mip_levels: u32,
-    layers: u32,
+    pub extent: vk::Extent3D,
+    pub format: vk::Format,
+    pub mip_levels: u32,
+    pub layers: u32,
     managed: bool,
 }
 
@@ -160,9 +160,31 @@ impl Image {
             view_type,
             self.layers,
             self.mip_levels,
+            0,
             self.format,
             aspect_mask,
         )
+    }
+
+    pub fn create_mips_views(
+        &self,
+        view_type: vk::ImageViewType,
+        aspect_mask: vk::ImageAspectFlags,
+    ) -> Vec<vk::ImageView> {
+        (0..self.mip_levels)
+            .map(|mip| {
+                create_image_view(
+                    self.context.device(),
+                    self.image,
+                    view_type,
+                    self.layers,
+                    1,
+                    mip,
+                    self.format,
+                    aspect_mask,
+                )
+            })
+            .collect()
     }
 
     pub fn transition_image_layout(
@@ -178,6 +200,23 @@ impl Image {
     pub fn cmd_transition_image_layout(
         &self,
         command_buffer: vk::CommandBuffer,
+        old_layout: vk::ImageLayout,
+        new_layout: vk::ImageLayout,
+    ) {
+        self.cmd_transition_image_mips_layout(
+            command_buffer,
+            0,
+            self.mip_levels,
+            old_layout,
+            new_layout,
+        )
+    }
+
+    pub fn cmd_transition_image_mips_layout(
+        &self,
+        command_buffer: vk::CommandBuffer,
+        base_mip_level: u32,
+        level_count: u32,
         old_layout: vk::ImageLayout,
         new_layout: vk::ImageLayout,
     ) {
@@ -248,6 +287,21 @@ impl Image {
                         | vk::PipelineStageFlags::LATE_FRAGMENT_TESTS,
                     vk::PipelineStageFlags::FRAGMENT_SHADER,
                 ),
+                (vk::ImageLayout::UNDEFINED, vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL) => (
+                    vk::AccessFlags::empty(),
+                    vk::AccessFlags::SHADER_READ,
+                    vk::PipelineStageFlags::TOP_OF_PIPE,
+                    vk::PipelineStageFlags::FRAGMENT_SHADER,
+                ),
+                (
+                    vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
+                    vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
+                ) => (
+                    vk::AccessFlags::SHADER_READ,
+                    vk::AccessFlags::COLOR_ATTACHMENT_WRITE,
+                    vk::PipelineStageFlags::FRAGMENT_SHADER,
+                    vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT,
+                ),
                 _ => {
                     log::warn!("Undefined layout transition {old_layout:?} -> {new_layout:?}");
 
@@ -280,8 +334,8 @@ impl Image {
             .image(self.image)
             .subresource_range(vk::ImageSubresourceRange {
                 aspect_mask,
-                base_mip_level: 0,
-                level_count: self.mip_levels,
+                base_mip_level,
+                level_count,
                 base_array_layer: 0,
                 layer_count: self.layers,
             })
@@ -576,6 +630,7 @@ pub fn create_image_view(
     view_type: vk::ImageViewType,
     layers: u32,
     mip_levels: u32,
+    base_mip_level: u32,
     format: vk::Format,
     aspect_mask: vk::ImageAspectFlags,
 ) -> vk::ImageView {
@@ -585,7 +640,7 @@ pub fn create_image_view(
         .format(format)
         .subresource_range(vk::ImageSubresourceRange {
             aspect_mask,
-            base_mip_level: 0,
+            base_mip_level,
             level_count: mip_levels,
             base_array_layer: 0,
             layer_count: layers,

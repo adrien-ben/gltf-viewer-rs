@@ -118,6 +118,7 @@ impl Swapchain {
                     vk::ImageViewType::TYPE_2D,
                     1,
                     1,
+                    0,
                     swapchain_properties.format.format,
                     vk::ImageAspectFlags::COLOR,
                 )

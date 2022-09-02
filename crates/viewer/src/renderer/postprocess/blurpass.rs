@@ -1,5 +1,5 @@
 use crate::renderer::attachments::Attachments;
-use crate::renderer::{create_renderer_pipeline, fullscreen::*, RendererPipelineParameters};
+use crate::renderer::fullscreen::*;
 use std::sync::Arc;
 use vulkan::ash::vk::{RenderingAttachmentInfo, RenderingInfo};
 use vulkan::ash::{vk, Device};
@@ -222,48 +222,5 @@ fn create_pipeline_layout(
 }
 
 fn create_pipeline(context: &Arc<Context>, layout: vk::PipelineLayout) -> vk::Pipeline {
-    let depth_stencil_info = vk::PipelineDepthStencilStateCreateInfo::builder()
-        .depth_test_enable(false)
-        .depth_write_enable(false)
-        .depth_compare_op(vk::CompareOp::LESS_OR_EQUAL)
-        .depth_bounds_test_enable(false)
-        .min_depth_bounds(0.0)
-        .max_depth_bounds(1.0)
-        .stencil_test_enable(false)
-        .front(Default::default())
-        .back(Default::default());
-
-    let color_blend_attachments = [vk::PipelineColorBlendAttachmentState::builder()
-        .color_write_mask(
-            vk::ColorComponentFlags::R
-                | vk::ColorComponentFlags::G
-                | vk::ColorComponentFlags::B
-                | vk::ColorComponentFlags::A,
-        )
-        .blend_enable(false)
-        .src_color_blend_factor(vk::BlendFactor::ONE)
-        .dst_color_blend_factor(vk::BlendFactor::ZERO)
-        .color_blend_op(vk::BlendOp::ADD)
-        .src_alpha_blend_factor(vk::BlendFactor::ONE)
-        .dst_alpha_blend_factor(vk::BlendFactor::ZERO)
-        .alpha_blend_op(vk::BlendOp::ADD)
-        .build()];
-
-    create_renderer_pipeline::<QuadVertex>(
-        context,
-        RendererPipelineParameters {
-            vertex_shader_name: "fullscreen",
-            fragment_shader_name: "blur",
-            vertex_shader_specialization: None,
-            fragment_shader_specialization: None,
-            msaa_samples: vk::SampleCountFlags::TYPE_1,
-            color_attachment_formats: &[BLUR_OUTPUT_FORMAT],
-            depth_attachment_format: None,
-            layout,
-            depth_stencil_info: &depth_stencil_info,
-            color_blend_attachments: &color_blend_attachments,
-            enable_face_culling: true,
-            parent: None,
-        },
-    )
+    create_fullscreen_pipeline(context, BLUR_OUTPUT_FORMAT, layout, "blur", None)
 }
