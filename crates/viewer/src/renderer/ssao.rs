@@ -18,7 +18,7 @@ use vulkan::{
 
 const AO_MAP_FORMAT: vk::Format = vk::Format::R8_UNORM;
 
-const NOISE_SIZE: u32 = 8;
+const NOISE_SIZE: u32 = 4;
 
 const STATIC_SET_INDEX: u32 = 0;
 const DYNAMIC_SET_INDEX: u32 = 1;
