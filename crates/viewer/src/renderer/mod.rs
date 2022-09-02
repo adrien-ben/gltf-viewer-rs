@@ -146,18 +146,13 @@ impl Renderer {
 
         let ssao_pass = SSAOPass::create(
             Arc::clone(&context),
-            swapchain_properties,
             &attachments.gbuffer_normals,
             &attachments.gbuffer_depth,
             &camera_uniform_buffers,
             settings,
         );
 
-        let ssao_blur_pass = BlurPass::create(
-            Arc::clone(&context),
-            swapchain_properties,
-            &attachments.ssao,
-        );
+        let ssao_blur_pass = BlurPass::create(Arc::clone(&context), &attachments.ssao);
 
         let quad_model = QuadModel::new(&context);
 
@@ -535,6 +530,7 @@ impl Renderer {
             self.ssao_pass.cmd_draw(
                 command_buffer,
                 &self.attachments,
+                extent,
                 &self.quad_model,
                 frame_index,
             );
@@ -558,8 +554,12 @@ impl Renderer {
             }
 
             // SSAO Blur Pass
-            self.ssao_blur_pass
-                .cmd_draw(command_buffer, &self.attachments, &self.quad_model);
+            self.ssao_blur_pass.cmd_draw(
+                command_buffer,
+                &self.attachments,
+                extent,
+                &self.quad_model,
+            );
         }
 
         // Prepare attachments and inputs for lighting pass
@@ -832,14 +832,12 @@ impl Renderer {
         );
 
         // SSAO
-        self.ssao_pass.set_extent(swapchain_properties.extent);
         self.ssao_pass.set_inputs(
             &self.attachments.gbuffer_normals,
             &self.attachments.gbuffer_depth,
         );
 
         // SSAO Blur
-        self.ssao_blur_pass.set_extent(swapchain_properties.extent);
         self.ssao_blur_pass.set_input_image(&self.attachments.ssao);
 
         // Model

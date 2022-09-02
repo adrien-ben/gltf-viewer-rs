@@ -11,10 +11,7 @@ use std::sync::Arc;
 use util::any_as_u8_slice;
 use vulkan::ash::vk::{RenderingAttachmentInfo, RenderingInfo};
 use vulkan::ash::{vk, Device};
-use vulkan::{
-    create_device_local_buffer_with_data, Buffer, Context, SamplerParameters, SwapchainProperties,
-    Texture,
-};
+use vulkan::{create_device_local_buffer_with_data, Buffer, Context, SamplerParameters, Texture};
 
 const AO_MAP_FORMAT: vk::Format = vk::Format::R8_UNORM;
 
@@ -31,7 +28,6 @@ const CAMERA_UBO_BINDING: u32 = 4;
 
 pub struct SSAOPass {
     context: Arc<Context>,
-    extent: vk::Extent2D,
     kernel_buffer: Buffer,
     noise_texture: Texture,
     descriptors: Descriptors,
@@ -51,7 +47,6 @@ struct ConfigUniform {
 impl SSAOPass {
     pub fn create(
         context: Arc<Context>,
-        swapchain_props: SwapchainProperties,
         normals: &Texture,
         depth: &Texture,
         camera_buffers: &[Buffer],
@@ -100,7 +95,6 @@ impl SSAOPass {
 
         SSAOPass {
             context,
-            extent: swapchain_props.extent,
             kernel_buffer,
             noise_texture,
             descriptors,
@@ -165,10 +159,6 @@ impl SSAOPass {
         self.ssao_strength = strength;
     }
 
-    pub fn set_extent(&mut self, extent: vk::Extent2D) {
-        self.extent = extent;
-    }
-
     pub fn rebuild_pipelines(&mut self) {
         let device = self.context.device();
 
@@ -183,6 +173,7 @@ impl SSAOPass {
         &self,
         command_buffer: vk::CommandBuffer,
         attachments: &Attachments,
+        extent: vk::Extent2D,
         quad_model: &QuadModel,
         frame_index: usize,
     ) {
@@ -204,8 +195,8 @@ impl SSAOPass {
                 .color_attachments(std::slice::from_ref(&attachment_info))
                 .layer_count(1)
                 .render_area(vk::Rect2D {
-                    offset: vk::Offset2D { x: 0, y: 0 },
-                    extent: self.extent,
+                    extent,
+                    ..Default::default()
                 });
 
             unsafe {

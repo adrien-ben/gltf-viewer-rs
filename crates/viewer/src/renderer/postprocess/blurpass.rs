@@ -3,32 +3,26 @@ use crate::renderer::{create_renderer_pipeline, fullscreen::*, RendererPipelineP
 use std::sync::Arc;
 use vulkan::ash::vk::{RenderingAttachmentInfo, RenderingInfo};
 use vulkan::ash::{vk, Device};
-use vulkan::{Context, Descriptors, SwapchainProperties, Texture};
+use vulkan::{Context, Descriptors, Texture};
 
 const BLUR_OUTPUT_FORMAT: vk::Format = vk::Format::R8_UNORM;
 
 /// Blur pass
 pub struct BlurPass {
     context: Arc<Context>,
-    extent: vk::Extent2D,
     descriptors: Descriptors,
     pipeline_layout: vk::PipelineLayout,
     pipeline: vk::Pipeline,
 }
 
 impl BlurPass {
-    pub fn create(
-        context: Arc<Context>,
-        swapchain_props: SwapchainProperties,
-        input_image: &Texture,
-    ) -> Self {
+    pub fn create(context: Arc<Context>, input_image: &Texture) -> Self {
         let descriptors = create_descriptors(&context, input_image);
         let pipeline_layout = create_pipeline_layout(context.device(), descriptors.layout());
         let pipeline = create_pipeline(&context, pipeline_layout);
 
         BlurPass {
             context,
-            extent: swapchain_props.extent,
             descriptors,
             pipeline_layout,
             pipeline,
@@ -44,14 +38,11 @@ impl BlurPass {
             .for_each(|s| update_descriptor_set(&self.context, *s, input_image));
     }
 
-    pub fn set_extent(&mut self, extent: vk::Extent2D) {
-        self.extent = extent;
-    }
-
     pub fn cmd_draw(
         &self,
         command_buffer: vk::CommandBuffer,
         attachments: &Attachments,
+        extent: vk::Extent2D,
         quad_model: &QuadModel,
     ) {
         let device = self.context.device();
@@ -72,8 +63,8 @@ impl BlurPass {
                 .color_attachments(std::slice::from_ref(&attachment_info))
                 .layer_count(1)
                 .render_area(vk::Rect2D {
-                    offset: vk::Offset2D { x: 0, y: 0 },
-                    extent: self.extent,
+                    extent,
+                    ..Default::default()
                 });
 
             unsafe {
