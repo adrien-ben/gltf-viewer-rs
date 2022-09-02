@@ -71,29 +71,25 @@ impl Gui {
         {
             let ui = &ui;
 
-            build_main_menu_bar(ui, &mut self.state);
-
-            if self.state.show_model_descriptor {
-                build_model_descriptor_window(ui, &mut self.state, self.model_metadata.as_ref());
-            }
-
-            if self.state.show_animation_player {
-                build_animation_player_window(
-                    ui,
-                    &mut self.state,
-                    self.model_metadata.as_ref(),
-                    self.animation_playback_state,
-                );
-            }
-
-            if self.state.show_camera_details {
-                build_camera_details_window(ui, &mut self.state, self.camera);
-            }
-
-            if self.state.show_renderer_settings {
-                build_renderer_settings_window(ui, &mut self.state);
-            }
-
+            Window::new("Menu")
+                .collapsed(true, Condition::FirstUseEver)
+                .position([0.0, 0.0], Condition::Always)
+                .size([350.0, 800.0], Condition::FirstUseEver)
+                .focus_on_appearing(false)
+                .movable(false)
+                .bg_alpha(0.3)
+                .build(ui, || {
+                    build_renderer_settings_window(ui, &mut self.state);
+                    ui.separator();
+                    build_camera_details_window(ui, &mut self.state, self.camera);
+                    ui.separator();
+                    build_animation_player_window(
+                        ui,
+                        &mut self.state,
+                        self.model_metadata.as_ref(),
+                        self.animation_playback_state,
+                    );
+                });
             self.state.hovered = ui.is_any_item_hovered()
                 || ui.is_window_hovered_with_flags(WindowHoveredFlags::ANY_WINDOW);
         }
@@ -205,387 +201,125 @@ fn init_imgui(window: &WinitWindow) -> (Context, WinitPlatform) {
     (imgui, platform)
 }
 
-fn build_main_menu_bar(ui: &Ui, state: &mut State) {
-    ui.main_menu_bar(|| {
-        ui.menu("View", || {
-            MenuItem::new("Model descriptor").build_with_ref(ui, &mut state.show_model_descriptor);
-            MenuItem::new("Animation player").build_with_ref(ui, &mut state.show_animation_player);
-            MenuItem::new("Camera details").build_with_ref(ui, &mut state.show_camera_details);
-            MenuItem::new("Renderer settings")
-                .build_with_ref(ui, &mut state.show_renderer_settings);
-        });
-    });
-}
-
-fn build_model_descriptor_window(ui: &Ui, state: &mut State, model_metadata: Option<&Metadata>) {
-    let mut opened = true;
-    Window::new("Model metadata")
-        .position([20.0, 20.0], Condition::Appearing)
-        .size([400.0, 400.0], Condition::Appearing)
-        .collapsible(false)
-        .opened(&mut opened)
-        .build(ui, || {
-            let parent_size = ui.window_size();
-
-            ChildWindow::new(0)
-                .size([parent_size[0] / 3.0, 0.0])
-                .build(ui, || {
-                    if let Some(metadata) = model_metadata {
-                        build_summary_block_ui(ui, metadata);
-                        build_hierarchy_block_ui(ui, metadata, state);
-                        build_animation_block_ui(ui, metadata);
-                    }
-                });
-
-            ui.same_line();
-
-            if let Some(selected_hierarchy_node) = state.selected_hierarchy_node.as_ref() {
-                ChildWindow::new("Node details")
-                    .border(true)
-                    .build(ui, || build_node_details_ui(ui, selected_hierarchy_node));
-            }
-        });
-    state.show_model_descriptor = opened;
-}
-
-fn build_summary_block_ui(ui: &Ui, metadata: &Metadata) {
-    if CollapsingHeader::new("Summary")
-        .default_open(true)
-        .build(ui)
-    {
-        ui.text(format!("Name: {}", metadata.name()));
-        if ui.is_item_hovered() {
-            ui.tooltip_text(metadata.path());
-        }
-        ui.text(format!("Scene count: {}", metadata.scene_count()));
-        ui.text(format!("Node count: {}", metadata.node_count()));
-        ui.text(format!("Animation count: {}", metadata.animation_count()));
-        ui.text(format!("Skin count: {}", metadata.skin_count()));
-        ui.text(format!("Mesh count: {}", metadata.mesh_count()));
-        ui.text(format!("Material count: {}", metadata.material_count()));
-        ui.text(format!("Texture count: {}", metadata.texture_count()));
-        ui.text(format!("Light count: {}", metadata.light_count()));
-    }
-}
-
-fn build_hierarchy_block_ui(ui: &Ui, metadata: &Metadata, state: &mut State) {
-    if CollapsingHeader::new("Hierarchy").build(ui) {
-        for node in metadata.nodes() {
-            build_tree_node_ui(ui, node, state);
-        }
-    }
-}
-
-fn build_tree_node_ui(ui: &Ui, node: &Node, state: &mut State) {
-    let selected = state
-        .selected_hierarchy_node
-        .as_ref()
-        .map_or(false, |n| n.uid == node.uid());
-    let name = node.name().unwrap_or("no name");
-
-    // This flag is there tu make sure we attach the "is_click" to the correct node/leaf
-    let mut opened = false;
-    TreeNode::new(format!("{}: {}", node.index(), name))
-        .leaf(node.children().is_empty())
-        .open_on_double_click(true)
-        .open_on_arrow(true)
-        .selected(selected)
-        .build(ui, || {
-            // If the node is opened the flag will be set to true
-            opened = true;
-            if ui.is_item_clicked_with_button(MouseButton::Left) {
-                state.selected_hierarchy_node = Some(NodeDetails::from(node));
-            }
-            node.children()
-                .iter()
-                .for_each(|n| build_tree_node_ui(ui, n, state))
-        });
-
-    // If the was not opened then we still want to attach the "is_click"
-    if !opened && ui.is_item_clicked_with_button(MouseButton::Left) {
-        state.selected_hierarchy_node = Some(NodeDetails::from(node));
-    }
-}
-
-fn build_node_details_ui(ui: &Ui, node_details: &NodeDetails) {
-    let title = match node_details.kind {
-        NodeKind::Scene => "Scene",
-        NodeKind::Node(NodeData { root: true, .. }) => "Root node",
-        NodeKind::Node(NodeData { leaf: false, .. }) => "Node",
-        NodeKind::Node(NodeData { leaf: true, .. }) => "Leaf",
-    };
-
-    ui.text(title);
-    ui.separator();
-    ui.text(format!("Index: {}", node_details.index));
-    ui.text(format!("Name: {}", node_details.name));
-    if let NodeKind::Scene | NodeKind::Node(NodeData { leaf: false, .. }) = node_details.kind {
-        ui.text(format!("Child count: {}", node_details.child_count));
-    }
-
-    if let NodeKind::Node(NodeData {
-        mesh: Some(ref mesh),
-        ..
-    }) = node_details.kind
-    {
-        build_mesh_details_ui(ui, mesh);
-    }
-
-    if let NodeKind::Node(NodeData {
-        light: Some(light), ..
-    }) = node_details.kind
-    {
-        build_light_details_ui(ui, light);
-    }
-}
-
-fn build_mesh_details_ui(ui: &Ui, mesh_data: &Mesh) {
-    ui.text("Mesh");
-    ui.separator();
-    ui.text(format!("Index: {}", mesh_data.index));
-    ui.text(format!(
-        "Name: {}",
-        mesh_data.name.as_ref().map_or("no name", |s| s)
-    ));
-    if CollapsingHeader::new("Primitives").build(ui) {
-        mesh_data
-            .primitives
-            .iter()
-            .for_each(|p| build_primitive_ui(ui, p));
-    }
-}
-
-fn build_primitive_ui(ui: &Ui, prim: &Primitive) {
-    TreeNode::new(format!("{}", prim.index))
-        .open_on_double_click(true)
-        .open_on_arrow(true)
-        .build(ui, || {
-            ui.text(format!("Mode: {}", prim.mode));
-            ui.text("Material:");
-            let material = &prim.material;
-            ui.indent();
-            if let Some(index) = material.index {
-                ui.text(format!("Index {}", index));
-            }
-            ui.text(format!(
-                "Name: {}",
-                material.name.as_ref().map_or("no name", |s| s)
-            ));
-
-            ui.text("Base color");
-            ui.same_line();
-            ColorButton::new("Base color", material.base_color).build(ui);
-            ui.text(format!("Alpha mode: {}", material.alpha_mode));
-            match material.alpha_mode {
-                AlphaMode::Blend | AlphaMode::Mask => {
-                    ui.text(format!("Alpha cutoff: {}", material.alpha_cutoff))
-                }
-                _ => (),
-            };
-
-            if material.unlit {
-                ui.text("Unlit: true");
-            } else {
-                ui.text("Emissise color");
-                ui.same_line();
-                let emissive_color_rgba = [
-                    material.emissive_color[0],
-                    material.emissive_color[1],
-                    material.emissive_color[2],
-                    1.0,
-                ];
-                ColorButton::new("Emissive color", emissive_color_rgba).build(ui);
-
-                ui.text(format!("Metalness: {}", material.metallic_factor));
-                ui.text(format!("Roughness: {}", material.roughness_factor));
-            }
-        })
-        .unwrap()
-}
-
-fn build_light_details_ui(ui: &Ui, light: Light) {
-    ui.text("Light");
-    ui.separator();
-
-    let color_rgba = [light.color[0], light.color[1], light.color[2], 1.0];
-    ui.text(format!("Type: {}", light.kind));
-    ColorButton::new("Color", color_rgba).build(ui);
-    ui.text(format!("Intensity: {}", light.intensity));
-    ui.text(format!(
-        "Range: {}",
-        light
-            .range
-            .map_or(String::from("unlimited"), |i| i.to_string())
-    ));
-    if let LightKind::Spot {
-        inner_cone_angle,
-        outer_cone_angle,
-    } = light.kind
-    {
-        ui.text(format!("Inner cone angle: {}", inner_cone_angle));
-        ui.text(format!("Outter cone angle: {}", outer_cone_angle));
-    }
-}
-
-fn build_animation_block_ui(ui: &Ui, metadata: &Metadata) {
-    if CollapsingHeader::new("Animations").build(ui) {
-        ui.indent();
-        for animation in metadata.animations() {
-            let name = animation.name.as_ref().map_or("no name", |n| n);
-            ui.text(format!("{}: {}", animation.index, name));
-        }
-    }
-}
-
 fn build_animation_player_window(
     ui: &Ui,
     state: &mut State,
     model_metadata: Option<&Metadata>,
     animation_playback_state: Option<PlaybackState>,
 ) {
-    let mut opened = true;
-    Window::new("Animation player")
-        .position([20.0, 20.0], Condition::Appearing)
-        .size([400.0, 150.0], Condition::Appearing)
-        .collapsible(false)
-        .opened(&mut opened)
-        .build(ui, || {
-            if let Some(metadata) = model_metadata {
-                let animations_labels = metadata
-                    .animations()
-                    .iter()
-                    .map(|a| {
-                        let name = a.name.as_ref().map_or("no name", |n| n);
-                        format!("{}: {}", a.index, name)
-                    })
-                    .collect::<Vec<_>>();
-                let combo_labels = animations_labels.iter().collect::<Vec<_>>();
-                ui.combo_simple_string(
-                    "Select animation",
-                    &mut state.selected_animation,
-                    &combo_labels,
-                );
+    if CollapsingHeader::new("Animation player").build(ui) {
+        if let Some(metadata) = model_metadata {
+            let animations_labels = metadata
+                .animations()
+                .iter()
+                .map(|a| {
+                    let name = a.name.as_ref().map_or("no name", |n| n);
+                    format!("{}: {}", a.index, name)
+                })
+                .collect::<Vec<_>>();
+            let combo_labels = animations_labels.iter().collect::<Vec<_>>();
+            ui.combo_simple_string("Animation", &mut state.selected_animation, &combo_labels);
 
-                if let Some(playback_state) = animation_playback_state {
-                    let toggle_text = if playback_state.paused {
-                        "Resume"
-                    } else {
-                        "Pause"
-                    };
+            if let Some(playback_state) = animation_playback_state {
+                let toggle_text = if playback_state.paused {
+                    "Resume"
+                } else {
+                    "Pause"
+                };
 
-                    state.toggle_animation = ui.button(toggle_text);
-                    ui.same_line();
-                    state.stop_animation = ui.button("Stop");
-                    ui.same_line();
-                    state.reset_animation = ui.button("Reset");
-                    ui.same_line();
-                    ui.checkbox("Loop", &mut state.infinite_animation);
+                state.toggle_animation = ui.button(toggle_text);
+                ui.same_line();
+                state.stop_animation = ui.button("Stop");
+                ui.same_line();
+                state.reset_animation = ui.button("Reset");
+                ui.same_line();
+                ui.checkbox("Loop", &mut state.infinite_animation);
 
-                    Slider::new("Speed", 0.05, 3.0).build(ui, &mut state.animation_speed);
-                    ui.same_line();
-                    if ui.button("Default") {
-                        state.animation_speed = 1.0;
-                    }
-
-                    let progress = playback_state.time / playback_state.total_time;
-                    ProgressBar::new(progress).build(ui);
+                Slider::new("Speed", 0.05, 3.0).build(ui, &mut state.animation_speed);
+                ui.same_line();
+                if ui.button("Default") {
+                    state.animation_speed = 1.0;
                 }
+
+                let progress = playback_state.time / playback_state.total_time;
+                ProgressBar::new(progress).build(ui);
             }
-        });
-    state.show_animation_player = opened;
+        }
+    }
 }
 
 fn build_camera_details_window(ui: &Ui, state: &mut State, camera: Option<Camera>) {
-    let mut opened = true;
-    Window::new("Camera")
-        .position([20.0, 20.0], Condition::Appearing)
-        .size([250.0, 100.0], Condition::Appearing)
-        .collapsible(false)
-        .opened(&mut opened)
-        .build(ui, || {
-            if let Some(camera) = camera {
-                let p = camera.position();
-                let t = camera.target();
-                ui.text(format!("Position: {:.3}, {:.3}, {:.3}", p.x, p.y, p.z));
-                ui.text(format!("Target: {:.3}, {:.3}, {:.3}", t.x, t.y, t.z));
-                state.reset_camera = ui.button("Reset");
-            }
-        });
-    state.show_camera_details = opened;
+    if CollapsingHeader::new("Camera").build(ui) {
+        if let Some(camera) = camera {
+            let p = camera.position();
+            let t = camera.target();
+            ui.text(format!("Position: {:.3}, {:.3}, {:.3}", p.x, p.y, p.z));
+            ui.text(format!("Target: {:.3}, {:.3}, {:.3}", t.x, t.y, t.z));
+            state.reset_camera = ui.button("Reset");
+        }
+    }
 }
 
 fn build_renderer_settings_window(ui: &Ui, state: &mut State) {
-    let mut opened = true;
-    Window::new("Renderer settings")
-        .position([20.0, 20.0], Condition::Appearing)
-        .always_auto_resize(true)
-        .collapsible(false)
-        .opened(&mut opened)
-        .build(ui, || {
-            {
-                ui.text("Settings");
-                ui.separator();
+    if CollapsingHeader::new("Renderer settings").build(ui) {
+        {
+            ui.text("Settings");
+            ui.separator();
 
-                let emissive_intensity_changed = Slider::new("Emissive intensity", 1.0, 50.0)
-                    .build(ui, &mut state.emissive_intensity);
-                state.renderer_settings_changed = emissive_intensity_changed;
+            let emissive_intensity_changed = Slider::new("Emissive intensity", 1.0, 50.0)
+                .build(ui, &mut state.emissive_intensity);
+            state.renderer_settings_changed = emissive_intensity_changed;
 
-                state.renderer_settings_changed |=
-                    ui.checkbox("Enable SSAO", &mut state.ssao_enabled);
-                if state.ssao_enabled {
-                    let ssao_kernel_size_changed = ui.combo(
-                        "SSAO Kernel",
-                        &mut state.ssao_kernel_size_index,
-                        &SSAO_KERNEL_SIZES,
-                        |v| Cow::Owned(format!("{} samples", v)),
-                    );
-                    state.renderer_settings_changed |= ssao_kernel_size_changed;
-
-                    let ssao_radius_changed =
-                        Slider::new("SSAO Radius", 0.01, 1.0).build(ui, &mut state.ssao_radius);
-                    state.renderer_settings_changed |= ssao_radius_changed;
-
-                    let ssao_strength_changed =
-                        Slider::new("SSAO Strength", 0.5, 5.0).build(ui, &mut state.ssao_strength);
-                    state.renderer_settings_changed |= ssao_strength_changed;
-                }
-            }
-
-            {
-                ui.text("Post Processing");
-                ui.separator();
-
-                let tone_map_mode_changed = ui.combo(
-                    "Tone Map mode",
-                    &mut state.selected_tone_map_mode,
-                    &ToneMapMode::all(),
-                    |mode| Cow::Owned(format!("{:?}", mode)),
+            state.renderer_settings_changed |= ui.checkbox("Enable SSAO", &mut state.ssao_enabled);
+            if state.ssao_enabled {
+                let ssao_kernel_size_changed = ui.combo(
+                    "SSAO Kernel",
+                    &mut state.ssao_kernel_size_index,
+                    &SSAO_KERNEL_SIZES,
+                    |v| Cow::Owned(format!("{} samples", v)),
                 );
+                state.renderer_settings_changed |= ssao_kernel_size_changed;
 
-                state.renderer_settings_changed |= tone_map_mode_changed;
+                let ssao_radius_changed =
+                    Slider::new("SSAO Radius", 0.01, 1.0).build(ui, &mut state.ssao_radius);
+                state.renderer_settings_changed |= ssao_radius_changed;
+
+                let ssao_strength_changed =
+                    Slider::new("SSAO Strength", 0.5, 5.0).build(ui, &mut state.ssao_strength);
+                state.renderer_settings_changed |= ssao_strength_changed;
             }
+        }
 
-            {
-                ui.text("Debug");
-                ui.separator();
+        {
+            ui.text("Post Processing");
+            ui.separator();
 
-                let output_mode_changed = ui.combo(
-                    "Output mode",
-                    &mut state.selected_output_mode,
-                    &OutputMode::all(),
-                    |mode| Cow::Owned(format!("{:?}", mode)),
-                );
-                state.renderer_settings_changed |= output_mode_changed;
-            }
-        });
-    state.show_renderer_settings = opened;
+            let tone_map_mode_changed = ui.combo(
+                "Tone Map mode",
+                &mut state.selected_tone_map_mode,
+                &ToneMapMode::all(),
+                |mode| Cow::Owned(format!("{:?}", mode)),
+            );
+
+            state.renderer_settings_changed |= tone_map_mode_changed;
+        }
+
+        {
+            ui.text("Debug");
+            ui.separator();
+
+            let output_mode_changed = ui.combo(
+                "Output mode",
+                &mut state.selected_output_mode,
+                &OutputMode::all(),
+                |mode| Cow::Owned(format!("{:?}", mode)),
+            );
+            state.renderer_settings_changed |= output_mode_changed;
+        }
+    }
 }
 
 struct State {
-    show_model_descriptor: bool,
-    selected_hierarchy_node: Option<NodeDetails>,
-
-    show_animation_player: bool,
     selected_animation: usize,
     infinite_animation: bool,
     reset_animation: bool,
@@ -593,10 +327,8 @@ struct State {
     stop_animation: bool,
     animation_speed: f32,
 
-    show_camera_details: bool,
     reset_camera: bool,
 
-    show_renderer_settings: bool,
     selected_output_mode: usize,
     selected_tone_map_mode: usize,
     emissive_intensity: f32,
@@ -625,10 +357,6 @@ impl State {
 
     fn reset(&self) -> Self {
         Self {
-            show_model_descriptor: self.show_model_descriptor,
-            show_animation_player: self.show_animation_player,
-            show_camera_details: self.show_camera_details,
-            show_renderer_settings: self.show_renderer_settings,
             selected_output_mode: self.selected_output_mode,
             selected_tone_map_mode: self.selected_tone_map_mode,
             emissive_intensity: self.emissive_intensity,
@@ -644,10 +372,6 @@ impl State {
 impl Default for State {
     fn default() -> Self {
         Self {
-            show_model_descriptor: false,
-            selected_hierarchy_node: None,
-
-            show_animation_player: false,
             selected_animation: 0,
             infinite_animation: true,
             reset_animation: false,
@@ -655,10 +379,8 @@ impl Default for State {
             stop_animation: false,
             animation_speed: 1.0,
 
-            show_camera_details: false,
             reset_camera: false,
 
-            show_renderer_settings: false,
             selected_output_mode: 0,
             selected_tone_map_mode: 0,
             emissive_intensity: 1.0,
@@ -669,26 +391,6 @@ impl Default for State {
             renderer_settings_changed: false,
 
             hovered: false,
-        }
-    }
-}
-
-struct NodeDetails {
-    uid: usize,
-    index: usize,
-    name: String,
-    kind: NodeKind,
-    child_count: usize,
-}
-
-impl From<&Node> for NodeDetails {
-    fn from(node: &Node) -> Self {
-        Self {
-            uid: node.uid(),
-            index: node.index(),
-            name: node.name().map_or(String::from("no name"), String::from),
-            kind: node.kind().clone(),
-            child_count: node.children().len(),
         }
     }
 }
