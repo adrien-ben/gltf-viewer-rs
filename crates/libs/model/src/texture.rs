@@ -94,25 +94,13 @@ fn get_next_rgba(pixels: &[u8], format: Format, index: usize) -> [u8; 4] {
             pixels[index * 3 + 2],
             std::u8::MAX,
         ],
-        B8G8R8 => [
-            pixels[index * 3 + 2],
-            pixels[index * 3 + 1],
-            pixels[index * 3],
-            std::u8::MAX,
-        ],
         R8G8B8A8 => [
             pixels[index * 4],
             pixels[index * 4 + 1],
             pixels[index * 4 + 2],
             pixels[index * 4 + 3],
         ],
-        B8G8R8A8 => [
-            pixels[index * 4 + 2],
-            pixels[index * 4 + 1],
-            pixels[index * 4],
-            pixels[index * 4 + 3],
-        ],
-        R16 | R16G16 | R16G16B16 | R16G16B16A16 => {
+        R16 | R16G16 | R16G16B16 | R16G16B16A16 | R32G32B32FLOAT | R32G32B32A32FLOAT => {
             panic!("16 bits colors are not supported for model textures")
         }
     }

@@ -172,7 +172,13 @@ impl<'a> From<GltfMaterial<'a>> for Material {
             _ => material.pbr_metallic_roughness().base_color_factor(),
         };
 
+        let emissive_strength = material.emissive_strength().unwrap_or(1.0);
         let emissive = material.emissive_factor();
+        let emissive = [
+            emissive[0] * emissive_strength,
+            emissive[1] * emissive_strength,
+            emissive[2] * emissive_strength,
+        ];
 
         let color_texture = match material.pbr_specular_glossiness() {
             Some(pbr) => pbr.diffuse_texture(),

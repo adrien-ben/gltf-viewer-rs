@@ -15,4 +15,10 @@ mikktspace = "0.3"
 
 [dependencies.gltf]
 version = "1.0"
-features = ["KHR_lights_punctual", "KHR_materials_unlit", "KHR_materials_pbrSpecularGlossiness"]
+git = "https://github.com/adrien-ben/gltf"
+features = [
+    "KHR_lights_punctual", 
+    "KHR_materials_unlit", 
+    "KHR_materials_pbrSpecularGlossiness",
+    "KHR_materials_emissive_strength"
+]
