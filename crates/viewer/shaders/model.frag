@@ -153,8 +153,7 @@ vec4 getBaseColor(TextureChannels textureChannels) {
     vec4 color = material.color;
     if(textureChannels.color != NO_TEXTURE_ID) {
         vec2 uv = getUV(textureChannels.color);
-        vec4 sampledColor= texture(colorSampler, uv);
-        color *= vec4(pow(sampledColor.rgb, vec3(2.2)), sampledColor.a);
+        color *= texture(colorSampler, uv);
     }
     return color * oColors;
 }
@@ -172,8 +171,7 @@ vec3 getSpecular(TextureChannels textureChannels) {
     vec3 specular = material.metallicSpecularAndOcclusion.rgb;
     if(textureChannels.material != NO_TEXTURE_ID) {
         vec2 uv = getUV(textureChannels.material);
-        vec4 sampledColor= texture(materialSampler, uv);
-        specular *= pow(sampledColor.rgb, vec3(2.2));
+        specular *= texture(materialSampler, uv).rgb;
     }
     return specular;
 }
@@ -213,7 +211,7 @@ vec3 getEmissiveColor(TextureChannels textureChannels) {
     vec3 emissive = material.emissiveAndRoughnessGlossiness.rgb;
     if(textureChannels.emissive != NO_TEXTURE_ID) {
         vec2 uv = getUV(textureChannels.emissive);
-        emissive *= pow(texture(emissiveSampler, uv).rgb, vec3(2.2));
+        emissive *= texture(emissiveSampler, uv).rgb;
     }
     return emissive * material.emissiveIntensity;
 }
@@ -478,7 +476,7 @@ void main() {
     } else if (material.outputMode == OUTPUT_MODE_COLOR) {
         outColor = vec4(baseColor.rgb, 1.0);
     } else if (material.outputMode == OUTPUT_MODE_EMISSIVE) {
-        outColor = vec4(pow(emissive, vec3(1.0/2.2)), 1.0);
+        outColor = vec4(emissive, 1.0);
     } else if (material.outputMode == OUTPUT_MODE_METALLIC) {
         outColor = vec4(vec3(metallic), 1.0);
     } else if (material.outputMode == OUTPUT_MODE_SPECULAR) {

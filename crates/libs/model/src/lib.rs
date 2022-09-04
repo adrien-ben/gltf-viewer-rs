@@ -95,6 +95,7 @@ impl Model {
             &context,
             command_buffer,
             document.textures(),
+            document.materials(),
             &images,
         );
 

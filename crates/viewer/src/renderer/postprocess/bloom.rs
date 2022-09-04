@@ -105,8 +105,7 @@ impl BloomPass {
         let mut input_image = &attachments.get_scene_resolved_color().image;
         let mut input_mip = 0u32;
 
-        for output_mip in 0..attachments.bloom.image.get_mip_levels() as usize
-        {
+        for output_mip in 0..attachments.bloom.image.get_mip_levels() as usize {
             let output_extent = attachments.bloom.mips_resolution[output_mip];
 
             {

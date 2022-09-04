@@ -1,7 +1,8 @@
 use gltf::image::{Data, Format};
-use gltf::iter::Textures as GltfTextures;
+use gltf::iter::{Materials, Textures as GltfTextures};
 use gltf::json::texture::{MagFilter, MinFilter, WrappingMode};
 use gltf::texture::Sampler;
+use std::collections::HashSet;
 use std::sync::Arc;
 use vulkan::ash::vk;
 use vulkan::{Buffer, Context, Image, Texture as VulkanTexture};
@@ -40,13 +41,49 @@ pub(crate) fn create_textures_from_gltf(
     context: &Arc<Context>,
     command_buffer: vk::CommandBuffer,
     textures: GltfTextures,
+    materials: Materials,
     images: &[Data],
 ) -> (Textures, Vec<Buffer>) {
+    let srgb_image_indices = {
+        let mut indices = HashSet::new();
+
+        for m in materials {
+            if let Some(t) = m.pbr_metallic_roughness().base_color_texture() {
+                indices.insert(t.texture().source().index());
+            }
+
+            if let Some(pbr_specular_glossiness) = m.pbr_specular_glossiness() {
+                if let Some(t) = pbr_specular_glossiness.diffuse_texture() {
+                    indices.insert(t.texture().source().index());
+                }
+
+                if let Some(t) = pbr_specular_glossiness.specular_glossiness_texture() {
+                    indices.insert(t.texture().source().index());
+                }
+            }
+
+            if let Some(t) = m.emissive_texture() {
+                indices.insert(t.texture().source().index());
+            }
+        }
+
+        indices
+    };
+
     let (images, buffers) = images
         .iter()
-        .map(|image| (image.width, image.height, build_rgba_buffer(image)))
-        .map(|(width, height, pixels)| {
-            VulkanTexture::cmd_from_rgba(context, command_buffer, width, height, &pixels)
+        .enumerate()
+        .map(|(index, image)| {
+            let pixels = build_rgba_buffer(image);
+            let is_srgb = srgb_image_indices.contains(&index);
+            VulkanTexture::cmd_from_rgba(
+                context,
+                command_buffer,
+                image.width,
+                image.height,
+                &pixels,
+                !is_srgb,
+            )
         })
         .unzip::<_, _, Vec<_>, _>();
 
@@ -101,7 +138,7 @@ fn get_next_rgba(pixels: &[u8], format: Format, index: usize) -> [u8; 4] {
             pixels[index * 4 + 3],
         ],
         R16 | R16G16 | R16G16B16 | R16G16B16A16 | R32G32B32FLOAT | R32G32B32A32FLOAT => {
-            panic!("16 bits colors are not supported for model textures")
+            panic!("16/32 bits colors are not supported for model textures")
         }
     }
 }

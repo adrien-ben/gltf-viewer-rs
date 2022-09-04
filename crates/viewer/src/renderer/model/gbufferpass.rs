@@ -32,7 +32,7 @@ impl GBufferPass {
         camera_buffers: &[Buffer],
         depth_format: vk::Format,
     ) -> Self {
-        let dummy_texture = VulkanTexture::from_rgba(&context, 1, 1, &[std::u8::MAX; 4]);
+        let dummy_texture = VulkanTexture::from_rgba(&context, 1, 1, &[std::u8::MAX; 4], true);
 
         let model_rc = model_data
             .model

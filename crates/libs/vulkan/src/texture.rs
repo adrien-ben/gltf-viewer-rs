@@ -43,9 +43,15 @@ impl Texture {
         }
     }
 
-    pub fn from_rgba(context: &Arc<Context>, width: u32, height: u32, data: &[u8]) -> Self {
+    pub fn from_rgba(
+        context: &Arc<Context>,
+        width: u32,
+        height: u32,
+        data: &[u8],
+        linear: bool,
+    ) -> Self {
         let (texture, _) = context.execute_one_time_commands(|command_buffer| {
-            Self::cmd_from_rgba(context, command_buffer, width, height, data)
+            Self::cmd_from_rgba(context, command_buffer, width, height, data, linear)
         });
         texture
     }
@@ -56,6 +62,7 @@ impl Texture {
         width: u32,
         height: u32,
         data: &[u8],
+        linear: bool,
     ) -> (Self, Buffer) {
         let max_mip_levels = ((width.min(height) as f32).log2().floor() + 1.0) as u32;
         let extent = vk::Extent2D { width, height };
@@ -74,12 +81,16 @@ impl Texture {
             mem_copy(ptr, data);
         }
 
+        let format = linear
+            .then_some(vk::Format::R8G8B8A8_UNORM)
+            .unwrap_or(vk::Format::R8G8B8A8_SRGB);
+
         let image = Image::create(
             Arc::clone(context),
             ImageParameters {
                 mem_properties: vk::MemoryPropertyFlags::DEVICE_LOCAL,
                 extent,
-                format: vk::Format::R8G8B8A8_UNORM,
+                format,
                 mip_levels: max_mip_levels,
                 usage: vk::ImageUsageFlags::TRANSFER_SRC
                     | vk::ImageUsageFlags::TRANSFER_DST
