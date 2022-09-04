@@ -123,8 +123,10 @@ fn build_rgba_buffer(image: &Data) -> Vec<u8> {
 fn get_next_rgba(pixels: &[u8], format: Format, index: usize) -> [u8; 4] {
     use Format::*;
     match format {
-        R8 => [pixels[index], 0, 0, std::u8::MAX],
-        R8G8 => [pixels[index * 2], pixels[index * 2 + 1], 0, std::u8::MAX],
+        // actually luma8
+        R8 => [pixels[index], pixels[index], pixels[index], std::u8::MAX],
+        // actually luma8 with alpha
+        R8G8 => [pixels[index * 2], pixels[index * 2], pixels[index * 2], pixels[index * 2 + 1]],
         R8G8B8 => [
             pixels[index * 3],
             pixels[index * 3 + 1],
