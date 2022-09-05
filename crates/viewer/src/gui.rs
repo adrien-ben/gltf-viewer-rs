@@ -267,7 +267,7 @@ fn build_renderer_settings_window(ui: &Ui, state: &mut State) {
             ui.text("Settings");
             ui.separator();
 
-            let emissive_intensity_changed = Slider::new("Emissive intensity", 1.0, 50.0)
+            let emissive_intensity_changed = Slider::new("Emissive intensity", 1.0, 200.0)
                 .build(ui, &mut state.emissive_intensity);
             state.renderer_settings_changed = emissive_intensity_changed;
 

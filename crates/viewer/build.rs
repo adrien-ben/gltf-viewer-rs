@@ -1,6 +1,5 @@
 use std::{
     env::var,
-    ffi::OsStr,
     fs,
     io::Result,
     path::{Path, PathBuf},
@@ -28,7 +27,8 @@ fn compile_shaders() {
         .unwrap()
         .map(Result::unwrap)
         .filter(|dir| dir.file_type().unwrap().is_file())
-        .filter(|dir| dir.path().extension() != Some(OsStr::new("spv")))
+        .filter(|dir| dir.path().extension().is_some())
+        .filter(|dir| !matches!(dir.path().extension().unwrap().to_str(), Some("spv") | Some("h")))
         .for_each(|dir| {
             let path = dir.path();
             let name = path.file_name().unwrap().to_str().unwrap();
