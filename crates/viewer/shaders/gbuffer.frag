@@ -1,5 +1,4 @@
 #version 450
-#extension GL_ARB_separate_shader_objects : enable
 
 const uint NO_TEXTURE_ID = 255;
 const uint ALPHA_MODE_MASK = 1;

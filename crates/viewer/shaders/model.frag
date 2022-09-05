@@ -1,5 +1,4 @@
 #version 450
-#extension GL_ARB_separate_shader_objects : enable
 
 // -- Constants --
 layout(constant_id = 0) const uint MAX_LIGHT_COUNT = 1;

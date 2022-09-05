@@ -1,5 +1,4 @@
 #version 450
-#extension GL_ARB_separate_shader_objects : enable
 
 layout (constant_id = 0) const uint SSAO_KERNEL_SIZE = 32;
 
