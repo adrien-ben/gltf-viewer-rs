@@ -116,7 +116,7 @@ pub(crate) fn create_brdf_lookup(context: &Arc<Context>, size: u32) -> Texture {
             create_env_pipeline::<QuadVertex>(
                 context,
                 EnvPipelineParameters {
-                    vertex_shader_name: "brdf_lookup",
+                    vertex_shader_name: "fullscreen",
                     fragment_shader_name: "brdf_lookup",
                     viewport_info: &viewport_info,
                     rasterizer_info: &rasterizer_info,
