@@ -28,7 +28,12 @@ fn compile_shaders() {
         .map(Result::unwrap)
         .filter(|dir| dir.file_type().unwrap().is_file())
         .filter(|dir| dir.path().extension().is_some())
-        .filter(|dir| !matches!(dir.path().extension().unwrap().to_str(), Some("spv") | Some("h")))
+        .filter(|dir| {
+            !matches!(
+                dir.path().extension().unwrap().to_str(),
+                Some("spv") | Some("h")
+            )
+        })
         .for_each(|dir| {
             let path = dir.path();
             let name = path.file_name().unwrap().to_str().unwrap();

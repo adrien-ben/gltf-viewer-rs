@@ -18,6 +18,8 @@ use vulkan::{
     PipelineParameters, ShaderParameters, Texture, Vertex,
 };
 
+pub const PRE_FILTERED_MAP_SIZE: u32 = 512;
+
 pub struct Environment {
     skybox: Texture,
     irradiance: Texture,
@@ -30,7 +32,7 @@ impl Environment {
         let skybox = create_skybox_cubemap(context, path, resolution);
         let irradiance = create_irradiance_map(context, &skybox, 32);
         let pre_filtered = create_pre_filtered_map(context, &skybox, 512);
-        let brdf_lookup = create_brdf_lookup(context, 512);
+        let brdf_lookup = create_brdf_lookup(context, PRE_FILTERED_MAP_SIZE);
 
         Self {
             skybox,

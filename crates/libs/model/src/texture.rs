@@ -126,7 +126,12 @@ fn get_next_rgba(pixels: &[u8], format: Format, index: usize) -> [u8; 4] {
         // actually luma8
         R8 => [pixels[index], pixels[index], pixels[index], std::u8::MAX],
         // actually luma8 with alpha
-        R8G8 => [pixels[index * 2], pixels[index * 2], pixels[index * 2], pixels[index * 2 + 1]],
+        R8G8 => [
+            pixels[index * 2],
+            pixels[index * 2],
+            pixels[index * 2],
+            pixels[index * 2 + 1],
+        ],
         R8G8B8 => [
             pixels[index * 3],
             pixels[index * 3 + 1],

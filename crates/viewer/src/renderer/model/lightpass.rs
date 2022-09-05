@@ -1120,13 +1120,22 @@ fn create_model_frag_shader_specialization() -> (
     Vec<vk::SpecializationMapEntry>,
     Vec<u8>,
 ) {
-    let map_entries = vec![vk::SpecializationMapEntry {
-        constant_id: 0,
-        offset: 0,
-        size: size_of::<u32>(),
-    }];
+    let map_entries = vec![
+        vk::SpecializationMapEntry {
+            constant_id: 0,
+            offset: 0,
+            size: size_of::<u32>(),
+        },
+        vk::SpecializationMapEntry {
+            constant_id: 1,
+            offset: size_of::<u32>() as _,
+            size: size_of::<u32>(),
+        },
+    ];
 
-    let data = [MAX_LIGHT_COUNT];
+    let max_reflection_lod = (PRE_FILTERED_MAP_SIZE as f32).log2().floor() as u32;
+
+    let data = [MAX_LIGHT_COUNT, max_reflection_lod];
     let data = Vec::from(unsafe { any_as_u8_slice(&data) });
 
     let specialization_info = vk::SpecializationInfo::builder()

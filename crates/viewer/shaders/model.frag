@@ -2,6 +2,7 @@
 
 // -- Constants --
 layout(constant_id = 0) const uint MAX_LIGHT_COUNT = 1;
+layout(constant_id = 1) const uint MAX_REFLECTION_LOD = 1;
 
 const uint OUTPUT_MODE_FINAL = 0;
 const uint OUTPUT_MODE_COLOR = 1;
@@ -25,8 +26,6 @@ const uint NO_TEXTURE_ID = 255;
 const uint ALPHA_MODE_MASK = 1;
 const uint ALPHA_MODE_BLEND = 2;
 const float ALPHA_CUTOFF_BIAS = 0.0000001;
-
-const float MAX_REFLECTION_LOD = 9.0; // last mip mips for 512 px res TODO: specializations ?
 
 const uint DIRECTIONAL_LIGHT_TYPE = 0;
 const uint POINT_LIGHT_TYPE = 1;
