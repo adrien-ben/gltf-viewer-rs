@@ -337,28 +337,6 @@ impl Renderer {
                 };
             }
 
-            // Update viewport/scissors
-            unsafe {
-                self.context.device().cmd_set_viewport(
-                    command_buffer,
-                    0,
-                    &[vk::Viewport {
-                        width: self.swapchain.properties().extent.width as _,
-                        height: self.swapchain.properties().extent.height as _,
-                        max_depth: 1.0,
-                        ..Default::default()
-                    }],
-                );
-                self.context.device().cmd_set_scissor(
-                    command_buffer,
-                    0,
-                    &[vk::Rect2D {
-                        extent: self.swapchain.properties().extent,
-                        ..Default::default()
-                    }],
-                )
-            }
-
             let draw_data = gui.render(window);
 
             self.cmd_draw(command_buffer, frame_index, draw_data);
@@ -427,8 +405,6 @@ impl Renderer {
         frame_index: usize,
         draw_data: &DrawData,
     ) {
-        let extent = self.swapchain.properties().extent;
-
         if self.settings.ssao_enabled {
             // GBuffer pass
             {
@@ -451,6 +427,32 @@ impl Renderer {
                             vk::ImageLayout::UNDEFINED,
                             vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
                         );
+                }
+
+                let extent = vk::Extent2D {
+                    width: self.attachments.gbuffer_normals.image.extent.width,
+                    height: self.attachments.gbuffer_normals.image.extent.height,
+                };
+
+                unsafe {
+                    self.context.device().cmd_set_viewport(
+                        command_buffer,
+                        0,
+                        &[vk::Viewport {
+                            width: extent.width as _,
+                            height: extent.height as _,
+                            max_depth: 1.0,
+                            ..Default::default()
+                        }],
+                    );
+                    self.context.device().cmd_set_scissor(
+                        command_buffer,
+                        0,
+                        &[vk::Rect2D {
+                            extent,
+                            ..Default::default()
+                        }],
+                    )
                 }
 
                 let color_attachment_info = RenderingAttachmentInfo::builder()
@@ -535,7 +537,6 @@ impl Renderer {
             self.ssao_pass.cmd_draw(
                 command_buffer,
                 &self.attachments,
-                extent,
                 &self.quad_model,
                 frame_index,
             );
@@ -559,12 +560,8 @@ impl Renderer {
             }
 
             // SSAO Blur Pass
-            self.ssao_blur_pass.cmd_draw(
-                command_buffer,
-                &self.attachments,
-                extent,
-                &self.quad_model,
-            );
+            self.ssao_blur_pass
+                .cmd_draw(command_buffer, &self.attachments, &self.quad_model);
         }
 
         // Prepare attachments and inputs for lighting pass
@@ -601,6 +598,32 @@ impl Renderer {
 
         // Scene Pass
         {
+            let extent = vk::Extent2D {
+                width: self.attachments.scene_color.image.extent.width,
+                height: self.attachments.scene_color.image.extent.height,
+            };
+
+            unsafe {
+                self.context.device().cmd_set_viewport(
+                    command_buffer,
+                    0,
+                    &[vk::Viewport {
+                        width: extent.width as _,
+                        height: extent.height as _,
+                        max_depth: 1.0,
+                        ..Default::default()
+                    }],
+                );
+                self.context.device().cmd_set_scissor(
+                    command_buffer,
+                    0,
+                    &[vk::Rect2D {
+                        extent,
+                        ..Default::default()
+                    }],
+                )
+            }
+
             {
                 let mut color_attachment_info = RenderingAttachmentInfo::builder()
                     .clear_value(vk::ClearValue {
@@ -666,7 +689,7 @@ impl Renderer {
         // Bloom pass
         {
             self.bloom_pass
-                .cmd_draw(command_buffer, &self.attachments, extent, &self.quad_model);
+                .cmd_draw(command_buffer, &self.attachments, &self.quad_model);
         }
 
         // Prepare attachments and inputs for final pass (post-processing + ui)
@@ -680,6 +703,29 @@ impl Renderer {
 
         // Final pass and UI
         {
+            let extent = self.swapchain.properties().extent;
+
+            unsafe {
+                self.context.device().cmd_set_viewport(
+                    command_buffer,
+                    0,
+                    &[vk::Viewport {
+                        width: extent.width as _,
+                        height: extent.height as _,
+                        max_depth: 1.0,
+                        ..Default::default()
+                    }],
+                );
+                self.context.device().cmd_set_scissor(
+                    command_buffer,
+                    0,
+                    &[vk::Rect2D {
+                        extent,
+                        ..Default::default()
+                    }],
+                )
+            }
+
             {
                 let color_attachment_info = RenderingAttachmentInfo::builder()
                     .clear_value(vk::ClearValue {

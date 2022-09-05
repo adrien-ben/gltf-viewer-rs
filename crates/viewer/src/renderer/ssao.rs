@@ -173,11 +173,36 @@ impl SSAOPass {
         &self,
         command_buffer: vk::CommandBuffer,
         attachments: &Attachments,
-        extent: vk::Extent2D,
         quad_model: &QuadModel,
         frame_index: usize,
     ) {
         let device = self.context.device();
+
+        let extent = vk::Extent2D {
+            width: attachments.ssao.image.extent.width,
+            height: attachments.ssao.image.extent.height,
+        };
+
+        unsafe {
+            self.context.device().cmd_set_viewport(
+                command_buffer,
+                0,
+                &[vk::Viewport {
+                    width: extent.width as _,
+                    height: extent.height as _,
+                    max_depth: 1.0,
+                    ..Default::default()
+                }],
+            );
+            self.context.device().cmd_set_scissor(
+                command_buffer,
+                0,
+                &[vk::Rect2D {
+                    extent,
+                    ..Default::default()
+                }],
+            )
+        }
 
         {
             let attachment_info = RenderingAttachmentInfo::builder()

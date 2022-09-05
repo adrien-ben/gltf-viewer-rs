@@ -55,32 +55,10 @@ impl BloomPass {
         &self,
         command_buffer: vk::CommandBuffer,
         attachments: &Attachments,
-        extent: vk::Extent2D,
         quad_model: &QuadModel,
     ) {
-        self.cmd_downsample(command_buffer, attachments, extent, quad_model);
+        self.cmd_downsample(command_buffer, attachments, quad_model);
         self.cmd_upsample(command_buffer, attachments, quad_model);
-
-        unsafe {
-            self.context.device().cmd_set_viewport(
-                command_buffer,
-                0,
-                &[vk::Viewport {
-                    width: extent.width as _,
-                    height: extent.height as _,
-                    max_depth: 1.0,
-                    ..Default::default()
-                }],
-            );
-            self.context.device().cmd_set_scissor(
-                command_buffer,
-                0,
-                &[vk::Rect2D {
-                    extent,
-                    ..Default::default()
-                }],
-            )
-        }
 
         attachments.bloom.image.cmd_transition_image_mips_layout(
             command_buffer,
@@ -95,12 +73,14 @@ impl BloomPass {
         &self,
         command_buffer: vk::CommandBuffer,
         attachments: &Attachments,
-        extent: vk::Extent2D,
         quad_model: &QuadModel,
     ) {
         let device = self.context.device();
 
-        let mut input_extent = extent;
+        let mut input_extent = vk::Extent2D {
+            width: attachments.bloom.image.extent.width,
+            height: attachments.bloom.image.extent.height,
+        };
 
         let mut input_image = &attachments.get_scene_resolved_color().image;
         let mut input_mip = 0u32;
