@@ -415,25 +415,23 @@ impl Renderer {
             // GBuffer pass
             {
                 // Prepare attachments for gbuffer
-                {
-                    self.attachments
-                        .gbuffer_normals
-                        .image
-                        .cmd_transition_image_layout(
-                            command_buffer,
-                            vk::ImageLayout::UNDEFINED,
-                            vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
-                        );
-
-                    self.attachments
-                        .gbuffer_depth
-                        .image
-                        .cmd_transition_image_layout(
-                            command_buffer,
-                            vk::ImageLayout::UNDEFINED,
-                            vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
-                        );
-                }
+                cmd_transition_images_layouts(
+                    command_buffer,
+                    &[
+                        LayoutTransition {
+                            image: &self.attachments.gbuffer_normals.image,
+                            old_layout: vk::ImageLayout::UNDEFINED,
+                            new_layout: vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
+                            mips_range: MipsRange::All,
+                        },
+                        LayoutTransition {
+                            image: &self.attachments.gbuffer_depth.image,
+                            old_layout: vk::ImageLayout::UNDEFINED,
+                            new_layout: vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
+                            mips_range: MipsRange::All,
+                        },
+                    ],
+                );
 
                 let extent = vk::Extent2D {
                     width: self.attachments.gbuffer_normals.image.extent.width,
@@ -513,31 +511,29 @@ impl Renderer {
             }
 
             // Prepare attachments and inputs for ssao
-            {
-                self.attachments
-                    .gbuffer_normals
-                    .image
-                    .cmd_transition_image_layout(
-                        command_buffer,
-                        vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
-                        vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
-                    );
-
-                self.attachments
-                    .gbuffer_depth
-                    .image
-                    .cmd_transition_image_layout(
-                        command_buffer,
-                        vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
-                        vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
-                    );
-
-                self.attachments.ssao.image.cmd_transition_image_layout(
-                    command_buffer,
-                    vk::ImageLayout::UNDEFINED,
-                    vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
-                );
-            }
+            cmd_transition_images_layouts(
+                command_buffer,
+                &[
+                    LayoutTransition {
+                        image: &self.attachments.gbuffer_normals.image,
+                        old_layout: vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
+                        new_layout: vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
+                        mips_range: MipsRange::All,
+                    },
+                    LayoutTransition {
+                        image: &self.attachments.gbuffer_depth.image,
+                        old_layout: vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
+                        new_layout: vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
+                        mips_range: MipsRange::All,
+                    },
+                    LayoutTransition {
+                        image: &self.attachments.ssao.image,
+                        old_layout: vk::ImageLayout::UNDEFINED,
+                        new_layout: vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
+                        mips_range: MipsRange::All,
+                    },
+                ],
+            );
 
             // SSAO Pass
             self.ssao_pass.cmd_draw(
@@ -548,22 +544,23 @@ impl Renderer {
             );
 
             // Prepare attachments and inputs for ssao blur
-            {
-                self.attachments.ssao.image.cmd_transition_image_layout(
-                    command_buffer,
-                    vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
-                    vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
-                );
-
-                self.attachments
-                    .ssao_blur
-                    .image
-                    .cmd_transition_image_layout(
-                        command_buffer,
-                        vk::ImageLayout::UNDEFINED,
-                        vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
-                    );
-            }
+            cmd_transition_images_layouts(
+                command_buffer,
+                &[
+                    LayoutTransition {
+                        image: &self.attachments.ssao.image,
+                        old_layout: vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
+                        new_layout: vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
+                        mips_range: MipsRange::All,
+                    },
+                    LayoutTransition {
+                        image: &self.attachments.ssao_blur.image,
+                        old_layout: vk::ImageLayout::UNDEFINED,
+                        new_layout: vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
+                        mips_range: MipsRange::All,
+                    },
+                ],
+            );
 
             // SSAO Blur Pass
             self.ssao_blur_pass
@@ -571,36 +568,29 @@ impl Renderer {
         }
 
         // Prepare attachments and inputs for lighting pass
-        {
-            self.attachments
-                .get_scene_resolved_color()
-                .image
-                .cmd_transition_image_layout(
-                    command_buffer,
-                    vk::ImageLayout::UNDEFINED,
-                    vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
-                );
-
-            self.attachments
-                .scene_depth
-                .image
-                .cmd_transition_image_layout(
-                    command_buffer,
-                    vk::ImageLayout::UNDEFINED,
-                    vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
-                );
-
-            if self.settings.ssao_enabled {
-                self.attachments
-                    .ssao_blur
-                    .image
-                    .cmd_transition_image_layout(
-                        command_buffer,
-                        vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
-                        vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
-                    );
-            }
+        let mut transitions = vec![
+            LayoutTransition {
+                image: &self.attachments.get_scene_resolved_color().image,
+                old_layout: vk::ImageLayout::UNDEFINED,
+                new_layout: vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
+                mips_range: MipsRange::All,
+            },
+            LayoutTransition {
+                image: &self.attachments.scene_depth.image,
+                old_layout: vk::ImageLayout::UNDEFINED,
+                new_layout: vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
+                mips_range: MipsRange::All,
+            },
+        ];
+        if self.settings.ssao_enabled {
+            transitions.push(LayoutTransition {
+                image: &self.attachments.ssao_blur.image,
+                old_layout: vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
+                new_layout: vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
+                mips_range: MipsRange::All,
+            });
         }
+        cmd_transition_images_layouts(command_buffer, &transitions);
 
         // Scene Pass
         {

@@ -6,7 +6,7 @@ use vulkan::{
         vk::{self, RenderingAttachmentInfo, RenderingInfo},
         Device,
     },
-    Context, Descriptors,
+    cmd_transition_images_layouts, Context, Descriptors, LayoutTransition, MipsRange,
 };
 
 use crate::renderer::{
@@ -89,21 +89,23 @@ impl BloomPass {
             let output_extent = attachments.bloom.mips_resolution[output_mip];
 
             {
-                input_image.cmd_transition_image_mips_layout(
+                cmd_transition_images_layouts(
                     command_buffer,
-                    input_mip as _,
-                    1,
-                    vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
-                    vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
-                );
-
-                attachments.bloom.image.cmd_transition_image_mips_layout(
-                    command_buffer,
-                    output_mip as _,
-                    1,
-                    vk::ImageLayout::UNDEFINED,
-                    vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
-                );
+                    &[
+                        LayoutTransition {
+                            image: input_image,
+                            old_layout: vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
+                            new_layout: vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
+                            mips_range: MipsRange::Index(input_mip as _),
+                        },
+                        LayoutTransition {
+                            image: &attachments.bloom.image,
+                            old_layout: vk::ImageLayout::UNDEFINED,
+                            new_layout: vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
+                            mips_range: MipsRange::Index(output_mip as _),
+                        },
+                    ],
+                )
             }
 
             unsafe {
@@ -233,21 +235,23 @@ impl BloomPass {
             let input_mip = output_mip + 1;
 
             {
-                attachments.bloom.image.cmd_transition_image_mips_layout(
+                cmd_transition_images_layouts(
                     command_buffer,
-                    input_mip as _,
-                    1,
-                    vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
-                    vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
-                );
-
-                attachments.bloom.image.cmd_transition_image_mips_layout(
-                    command_buffer,
-                    output_mip as _,
-                    1,
-                    vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
-                    vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
-                );
+                    &[
+                        LayoutTransition {
+                            image: &attachments.bloom.image,
+                            old_layout: vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
+                            new_layout: vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
+                            mips_range: MipsRange::Index(input_mip as _),
+                        },
+                        LayoutTransition {
+                            image: &attachments.bloom.image,
+                            old_layout: vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
+                            new_layout: vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
+                            mips_range: MipsRange::Index(output_mip as _),
+                        },
+                    ],
+                )
             }
 
             unsafe {

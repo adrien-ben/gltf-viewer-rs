@@ -220,6 +220,25 @@ impl Image {
         old_layout: vk::ImageLayout,
         new_layout: vk::ImageLayout,
     ) {
+        let barrier = self.get_barrier(base_mip_level, level_count, old_layout, new_layout);
+
+        let dependency_info =
+            vk::DependencyInfo::builder().image_memory_barriers(std::slice::from_ref(&barrier));
+
+        unsafe {
+            self.context
+                .synchronization2()
+                .cmd_pipeline_barrier2(command_buffer, &dependency_info)
+        };
+    }
+
+    fn get_barrier(
+        &self,
+        base_mip_level: u32,
+        level_count: u32,
+        old_layout: vk::ImageLayout,
+        new_layout: vk::ImageLayout,
+    ) -> vk::ImageMemoryBarrier2 {
         let (src_access_mask, dst_access_mask, src_stage, dst_stage) =
             match (old_layout, new_layout) {
                 (vk::ImageLayout::UNDEFINED, vk::ImageLayout::TRANSFER_DST_OPTIMAL) => (
@@ -321,10 +340,10 @@ impl Image {
                     log::warn!("Undefined layout transition {old_layout:?} -> {new_layout:?}");
 
                     (
-                        vk::AccessFlags2::empty(),
-                        vk::AccessFlags2::empty(),
-                        vk::PipelineStageFlags2::TOP_OF_PIPE,
-                        vk::PipelineStageFlags2::TOP_OF_PIPE,
+                        vk::AccessFlags2::NONE,
+                        vk::AccessFlags2::NONE,
+                        vk::PipelineStageFlags2::NONE,
+                        vk::PipelineStageFlags2::NONE,
                     )
                 }
             };
@@ -341,7 +360,7 @@ impl Image {
             vk::ImageAspectFlags::COLOR
         };
 
-        let barrier = vk::ImageMemoryBarrier2::builder()
+        vk::ImageMemoryBarrier2::builder()
             .src_stage_mask(src_stage)
             .src_access_mask(src_access_mask)
             .old_layout(old_layout)
@@ -356,16 +375,7 @@ impl Image {
                 base_array_layer: 0,
                 layer_count: self.layers,
             })
-            .build();
-
-        let dependency_info =
-            vk::DependencyInfo::builder().image_memory_barriers(std::slice::from_ref(&barrier));
-
-        unsafe {
-            self.context
-                .synchronization2()
-                .cmd_pipeline_barrier2(command_buffer, &dependency_info)
-        };
+            .build()
     }
 
     pub fn copy_buffer(&self, buffer: &Buffer, extent: vk::Extent2D) {
@@ -617,4 +627,66 @@ pub fn create_image_view(
             .create_image_view(&create_info, None)
             .expect("Failed to create image view")
     }
+}
+
+pub struct LayoutTransition<'a> {
+    pub image: &'a Image,
+    pub old_layout: vk::ImageLayout,
+    pub new_layout: vk::ImageLayout,
+    pub mips_range: MipsRange,
+}
+
+#[derive(Clone, Copy)]
+pub enum MipsRange {
+    All,
+    Index(u32),
+    Range { first: u32, count: u32 },
+}
+
+impl MipsRange {
+    fn first(&self) -> u32 {
+        match self {
+            Self::All => 0,
+            Self::Index(index) => *index,
+            Self::Range { first, .. } => *first,
+        }
+    }
+
+    fn count(&self) -> Option<u32> {
+        match self {
+            Self::All => None,
+            Self::Index(_) => Some(1),
+            Self::Range { count, .. } => Some(*count),
+        }
+    }
+}
+
+pub fn cmd_transition_images_layouts(
+    command_buffer: vk::CommandBuffer,
+    transitions: &[LayoutTransition],
+) {
+    if transitions.is_empty() {
+        return;
+    }
+
+    let context = &transitions[0].image.context;
+
+    let barriers = transitions
+        .iter()
+        .map(|t| {
+            let base_mip_level = t.mips_range.first();
+            let level_count = t.mips_range.count().unwrap_or(t.image.mip_levels);
+
+            t.image
+                .get_barrier(base_mip_level, level_count, t.old_layout, t.new_layout)
+        })
+        .collect::<Vec<_>>();
+
+    let dependency_info = vk::DependencyInfo::builder().image_memory_barriers(&barriers);
+
+    unsafe {
+        context
+            .synchronization2()
+            .cmd_pipeline_barrier2(command_buffer, &dependency_info)
+    };
 }
