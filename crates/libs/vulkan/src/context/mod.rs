@@ -3,7 +3,7 @@ mod shared;
 use self::shared::*;
 use crate::MsaaSamples;
 use ash::{
-    extensions::khr::{DynamicRendering, Surface},
+    extensions::khr::{DynamicRendering, Surface, Synchronization2},
     vk, Device, Instance,
 };
 use std::sync::Arc;
@@ -108,6 +108,10 @@ impl Context {
 
     pub fn dynamic_rendering(&self) -> &DynamicRendering {
         self.shared_context.dynamic_rendering()
+    }
+
+    pub fn synchronization2(&self) -> &Synchronization2 {
+        self.shared_context.synchronization2()
     }
 
     pub fn general_command_pool(&self) -> vk::CommandPool {

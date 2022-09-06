@@ -352,26 +352,30 @@ impl Renderer {
 
         self.update_ubos(image_index as _, camera);
 
-        let wait_semaphores = [image_available_semaphore];
-        let signal_semaphores = [render_finished_semaphore];
-
         // Submit command buffer
         {
-            let wait_stages = [vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT];
-            let command_buffers = [self.command_buffers[image_index as usize]];
-            let submit_info = vk::SubmitInfo::builder()
-                .wait_semaphores(&wait_semaphores)
-                .wait_dst_stage_mask(&wait_stages)
-                .command_buffers(&command_buffers)
-                .signal_semaphores(&signal_semaphores)
-                .build();
-            let submit_infos = [submit_info];
+            let wait_semaphore_submit_info = vk::SemaphoreSubmitInfo::builder()
+                .semaphore(image_available_semaphore)
+                .stage_mask(vk::PipelineStageFlags2::COLOR_ATTACHMENT_OUTPUT);
+
+            let signal_semaphore_submit_info = vk::SemaphoreSubmitInfo::builder()
+                .semaphore(render_finished_semaphore)
+                .stage_mask(vk::PipelineStageFlags2::ALL_COMMANDS);
+
+            let cmd_buffer_submit_info = vk::CommandBufferSubmitInfo::builder()
+                .command_buffer(self.command_buffers[image_index as usize]);
+
+            let submit_info = vk::SubmitInfo2::builder()
+                .command_buffer_infos(std::slice::from_ref(&cmd_buffer_submit_info))
+                .wait_semaphore_infos(std::slice::from_ref(&wait_semaphore_submit_info))
+                .signal_semaphore_infos(std::slice::from_ref(&signal_semaphore_submit_info));
+
             unsafe {
                 self.context
-                    .device()
-                    .queue_submit(
+                    .synchronization2()
+                    .queue_submit2(
                         self.context.graphics_compute_queue(),
-                        &submit_infos,
+                        std::slice::from_ref(&submit_info),
                         in_flight_fence,
                     )
                     .unwrap()
@@ -382,6 +386,8 @@ impl Renderer {
         let images_indices = [image_index];
 
         {
+            let signal_semaphores = [render_finished_semaphore];
+
             let present_info = vk::PresentInfoKHR::builder()
                 .wait_semaphores(&signal_semaphores)
                 .swapchains(&swapchains)

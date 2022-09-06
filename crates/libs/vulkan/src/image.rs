@@ -223,93 +223,108 @@ impl Image {
         let (src_access_mask, dst_access_mask, src_stage, dst_stage) =
             match (old_layout, new_layout) {
                 (vk::ImageLayout::UNDEFINED, vk::ImageLayout::TRANSFER_DST_OPTIMAL) => (
-                    vk::AccessFlags::empty(),
-                    vk::AccessFlags::TRANSFER_WRITE,
-                    vk::PipelineStageFlags::TOP_OF_PIPE,
-                    vk::PipelineStageFlags::TRANSFER,
+                    vk::AccessFlags2::NONE,
+                    vk::AccessFlags2::TRANSFER_WRITE,
+                    vk::PipelineStageFlags2::NONE,
+                    vk::PipelineStageFlags2::TRANSFER,
                 ),
                 (
                     vk::ImageLayout::TRANSFER_DST_OPTIMAL,
                     vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
                 ) => (
-                    vk::AccessFlags::TRANSFER_WRITE,
-                    vk::AccessFlags::SHADER_READ,
-                    vk::PipelineStageFlags::TRANSFER,
-                    vk::PipelineStageFlags::FRAGMENT_SHADER,
+                    vk::AccessFlags2::TRANSFER_WRITE,
+                    vk::AccessFlags2::SHADER_READ,
+                    vk::PipelineStageFlags2::TRANSFER,
+                    vk::PipelineStageFlags2::FRAGMENT_SHADER,
                 ),
                 (vk::ImageLayout::UNDEFINED, vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL) => {
                     (
-                        vk::AccessFlags::empty(),
-                        vk::AccessFlags::DEPTH_STENCIL_ATTACHMENT_READ
-                            | vk::AccessFlags::DEPTH_STENCIL_ATTACHMENT_WRITE,
-                        vk::PipelineStageFlags::TOP_OF_PIPE,
-                        vk::PipelineStageFlags::EARLY_FRAGMENT_TESTS,
+                        vk::AccessFlags2::NONE,
+                        vk::AccessFlags2::DEPTH_STENCIL_ATTACHMENT_READ
+                            | vk::AccessFlags2::DEPTH_STENCIL_ATTACHMENT_WRITE,
+                        vk::PipelineStageFlags2::NONE,
+                        vk::PipelineStageFlags2::EARLY_FRAGMENT_TESTS,
                     )
                 }
                 (vk::ImageLayout::UNDEFINED, vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL) => (
-                    vk::AccessFlags::empty(),
-                    vk::AccessFlags::COLOR_ATTACHMENT_READ
-                        | vk::AccessFlags::COLOR_ATTACHMENT_WRITE,
-                    vk::PipelineStageFlags::TOP_OF_PIPE,
-                    vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT,
+                    vk::AccessFlags2::NONE,
+                    vk::AccessFlags2::COLOR_ATTACHMENT_READ
+                        | vk::AccessFlags2::COLOR_ATTACHMENT_WRITE,
+                    vk::PipelineStageFlags2::NONE,
+                    vk::PipelineStageFlags2::COLOR_ATTACHMENT_OUTPUT,
                 ),
                 (
                     vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
                     vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
                 ) => (
-                    vk::AccessFlags::COLOR_ATTACHMENT_WRITE,
-                    vk::AccessFlags::SHADER_READ,
-                    vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT,
-                    vk::PipelineStageFlags::FRAGMENT_SHADER,
+                    vk::AccessFlags2::COLOR_ATTACHMENT_WRITE,
+                    vk::AccessFlags2::SHADER_READ,
+                    vk::PipelineStageFlags2::COLOR_ATTACHMENT_OUTPUT,
+                    vk::PipelineStageFlags2::FRAGMENT_SHADER,
                 ),
                 (
                     vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
                     vk::ImageLayout::TRANSFER_DST_OPTIMAL,
                 ) => (
-                    vk::AccessFlags::COLOR_ATTACHMENT_WRITE,
-                    vk::AccessFlags::TRANSFER_WRITE,
-                    vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT,
-                    vk::PipelineStageFlags::TRANSFER,
+                    vk::AccessFlags2::COLOR_ATTACHMENT_WRITE,
+                    vk::AccessFlags2::TRANSFER_WRITE,
+                    vk::PipelineStageFlags2::COLOR_ATTACHMENT_OUTPUT,
+                    vk::PipelineStageFlags2::TRANSFER,
                 ),
                 (vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL, vk::ImageLayout::PRESENT_SRC_KHR) => (
-                    vk::AccessFlags::COLOR_ATTACHMENT_WRITE,
-                    vk::AccessFlags::COLOR_ATTACHMENT_READ,
-                    vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT,
-                    vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT,
+                    vk::AccessFlags2::COLOR_ATTACHMENT_WRITE,
+                    vk::AccessFlags2::COLOR_ATTACHMENT_READ,
+                    vk::PipelineStageFlags2::COLOR_ATTACHMENT_OUTPUT,
+                    vk::PipelineStageFlags2::COLOR_ATTACHMENT_OUTPUT,
                 ),
                 (
                     vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
                     vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
                 ) => (
-                    vk::AccessFlags::DEPTH_STENCIL_ATTACHMENT_WRITE,
-                    vk::AccessFlags::SHADER_READ,
-                    vk::PipelineStageFlags::EARLY_FRAGMENT_TESTS
-                        | vk::PipelineStageFlags::LATE_FRAGMENT_TESTS,
-                    vk::PipelineStageFlags::FRAGMENT_SHADER,
+                    vk::AccessFlags2::DEPTH_STENCIL_ATTACHMENT_WRITE,
+                    vk::AccessFlags2::SHADER_READ,
+                    vk::PipelineStageFlags2::EARLY_FRAGMENT_TESTS
+                        | vk::PipelineStageFlags2::LATE_FRAGMENT_TESTS,
+                    vk::PipelineStageFlags2::FRAGMENT_SHADER,
                 ),
                 (vk::ImageLayout::UNDEFINED, vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL) => (
-                    vk::AccessFlags::empty(),
-                    vk::AccessFlags::SHADER_READ,
-                    vk::PipelineStageFlags::TOP_OF_PIPE,
-                    vk::PipelineStageFlags::FRAGMENT_SHADER,
+                    vk::AccessFlags2::NONE,
+                    vk::AccessFlags2::SHADER_READ,
+                    vk::PipelineStageFlags2::NONE,
+                    vk::PipelineStageFlags2::FRAGMENT_SHADER,
                 ),
                 (
                     vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
                     vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
                 ) => (
-                    vk::AccessFlags::SHADER_READ,
-                    vk::AccessFlags::COLOR_ATTACHMENT_WRITE,
-                    vk::PipelineStageFlags::FRAGMENT_SHADER,
-                    vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT,
+                    vk::AccessFlags2::SHADER_READ,
+                    vk::AccessFlags2::COLOR_ATTACHMENT_WRITE,
+                    vk::PipelineStageFlags2::FRAGMENT_SHADER,
+                    vk::PipelineStageFlags2::COLOR_ATTACHMENT_OUTPUT,
+                ),
+                (vk::ImageLayout::TRANSFER_DST_OPTIMAL, vk::ImageLayout::TRANSFER_SRC_OPTIMAL) => (
+                    vk::AccessFlags2::TRANSFER_WRITE,
+                    vk::AccessFlags2::TRANSFER_READ,
+                    vk::PipelineStageFlags2::TRANSFER,
+                    vk::PipelineStageFlags2::TRANSFER,
+                ),
+                (
+                    vk::ImageLayout::TRANSFER_SRC_OPTIMAL,
+                    vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
+                ) => (
+                    vk::AccessFlags2::TRANSFER_WRITE,
+                    vk::AccessFlags2::SHADER_READ,
+                    vk::PipelineStageFlags2::TRANSFER,
+                    vk::PipelineStageFlags2::FRAGMENT_SHADER,
                 ),
                 _ => {
                     log::warn!("Undefined layout transition {old_layout:?} -> {new_layout:?}");
 
                     (
-                        vk::AccessFlags::empty(),
-                        vk::AccessFlags::empty(),
-                        vk::PipelineStageFlags::TOP_OF_PIPE,
-                        vk::PipelineStageFlags::TOP_OF_PIPE,
+                        vk::AccessFlags2::empty(),
+                        vk::AccessFlags2::empty(),
+                        vk::PipelineStageFlags2::TOP_OF_PIPE,
+                        vk::PipelineStageFlags2::TOP_OF_PIPE,
                     )
                 }
             };
@@ -326,11 +341,13 @@ impl Image {
             vk::ImageAspectFlags::COLOR
         };
 
-        let barrier = vk::ImageMemoryBarrier::builder()
+        let barrier = vk::ImageMemoryBarrier2::builder()
+            .src_stage_mask(src_stage)
+            .src_access_mask(src_access_mask)
             .old_layout(old_layout)
+            .dst_stage_mask(dst_stage)
+            .dst_access_mask(dst_access_mask)
             .new_layout(new_layout)
-            .src_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
-            .dst_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
             .image(self.image)
             .subresource_range(vk::ImageSubresourceRange {
                 aspect_mask,
@@ -339,21 +356,15 @@ impl Image {
                 base_array_layer: 0,
                 layer_count: self.layers,
             })
-            .src_access_mask(src_access_mask)
-            .dst_access_mask(dst_access_mask)
             .build();
-        let barriers = [barrier];
+
+        let dependency_info =
+            vk::DependencyInfo::builder().image_memory_barriers(std::slice::from_ref(&barrier));
 
         unsafe {
-            self.context.device().cmd_pipeline_barrier(
-                command_buffer,
-                src_stage,
-                dst_stage,
-                vk::DependencyFlags::empty(),
-                &[],
-                &[],
-                &barriers,
-            )
+            self.context
+                .synchronization2()
+                .cmd_pipeline_barrier2(command_buffer, &dependency_info)
         };
     }
 
@@ -467,19 +478,6 @@ impl Image {
             )
         }
 
-        let mut barrier = vk::ImageMemoryBarrier::builder()
-            .image(self.image)
-            .src_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
-            .dst_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
-            .subresource_range(vk::ImageSubresourceRange {
-                aspect_mask: vk::ImageAspectFlags::COLOR,
-                base_array_layer: 0,
-                layer_count: self.layers,
-                level_count: 1,
-                ..Default::default()
-            })
-            .build();
-
         let mut mip_width = extent.width as i32;
         let mut mip_height = extent.height as i32;
         for level in 1..self.mip_levels {
@@ -494,24 +492,13 @@ impl Image {
                 mip_height
             };
 
-            barrier.subresource_range.base_mip_level = level - 1;
-            barrier.old_layout = vk::ImageLayout::TRANSFER_DST_OPTIMAL;
-            barrier.new_layout = vk::ImageLayout::TRANSFER_SRC_OPTIMAL;
-            barrier.src_access_mask = vk::AccessFlags::TRANSFER_WRITE;
-            barrier.dst_access_mask = vk::AccessFlags::TRANSFER_READ;
-            let barriers = [barrier];
-
-            unsafe {
-                self.context.device().cmd_pipeline_barrier(
-                    command_buffer,
-                    vk::PipelineStageFlags::TRANSFER,
-                    vk::PipelineStageFlags::TRANSFER,
-                    vk::DependencyFlags::empty(),
-                    &[],
-                    &[],
-                    &barriers,
-                )
-            };
+            self.cmd_transition_image_mips_layout(
+                command_buffer,
+                level - 1,
+                1,
+                vk::ImageLayout::TRANSFER_DST_OPTIMAL,
+                vk::ImageLayout::TRANSFER_SRC_OPTIMAL,
+            );
 
             let blit = vk::ImageBlit::builder()
                 .src_offsets([
@@ -557,46 +544,25 @@ impl Image {
                 )
             };
 
-            barrier.old_layout = vk::ImageLayout::TRANSFER_SRC_OPTIMAL;
-            barrier.new_layout = vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL;
-            barrier.src_access_mask = vk::AccessFlags::TRANSFER_READ;
-            barrier.dst_access_mask = vk::AccessFlags::SHADER_READ;
-            let barriers = [barrier];
-
-            unsafe {
-                self.context.device().cmd_pipeline_barrier(
-                    command_buffer,
-                    vk::PipelineStageFlags::TRANSFER,
-                    vk::PipelineStageFlags::FRAGMENT_SHADER,
-                    vk::DependencyFlags::empty(),
-                    &[],
-                    &[],
-                    &barriers,
-                )
-            };
+            self.cmd_transition_image_mips_layout(
+                command_buffer,
+                level - 1,
+                1,
+                vk::ImageLayout::TRANSFER_SRC_OPTIMAL,
+                vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
+            );
 
             mip_width = next_mip_width;
             mip_height = next_mip_height;
         }
 
-        barrier.subresource_range.base_mip_level = self.mip_levels - 1;
-        barrier.old_layout = vk::ImageLayout::TRANSFER_DST_OPTIMAL;
-        barrier.new_layout = vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL;
-        barrier.src_access_mask = vk::AccessFlags::TRANSFER_WRITE;
-        barrier.dst_access_mask = vk::AccessFlags::SHADER_READ;
-        let barriers = [barrier];
-
-        unsafe {
-            self.context.device().cmd_pipeline_barrier(
-                command_buffer,
-                vk::PipelineStageFlags::TRANSFER,
-                vk::PipelineStageFlags::FRAGMENT_SHADER,
-                vk::DependencyFlags::empty(),
-                &[],
-                &[],
-                &barriers,
-            )
-        };
+        self.cmd_transition_image_mips_layout(
+            command_buffer,
+            self.mip_levels - 1,
+            1,
+            vk::ImageLayout::TRANSFER_DST_OPTIMAL,
+            vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
+        );
     }
 }
 

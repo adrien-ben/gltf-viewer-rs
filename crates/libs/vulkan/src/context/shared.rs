@@ -2,7 +2,7 @@ use crate::{debug::*, swapchain::*, MsaaSamples};
 use ash::{
     extensions::{
         ext::DebugUtils,
-        khr::{DynamicRendering, Surface, Swapchain as SwapchainLoader},
+        khr::{DynamicRendering, Surface, Swapchain as SwapchainLoader, Synchronization2},
     },
     vk, Device, Entry, Instance,
 };
@@ -24,6 +24,7 @@ pub struct SharedContext {
     graphics_compute_queue: vk::Queue,
     present_queue: vk::Queue,
     dynamic_rendering: DynamicRendering,
+    synchronization2: Synchronization2,
 }
 
 impl SharedContext {
@@ -54,6 +55,7 @@ impl SharedContext {
             );
 
         let dynamic_rendering = DynamicRendering::new(&instance, &device);
+        let synchronization2 = Synchronization2::new(&instance, &device);
 
         Self {
             _entry: entry,
@@ -67,6 +69,7 @@ impl SharedContext {
             graphics_compute_queue,
             present_queue,
             dynamic_rendering,
+            synchronization2,
         }
     }
 }
@@ -192,7 +195,7 @@ fn check_device_extension_support(instance: &Instance, device: vk::PhysicalDevic
     true
 }
 
-fn get_required_device_extensions() -> [&'static CStr; 6] {
+fn get_required_device_extensions() -> [&'static CStr; 7] {
     [
         SwapchainLoader::name(),
         DynamicRendering::name(),
@@ -200,6 +203,7 @@ fn get_required_device_extensions() -> [&'static CStr; 6] {
         vk::KhrCreateRenderpass2Fn::name(),
         vk::KhrMultiviewFn::name(),
         vk::KhrMaintenance2Fn::name(),
+        vk::KhrSynchronization2Fn::name(),
     ]
 }
 
@@ -290,9 +294,12 @@ fn create_logical_device_with_graphics_queue(
     let device_features = vk::PhysicalDeviceFeatures::builder().sampler_anisotropy(true);
     let mut dynamic_rendering_feature =
         vk::PhysicalDeviceDynamicRenderingFeatures::builder().dynamic_rendering(true);
+    let mut synchronization2_feature =
+        vk::PhysicalDeviceSynchronization2Features::builder().synchronization2(true);
     let mut device_features_2 = vk::PhysicalDeviceFeatures2::builder()
         .features(device_features.build())
-        .push_next(&mut dynamic_rendering_feature);
+        .push_next(&mut dynamic_rendering_feature)
+        .push_next(&mut synchronization2_feature);
 
     let device_create_info = vk::DeviceCreateInfo::builder()
         .queue_create_infos(&queue_create_infos)
@@ -346,6 +353,10 @@ impl SharedContext {
 
     pub fn dynamic_rendering(&self) -> &DynamicRendering {
         &self.dynamic_rendering
+    }
+
+    pub fn synchronization2(&self) -> &Synchronization2 {
+        &self.synchronization2
     }
 }
 
@@ -465,14 +476,15 @@ impl SharedContext {
 
         // Submit and wait
         {
-            let submit_info = vk::SubmitInfo::builder()
-                .command_buffers(&command_buffers)
-                .build();
-            let submit_infos = [submit_info];
+            let cmd_buffer_submit_info =
+                vk::CommandBufferSubmitInfo::builder().command_buffer(command_buffer);
+            let submit_info = vk::SubmitInfo2::builder()
+                .command_buffer_infos(std::slice::from_ref(&cmd_buffer_submit_info));
+
             unsafe {
                 let queue = self.graphics_compute_queue();
-                self.device
-                    .queue_submit(queue, &submit_infos, vk::Fence::null())
+                self.synchronization2
+                    .queue_submit2(queue, std::slice::from_ref(&submit_info), vk::Fence::null())
                     .expect("Failed to submit to queue");
                 self.device
                     .queue_wait_idle(queue)
