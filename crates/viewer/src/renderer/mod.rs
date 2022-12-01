@@ -21,7 +21,7 @@ use super::gui::Gui;
 use ash::{vk, Device};
 use environment::Environment;
 use imgui::{Context as GuiContext, DrawData};
-use imgui_rs_vulkan_renderer::{Options, Renderer as GuiRenderer};
+use imgui_rs_vulkan_renderer::{DynamicRendering, Options, Renderer as GuiRenderer};
 use math::cgmath::{Deg, Matrix4, SquareMatrix, Vector3};
 use model_crate::Model;
 use std::cell::RefCell;
@@ -173,7 +173,10 @@ impl Renderer {
             context.device().clone(),
             context.graphics_compute_queue(),
             context.general_command_pool(),
-            swapchain_properties.format.format,
+            DynamicRendering {
+                color_attachment_format: swapchain_properties.format.format,
+                depth_attachment_format: None,
+            },
             gui_context,
             Some(Options {
                 in_flight_frames: MAX_FRAMES_IN_FLIGHT as _,

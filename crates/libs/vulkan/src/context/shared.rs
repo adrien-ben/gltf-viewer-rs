@@ -6,6 +6,7 @@ use ash::{
     },
     vk, Device, Entry, Instance,
 };
+use raw_window_handle::{HasRawDisplayHandle, HasRawWindowHandle};
 use std::{
     ffi::{CStr, CString},
     mem::size_of,
@@ -34,8 +35,14 @@ impl SharedContext {
 
         let surface = Surface::new(&entry, &instance);
         let surface_khr = unsafe {
-            ash_window::create_surface(&entry, &instance, window, None)
-                .expect("Failed to create surface")
+            ash_window::create_surface(
+                &entry,
+                &instance,
+                window.raw_display_handle(),
+                window.raw_window_handle(),
+                None,
+            )
+            .expect("Failed to create surface")
         };
 
         let debug_report_callback = if enable_debug {
@@ -84,9 +91,10 @@ fn create_instance(entry: &Entry, window: &Window, enable_debug: bool) -> Instan
         .engine_version(vk::make_api_version(0, 0, 1, 0))
         .api_version(vk::make_api_version(0, 1, 0, 0));
 
-    let mut extension_names = ash_window::enumerate_required_extensions(window)
-        .expect("Failed to enumerate required extensions")
-        .to_vec();
+    let mut extension_names =
+        ash_window::enumerate_required_extensions(window.raw_display_handle())
+            .expect("Failed to enumerate required extensions")
+            .to_vec();
     extension_names.push(vk::KhrGetPhysicalDeviceProperties2Fn::name().as_ptr());
     if enable_debug {
         extension_names.push(DebugUtils::name().as_ptr());

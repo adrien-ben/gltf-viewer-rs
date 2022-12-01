@@ -6,5 +6,4 @@ edition = "2021"
 
 [dependencies]
 log = "0.4"
-env_logger = "0.9"
 image = "0.24"

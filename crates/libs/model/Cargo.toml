@@ -9,7 +9,6 @@ vulkan = { path = "../vulkan" }
 math = { path = "../math" }
 
 log = "0.4"
-env_logger = "0.9"
 byteorder = "1.4"
 mikktspace = "0.3"
 

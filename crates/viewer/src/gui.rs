@@ -71,14 +71,14 @@ impl Gui {
         {
             let ui = &ui;
 
-            Window::new("Menu")
+            ui.window("Menu")
                 .collapsed(true, Condition::FirstUseEver)
                 .position([0.0, 0.0], Condition::Always)
                 .size([350.0, 800.0], Condition::FirstUseEver)
                 .focus_on_appearing(false)
                 .movable(false)
                 .bg_alpha(0.3)
-                .build(ui, || {
+                .build(|| {
                     build_renderer_settings_window(ui, &mut self.state);
                     ui.separator();
                     build_camera_details_window(ui, &mut self.state, self.camera);
@@ -95,7 +95,7 @@ impl Gui {
         }
 
         self.winit_platform.prepare_render(&ui, window);
-        ui.render()
+        self.context.render()
     }
 
     pub fn get_context(&mut self) -> &mut Context {
@@ -236,7 +236,7 @@ fn build_animation_player_window(
                 ui.same_line();
                 ui.checkbox("Loop", &mut state.infinite_animation);
 
-                Slider::new("Speed", 0.05, 3.0).build(ui, &mut state.animation_speed);
+                ui.slider("Speed", 0.05, 3.0, &mut state.animation_speed);
                 ui.same_line();
                 if ui.button("Default") {
                     state.animation_speed = 1.0;
@@ -267,12 +267,16 @@ fn build_renderer_settings_window(ui: &Ui, state: &mut State) {
             ui.text("Settings");
             ui.separator();
 
-            let emissive_intensity_changed = Slider::new("Emissive intensity", 1.0, 200.0)
-                .build(ui, &mut state.emissive_intensity);
+            let emissive_intensity_changed = ui.slider(
+                "Emissive intensity",
+                1.0,
+                200.0,
+                &mut state.emissive_intensity,
+            );
             state.renderer_settings_changed = emissive_intensity_changed;
 
             let bloom_strength_changed =
-                Slider::new("Bloom strength", 0u32, 10).build(ui, &mut state.bloom_strength);
+                ui.slider("Bloom strength", 0u32, 10, &mut state.bloom_strength);
             state.renderer_settings_changed |= bloom_strength_changed;
 
             state.renderer_settings_changed |= ui.checkbox("Enable SSAO", &mut state.ssao_enabled);
@@ -286,11 +290,11 @@ fn build_renderer_settings_window(ui: &Ui, state: &mut State) {
                 state.renderer_settings_changed |= ssao_kernel_size_changed;
 
                 let ssao_radius_changed =
-                    Slider::new("SSAO Radius", 0.01, 1.0).build(ui, &mut state.ssao_radius);
+                    ui.slider("SSAO Radius", 0.01, 1.0, &mut state.ssao_radius);
                 state.renderer_settings_changed |= ssao_radius_changed;
 
                 let ssao_strength_changed =
-                    Slider::new("SSAO Strength", 0.5, 5.0).build(ui, &mut state.ssao_strength);
+                    ui.slider("SSAO Strength", 0.5, 5.0, &mut state.ssao_strength);
                 state.renderer_settings_changed |= ssao_strength_changed;
             }
         }

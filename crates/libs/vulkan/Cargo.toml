@@ -8,7 +8,7 @@ edition = "2021"
 
 [dependencies]
 log = "0.4"
-env_logger = "0.9"
 ash = { version = "0.37", features = ["loaded"] }
-ash-window = "0.10"
-winit = "0.26"
+ash-window = "0.12"
+raw-window-handle = "0.5"
+winit = "0.27"
