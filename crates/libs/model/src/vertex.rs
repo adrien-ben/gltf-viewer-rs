@@ -20,6 +20,7 @@ const WEIGHTS_OFFSET: u32 = 56;
 const JOINTS_OFFSET: u32 = 72;
 const COLOR_OFFSET: u32 = 88;
 
+#[repr(C)]
 #[derive(Clone, Copy, Debug)]
 pub struct ModelVertex {
     pub position: [f32; 3],

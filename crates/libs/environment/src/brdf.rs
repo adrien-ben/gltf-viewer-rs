@@ -5,6 +5,7 @@ use std::time::Instant;
 use vulkan::ash::vk::{self, RenderingAttachmentInfo, RenderingInfo};
 use vulkan::{create_device_local_buffer_with_data, Buffer, Context, Texture, Vertex};
 
+#[repr(C)]
 #[derive(Clone, Copy)]
 #[allow(dead_code)]
 struct QuadVertex {

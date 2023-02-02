@@ -61,6 +61,7 @@ impl Environment {
     }
 }
 
+#[repr(C)]
 #[derive(Clone, Copy)]
 #[allow(dead_code)]
 pub struct SkyboxVertex {

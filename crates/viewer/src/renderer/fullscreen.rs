@@ -4,6 +4,7 @@ use vulkan::{ash::vk, create_device_local_buffer_with_data, Buffer, Context, Ver
 
 use super::{create_renderer_pipeline, RendererPipelineParameters};
 
+#[repr(C)]
 #[derive(Clone, Copy)]
 #[allow(dead_code)]
 pub struct QuadVertex {
