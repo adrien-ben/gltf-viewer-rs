@@ -17,6 +17,6 @@ env_logger = "0.10"
 serde = { version = "1.0", features = ["derive"] }
 serde_yaml = "0.9"
 clap = "3.1"
-imgui = "0.9"
-imgui-winit-support = "0.9"
-imgui-rs-vulkan-renderer = { version = "1.6", features = ["dynamic-rendering"] }
+imgui = "0.11"
+imgui-winit-support = "0.11"
+imgui-rs-vulkan-renderer = { version = "1.9", features = ["dynamic-rendering"] }
