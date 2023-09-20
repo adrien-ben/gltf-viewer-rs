@@ -16,7 +16,7 @@ use winit::{
     dpi::PhysicalSize,
     event::{Event, WindowEvent},
     event_loop::{ControlFlow, EventLoop},
-    window::WindowBuilder,
+    window::{Fullscreen, WindowBuilder},
 };
 
 const TITLE: &str = "Gltf Viewer";
@@ -48,6 +48,7 @@ fn run(config: Config, enable_debug: bool, path: Option<PathBuf>) {
             config.resolution().width(),
             config.resolution().height(),
         ))
+        .with_fullscreen(config.fullscreen().then_some(Fullscreen::Borderless(None)))
         .build(&event_loop)
         .unwrap();
 

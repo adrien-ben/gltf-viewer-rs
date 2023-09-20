@@ -7,6 +7,8 @@ use vulkan::MsaaSamples;
 #[derive(Deserialize, Clone)]
 pub struct Config {
     resolution: Resolution,
+    #[serde(default)]
+    fullscreen: bool,
     vsync: Option<bool>,
     #[serde(deserialize_with = "deserialize_msaa")]
     msaa: MsaaSamples,
@@ -40,6 +42,10 @@ impl Config {
         self.resolution
     }
 
+    pub fn fullscreen(&self) -> bool {
+        self.fullscreen
+    }
+
     pub fn vsync(&self) -> bool {
         self.vsync.unwrap_or(false)
     }
@@ -57,6 +63,7 @@ impl Default for Config {
     fn default() -> Self {
         Config {
             resolution: Default::default(),
+            fullscreen: false,
             vsync: Some(false),
             msaa: MsaaSamples::S1,
             env: Default::default(),

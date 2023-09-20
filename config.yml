@@ -2,6 +2,8 @@ resolution:
   width: 1024
   height: 768
 
+fullscreen: false
+
 # Enable vertical synchronization (if supported). Optional(default = false)
 vsync: true
 
