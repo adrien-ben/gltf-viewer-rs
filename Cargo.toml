@@ -1,9 +1,40 @@
 [workspace]
 members = [
     "crates/viewer",
-    "crates/libs/vulkan", 
-    "crates/libs/model", 
-    "crates/libs/math", 
-    "crates/libs/util", 
-    "crates/libs/environment"
+    "crates/libs/*"
 ]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+authors = ["Adrien Bennadji <adrien.bennadji@live.fr>"]
+
+[workspace.dependencies]
+vulkan = { path = "crates/libs/vulkan" }
+model = { path = "crates/libs/model" }
+math = { path = "crates/libs/math" }
+util = { path = "crates/libs/util" }
+environment = { path = "crates/libs/environment" }
+
+log = "0.4"
+env_logger = "0.10"
+serde = { version = "1.0", features = ["derive"] }
+serde_yaml = "0.9"
+clap = "3.1"
+imgui = "0.11"
+imgui-winit-support = "0.11"
+imgui-rs-vulkan-renderer = { version = "1.9", features = ["dynamic-rendering"] }
+cgmath = "0.18"
+rand = "0.8"
+lerp = "0.4"
+byteorder = "1.4"
+mikktspace = "0.3"
+image = "0.24"
+ash = { version = "0.37", features = ["loaded"] }
+ash-window = "0.12"
+raw-window-handle = "0.5"
+winit = "0.27"
+
+[workspace.dependencies.gltf]
+version = "1.0"
+git = "https://github.com/adrien-ben/gltf"

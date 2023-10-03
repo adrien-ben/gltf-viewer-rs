@@ -1,14 +1,12 @@
 [package]
 name = "vulkan"
-version = "0.1.0"
-authors = ["Adrien Bennadji <adrien.bennadji@live.fr>"]
-edition = "2021"
-
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
 
 [dependencies]
-log = "0.4"
-ash = { version = "0.37", features = ["loaded"] }
-ash-window = "0.12"
-raw-window-handle = "0.5"
-winit = "0.27"
+log.workspace = true
+ash.workspace = true
+ash-window.workspace = true
+raw-window-handle.workspace = true
+winit.workspace = true

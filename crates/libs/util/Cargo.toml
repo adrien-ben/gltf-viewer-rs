@@ -1,9 +1,9 @@
 [package]
 name = "util"
-version = "0.1.0"
-authors = ["Adrien Bennadji <adrien.bennadji@live.fr>"]
-edition = "2021"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
 
 [dependencies]
-log = "0.4"
-image = "0.24"
+log.workspace = true
+image.workspace = true

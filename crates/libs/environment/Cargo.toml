@@ -1,12 +1,12 @@
 [package]
 name = "environment"
-version = "0.1.0"
-authors = ["Adrien Bennadji <adrien.bennadji@live.fr>"]
-edition = "2021"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
 
 [dependencies]
-vulkan = { path = "../vulkan" }
-util = { path = "../util" }
-math = { path = "../math" }
+vulkan.workspace = true
+util.workspace = true
+math.workspace = true
 
-log = "0.4"
+log.workspace = true

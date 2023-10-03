@@ -1,20 +1,19 @@
 [package]
 name = "model"
-version = "0.1.0"
-authors = ["Adrien Bennadji <adrien.bennadji@live.fr>"]
-edition = "2021"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
 
 [dependencies]
-vulkan = { path = "../vulkan" }
-math = { path = "../math" }
+vulkan.workspace = true
+math.workspace = true
 
-log = "0.4"
-byteorder = "1.4"
-mikktspace = "0.3"
+log.workspace = true
+byteorder.workspace = true
+mikktspace.workspace = true
 
 [dependencies.gltf]
-version = "1.0"
-git = "https://github.com/adrien-ben/gltf"
+workspace = true
 features = [
     "KHR_lights_punctual", 
     "KHR_materials_unlit", 

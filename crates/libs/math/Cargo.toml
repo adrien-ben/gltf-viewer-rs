@@ -1,11 +1,11 @@
 [package]
 name = "math"
-version = "0.1.0"
-authors = ["Adrien Bennadji <adrien.bennadji@live.fr>"]
-edition = "2021"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
 
 [dependencies]
-log = "0.4"
-cgmath = "0.18"
-rand = "0.8"
-lerp = "0.4"
+log.workspace = true
+cgmath.workspace = true
+rand.workspace = true
+lerp.workspace = true
