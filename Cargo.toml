@@ -26,7 +26,7 @@ imgui-winit-support = "0.11"
 imgui-rs-vulkan-renderer = { version = "1.9", features = ["dynamic-rendering"] }
 cgmath = "0.18"
 rand = "0.8"
-lerp = "0.4"
+lerp = "0.5"
 byteorder = "1.4"
 mikktspace = "0.3"
 image = "0.24"
@@ -34,7 +34,4 @@ ash = { version = "0.37", features = ["loaded"] }
 ash-window = "0.12"
 raw-window-handle = "0.5"
 winit = "0.27"
-
-[workspace.dependencies.gltf]
-version = "1.0"
-git = "https://github.com/adrien-ben/gltf"
+gltf = "1.3"
