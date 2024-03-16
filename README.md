@@ -45,7 +45,7 @@ using [Ash][2]. It runs on Window, Linux and MacOS.
   - [x] Ambient occlusion
   - [x] Bloom
   - [ ] Depth of field
-- [x] Imgui integration
+- [x] egui integration
   - [x] Model description
   - [x] Animation controller
   - [x] Camera details

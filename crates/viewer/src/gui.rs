@@ -1,11 +1,10 @@
 use crate::camera::Camera;
 use crate::renderer::{OutputMode, RendererSettings, ToneMapMode, DEFAULT_BLOOM_STRENGTH};
-use imgui::*;
-use imgui_winit_support::{HiDpiMode, WinitPlatform};
+use egui::{ClippedPrimitive, Context, TexturesDelta, Ui, ViewportId, Widget};
+use egui_winit::State as EguiWinit;
 use model::{metadata::*, PlaybackState};
-use std::borrow::Cow;
-use std::time::Instant;
-use vulkan::winit::{event::Event, window::Window as WinitWindow};
+use vulkan::winit::event::WindowEvent;
+use vulkan::winit::window::Window as WinitWindow;
 
 const SSAO_KERNEL_SIZES: [u32; 4] = [16, 32, 64, 128];
 fn get_kernel_size_index(size: u32) -> usize {
@@ -20,10 +19,15 @@ fn get_kernel_size_index(size: u32) -> usize {
         })
 }
 
+pub struct RenderData {
+    pub pixels_per_point: f32,
+    pub textures_delta: TexturesDelta,
+    pub clipped_primitives: Vec<ClippedPrimitive>,
+}
+
 pub struct Gui {
-    context: Context,
-    winit_platform: WinitPlatform,
-    last_frame_instant: Instant,
+    egui: Context,
+    egui_winit: EguiWinit,
     model_metadata: Option<Metadata>,
     animation_playback_state: Option<PlaybackState>,
     camera: Option<Camera>,
@@ -32,12 +36,11 @@ pub struct Gui {
 
 impl Gui {
     pub fn new(window: &WinitWindow, renderer_settings: RendererSettings) -> Self {
-        let (context, winit_platform) = init_imgui(window);
+        let (egui, egui_winit) = init_egui(window);
 
         Self {
-            context,
-            winit_platform,
-            last_frame_instant: Instant::now(),
+            egui,
+            egui_winit,
             model_metadata: None,
             animation_playback_state: None,
             camera: None,
@@ -45,40 +48,25 @@ impl Gui {
         }
     }
 
-    pub fn handle_event(&mut self, window: &WinitWindow, event: &Event<()>) {
-        let io = self.context.io_mut();
-        let platform = &mut self.winit_platform;
-
-        platform.handle_event(io, window, event);
+    pub fn handle_event(&mut self, window: &WinitWindow, event: &WindowEvent) {
+        let _ = self.egui_winit.on_window_event(window, event);
     }
 
-    pub fn update_delta_time(&mut self) {
-        let io = self.context.io_mut();
-        let now = Instant::now();
-        io.update_delta_time(now - self.last_frame_instant);
-        self.last_frame_instant = now;
-    }
+    pub fn render(&mut self, window: &WinitWindow) -> RenderData {
+        let raw_input = self.egui_winit.take_egui_input(window);
 
-    pub fn prepare_frame(&mut self, window: &WinitWindow) {
-        let io = self.context.io_mut();
-        let platform = &mut self.winit_platform;
-        platform.prepare_frame(io, window).unwrap();
-    }
+        let previous_state = self.state;
 
-    pub fn render(&mut self, window: &WinitWindow) -> &DrawData {
-        let ui = self.context.frame();
-
-        {
-            let ui = &ui;
-
-            ui.window("Menu")
-                .collapsed(true, Condition::FirstUseEver)
-                .position([0.0, 0.0], Condition::Always)
-                .size([350.0, 800.0], Condition::FirstUseEver)
-                .focus_on_appearing(false)
-                .movable(false)
-                .bg_alpha(0.3)
-                .build(|| {
+        let egui::FullOutput {
+            platform_output,
+            textures_delta,
+            shapes,
+            pixels_per_point,
+            ..
+        } = self.egui.run(raw_input, |ctx: &Context| {
+            egui::Window::new("Menu")
+                .default_open(false)
+                .show(ctx, |ui| {
                     build_renderer_settings_window(ui, &mut self.state);
                     ui.separator();
                     build_camera_details_window(ui, &mut self.state, self.camera);
@@ -90,16 +78,22 @@ impl Gui {
                         self.animation_playback_state,
                     );
                 });
-            self.state.hovered = ui.is_any_item_hovered()
-                || ui.is_window_hovered_with_flags(WindowHoveredFlags::ANY_WINDOW);
+        });
+
+        self.state.check_renderer_settings_changed(&previous_state);
+
+        self.state.hovered = self.egui.is_pointer_over_area();
+
+        self.egui_winit
+            .handle_platform_output(window, platform_output);
+
+        let clipped_primitives = self.egui.tessellate(shapes, pixels_per_point);
+
+        RenderData {
+            pixels_per_point,
+            textures_delta,
+            clipped_primitives,
         }
-
-        self.winit_platform.prepare_render(&ui, window);
-        self.context.render()
-    }
-
-    pub fn get_context(&mut self) -> &mut Context {
-        &mut self.context
     }
 
     pub fn set_model_metadata(&mut self, metadata: Metadata) {
@@ -171,55 +165,39 @@ impl Gui {
     }
 }
 
-fn init_imgui(window: &WinitWindow) -> (Context, WinitPlatform) {
-    let mut imgui = Context::create();
-    imgui.set_ini_filename(None);
+fn init_egui(window: &WinitWindow) -> (Context, EguiWinit) {
+    let egui = Context::default();
+    let egui_winit = EguiWinit::new(egui.clone(), ViewportId::ROOT, &window, None, None);
 
-    let mut platform = WinitPlatform::init(&mut imgui);
-
-    let hidpi_factor = platform.hidpi_factor();
-    let font_size = (13.0 * hidpi_factor) as f32;
-    imgui.fonts().add_font(&[
-        FontSource::DefaultFontData {
-            config: Some(FontConfig {
-                size_pixels: font_size,
-                ..FontConfig::default()
-            }),
-        },
-        FontSource::TtfData {
-            data: include_bytes!("../../../assets/fonts/mplus-1p-regular.ttf"),
-            size_pixels: font_size,
-            config: Some(FontConfig {
-                rasterizer_multiply: 1.75,
-                glyph_ranges: FontGlyphRanges::default(),
-                ..FontConfig::default()
-            }),
-        },
-    ]);
-    imgui.io_mut().font_global_scale = (1.0 / hidpi_factor) as f32;
-    platform.attach_window(imgui.io_mut(), window, HiDpiMode::Rounded);
-
-    (imgui, platform)
+    (egui, egui_winit)
 }
 
 fn build_animation_player_window(
-    ui: &Ui,
+    ui: &mut Ui,
     state: &mut State,
     model_metadata: Option<&Metadata>,
     animation_playback_state: Option<PlaybackState>,
 ) {
-    if CollapsingHeader::new("Animation player").build(ui) {
-        if let Some(metadata) = model_metadata {
-            let animations_labels = metadata
-                .animations()
-                .iter()
-                .map(|a| {
-                    let name = a.name.as_ref().map_or("no name", |n| n);
-                    format!("{}: {}", a.index, name)
-                })
-                .collect::<Vec<_>>();
-            let combo_labels = animations_labels.iter().collect::<Vec<_>>();
-            ui.combo_simple_string("Animation", &mut state.selected_animation, &combo_labels);
+    egui::CollapsingHeader::new("Animation player")
+        .default_open(false)
+        .show(ui, |ui| {
+            if let Some(metadata) = model_metadata {
+                let animations_labels = metadata
+                    .animations()
+                    .iter()
+                    .map(|a| {
+                        let name = a.name.as_ref().map_or("no name", |n| n);
+                        format!("{}: {}", a.index, name)
+                    })
+                    .collect::<Vec<_>>();
+
+                egui::ComboBox::from_label("Animation").show_index(
+                    ui,
+                    &mut state.selected_animation,
+                    metadata.animation_count(),
+                    |i| animations_labels[i].clone(),
+                );
+            }
 
             if let Some(playback_state) = animation_playback_state {
                 let toggle_text = if playback_state.paused {
@@ -228,106 +206,106 @@ fn build_animation_player_window(
                     "Pause"
                 };
 
-                state.toggle_animation = ui.button(toggle_text);
-                ui.same_line();
-                state.stop_animation = ui.button("Stop");
-                ui.same_line();
-                state.reset_animation = ui.button("Reset");
-                ui.same_line();
-                ui.checkbox("Loop", &mut state.infinite_animation);
+                ui.horizontal(|ui| {
+                    state.toggle_animation = ui.button(toggle_text).clicked();
+                    state.stop_animation = ui.button("Stop").clicked();
+                    state.reset_animation = ui.button("Reset").clicked();
+                    ui.checkbox(&mut state.infinite_animation, "Loop");
+                });
 
-                ui.slider("Speed", 0.05, 3.0, &mut state.animation_speed);
-                ui.same_line();
-                if ui.button("Default") {
-                    state.animation_speed = 1.0;
-                }
+                ui.horizontal(|ui| {
+                    ui.add(egui::Slider::new(&mut state.animation_speed, 0.05..=3.0).text("Speed"));
+                    if ui.button("Default").clicked() {
+                        state.animation_speed = 1.0;
+                    }
+                });
 
                 let progress = playback_state.time / playback_state.total_time;
-                ProgressBar::new(progress).build(ui);
+                egui::ProgressBar::new(progress).ui(ui);
             }
-        }
-    }
+        });
 }
 
-fn build_camera_details_window(ui: &Ui, state: &mut State, camera: Option<Camera>) {
-    if CollapsingHeader::new("Camera").build(ui) {
-        if let Some(camera) = camera {
-            let p = camera.position();
-            let t = camera.target();
-            ui.text(format!("Position: {:.3}, {:.3}, {:.3}", p.x, p.y, p.z));
-            ui.text(format!("Target: {:.3}, {:.3}, {:.3}", t.x, t.y, t.z));
-            state.reset_camera = ui.button("Reset");
-        }
-    }
+fn build_camera_details_window(ui: &mut Ui, state: &mut State, camera: Option<Camera>) {
+    egui::CollapsingHeader::new("Camera")
+        .default_open(false)
+        .show(ui, |ui| {
+            if let Some(camera) = camera {
+                let p = camera.position();
+                let t = camera.target();
+                ui.label(format!("Position: {:.3}, {:.3}, {:.3}", p.x, p.y, p.z));
+                ui.label(format!("Target: {:.3}, {:.3}, {:.3}", t.x, t.y, t.z));
+                state.reset_camera = ui.button("Reset").clicked();
+            }
+        });
 }
 
-fn build_renderer_settings_window(ui: &Ui, state: &mut State) {
-    if CollapsingHeader::new("Renderer settings").build(ui) {
-        {
-            ui.text("Settings");
-            ui.separator();
+fn build_renderer_settings_window(ui: &mut Ui, state: &mut State) {
+    egui::CollapsingHeader::new("Renderer settings")
+        .default_open(true)
+        .show(ui, |ui| {
+            {
+                ui.heading("Settings");
+                ui.separator();
 
-            let emissive_intensity_changed = ui.slider(
-                "Emissive intensity",
-                1.0,
-                200.0,
-                &mut state.emissive_intensity,
-            );
-            state.renderer_settings_changed = emissive_intensity_changed;
-
-            let bloom_strength_changed =
-                ui.slider("Bloom strength", 0u32, 10, &mut state.bloom_strength);
-            state.renderer_settings_changed |= bloom_strength_changed;
-
-            state.renderer_settings_changed |= ui.checkbox("Enable SSAO", &mut state.ssao_enabled);
-            if state.ssao_enabled {
-                let ssao_kernel_size_changed = ui.combo(
-                    "SSAO Kernel",
-                    &mut state.ssao_kernel_size_index,
-                    &SSAO_KERNEL_SIZES,
-                    |v| Cow::Owned(format!("{} samples", v)),
+                ui.add(
+                    egui::Slider::new(&mut state.emissive_intensity, 1.0..=200.0)
+                        .text("Emissive intensity")
+                        .integer(),
                 );
-                state.renderer_settings_changed |= ssao_kernel_size_changed;
+                ui.add(
+                    egui::Slider::new(&mut state.bloom_strength, 0..=10)
+                        .text("Bloom strength")
+                        .integer(),
+                );
 
-                let ssao_radius_changed =
-                    ui.slider("SSAO Radius", 0.01, 1.0, &mut state.ssao_radius);
-                state.renderer_settings_changed |= ssao_radius_changed;
-
-                let ssao_strength_changed =
-                    ui.slider("SSAO Strength", 0.5, 5.0, &mut state.ssao_strength);
-                state.renderer_settings_changed |= ssao_strength_changed;
+                ui.checkbox(&mut state.ssao_enabled, "Enable SSAO");
+                if state.ssao_enabled {
+                    egui::ComboBox::from_label("SSAO Kernel").show_index(
+                        ui,
+                        &mut state.ssao_kernel_size_index,
+                        SSAO_KERNEL_SIZES.len(),
+                        |i| SSAO_KERNEL_SIZES[i].to_string(),
+                    );
+                    ui.add(
+                        egui::Slider::new(&mut state.ssao_radius, 0.01..=1.0).text("SSAO Radius"),
+                    );
+                    ui.add(
+                        egui::Slider::new(&mut state.ssao_strength, 0.5..=5.0)
+                            .text("SSAO Strength"),
+                    );
+                }
             }
-        }
 
-        {
-            ui.text("Post Processing");
-            ui.separator();
+            {
+                ui.heading("Post Processing");
+                ui.separator();
 
-            let tone_map_mode_changed = ui.combo(
-                "Tone Map mode",
-                &mut state.selected_tone_map_mode,
-                &ToneMapMode::all(),
-                |mode| Cow::Owned(format!("{:?}", mode)),
-            );
+                let tone_map_modes = ToneMapMode::all();
+                egui::ComboBox::from_label("Tone map mode").show_index(
+                    ui,
+                    &mut state.selected_tone_map_mode,
+                    tone_map_modes.len(),
+                    |i| format!("{:?}", tone_map_modes[i]),
+                );
+            }
 
-            state.renderer_settings_changed |= tone_map_mode_changed;
-        }
+            {
+                ui.heading("Debug");
+                ui.separator();
 
-        {
-            ui.text("Debug");
-            ui.separator();
-
-            let output_mode_changed = ui.combo(
-                "Output mode",
-                &mut state.selected_output_mode,
-                &OutputMode::all(),
-                |mode| Cow::Owned(format!("{:?}", mode)),
-            );
-            state.renderer_settings_changed |= output_mode_changed;
-        }
-    }
+                let output_modes = OutputMode::all();
+                egui::ComboBox::from_label("Output mode").show_index(
+                    ui,
+                    &mut state.selected_output_mode,
+                    output_modes.len(),
+                    |i| format!("{:?}", output_modes[i]),
+                );
+            }
+        });
 }
 
+#[derive(Clone, Copy)]
 struct State {
     selected_animation: usize,
     infinite_animation: bool,
@@ -376,6 +354,17 @@ impl State {
             ssao_enabled: self.ssao_enabled,
             ..Default::default()
         }
+    }
+
+    fn check_renderer_settings_changed(&mut self, other: &Self) {
+        self.renderer_settings_changed = self.selected_output_mode != other.selected_output_mode
+            || self.selected_tone_map_mode != other.selected_tone_map_mode
+            || self.emissive_intensity != other.emissive_intensity
+            || self.ssao_enabled != other.ssao_enabled
+            || self.ssao_radius != other.ssao_radius
+            || self.ssao_strength != other.ssao_strength
+            || self.ssao_kernel_size_index != other.ssao_kernel_size_index
+            || self.bloom_strength != other.bloom_strength;
     }
 }
 

@@ -19,9 +19,9 @@ use super::camera::{Camera, CameraUBO};
 use super::config::Config;
 use super::gui::Gui;
 use ash::{vk, Device};
+use egui::{ClippedPrimitive, TextureId};
+use egui_ash_renderer::{DynamicRendering, Options, Renderer as GuiRenderer};
 use environment::Environment;
-use imgui::{Context as GuiContext, DrawData};
-use imgui_rs_vulkan_renderer::{DynamicRendering, Options, Renderer as GuiRenderer};
 use math::cgmath::{Deg, Matrix4, SquareMatrix, Vector3};
 use model_crate::Model;
 use std::cell::RefCell;
@@ -98,7 +98,6 @@ impl Renderer {
         config: &Config,
         settings: RendererSettings,
         environment: Environment,
-        gui_context: &mut GuiContext,
     ) -> Self {
         let swapchain_support_details = SwapchainSupportDetails::new(
             context.physical_device(),
@@ -171,17 +170,14 @@ impl Renderer {
             context.instance(),
             context.physical_device(),
             context.device().clone(),
-            context.graphics_compute_queue(),
-            context.general_command_pool(),
             DynamicRendering {
                 color_attachment_format: swapchain_properties.format.format,
                 depth_attachment_format: None,
             },
-            gui_context,
-            Some(Options {
+            Options {
                 in_flight_frames: MAX_FRAMES_IN_FLIGHT as _,
                 ..Default::default()
-            }),
+            },
         )
         .expect("Failed to create gui renderer");
 
@@ -316,6 +312,24 @@ impl Renderer {
 
         unsafe { self.context.device().reset_fences(&wait_fences).unwrap() };
 
+        if !self.in_flight_frames.gui_textures_to_free.is_empty() {
+            self.gui_renderer
+                .free_textures(&self.in_flight_frames.gui_textures_to_free)
+                .unwrap();
+        }
+
+        let render_data = gui.render(window); // TODO: free textures
+
+        self.in_flight_frames.gui_textures_to_free = render_data.textures_delta.free;
+
+        self.gui_renderer
+            .set_textures(
+                self.context.graphics_compute_queue(),
+                self.context.transient_command_pool(),
+                &render_data.textures_delta.set,
+            )
+            .unwrap();
+
         // record_command_buffer
         {
             let command_buffer = self.command_buffers[image_index as usize];
@@ -340,9 +354,12 @@ impl Renderer {
                 };
             }
 
-            let draw_data = gui.render(window);
-
-            self.cmd_draw(command_buffer, frame_index, draw_data);
+            self.cmd_draw(
+                command_buffer,
+                frame_index,
+                render_data.pixels_per_point,
+                &render_data.clipped_primitives,
+            );
 
             // End command buffer
             unsafe {
@@ -412,7 +429,8 @@ impl Renderer {
         &mut self,
         command_buffer: vk::CommandBuffer,
         frame_index: usize,
-        draw_data: &DrawData,
+        pixels_per_point: f32,
+        gui_primitives: &[ClippedPrimitive],
     ) {
         if self.settings.ssao_enabled {
             // GBuffer pass
@@ -480,7 +498,7 @@ impl Renderer {
                             stencil: 0,
                         },
                     })
-                    .image_layout(vk::ImageLayout::DEPTH_ATTACHMENT_OPTIMAL)
+                    .image_layout(vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL)
                     .image_view(self.attachments.gbuffer_depth.view)
                     .load_op(vk::AttachmentLoadOp::CLEAR)
                     .store_op(vk::AttachmentStoreOp::STORE);
@@ -649,7 +667,7 @@ impl Renderer {
                             stencil: 0,
                         },
                     })
-                    .image_layout(vk::ImageLayout::DEPTH_ATTACHMENT_OPTIMAL)
+                    .image_layout(vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL)
                     .image_view(self.attachments.scene_depth.view)
                     .load_op(vk::AttachmentLoadOp::CLEAR)
                     .store_op(vk::AttachmentStoreOp::STORE);
@@ -757,7 +775,7 @@ impl Renderer {
 
             // Draw UI
             self.gui_renderer
-                .cmd_draw(command_buffer, draw_data)
+                .cmd_draw(command_buffer, extent, pixels_per_point, gui_primitives)
                 .unwrap();
 
             unsafe {
@@ -1109,6 +1127,7 @@ fn create_renderer_pipeline<V: Vertex>(
 struct InFlightFrames {
     context: Arc<Context>,
     sync_objects: Vec<SyncObjects>,
+    gui_textures_to_free: Vec<TextureId>,
     current_frame: usize,
 }
 
@@ -1117,6 +1136,7 @@ impl InFlightFrames {
         Self {
             context,
             sync_objects,
+            gui_textures_to_free: Vec::new(),
             current_frame: 0,
         }
     }

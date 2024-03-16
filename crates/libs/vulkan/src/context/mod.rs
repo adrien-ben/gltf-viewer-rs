@@ -117,6 +117,10 @@ impl Context {
     pub fn general_command_pool(&self) -> vk::CommandPool {
         self.general_command_pool
     }
+
+    pub fn transient_command_pool(&self) -> vk::CommandPool {
+        self.transient_command_pool
+    }
 }
 
 impl Context {
