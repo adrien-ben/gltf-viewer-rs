@@ -176,6 +176,7 @@ impl Renderer {
             },
             Options {
                 in_flight_frames: MAX_FRAMES_IN_FLIGHT as _,
+                srgb_framebuffer: true,
                 ..Default::default()
             },
         )

@@ -18,10 +18,9 @@ layout(push_constant) uniform Constants {
 } c;
 
 const float GAMMA = 2.2;
-const float INV_GAMMA = 1.0 / GAMMA;
 
-vec3 LINEARtoSRGB(vec3 color) {
-    return pow(color, vec3(INV_GAMMA));
+vec3 SRGBtoLINEAR(vec3 color) {
+    return pow(color, vec3(GAMMA));
 }
 
 // Uncharted 2 tone map
@@ -40,14 +39,14 @@ vec3 toneMapUncharted(vec3 color) {
     const float W = 11.2;
     color = toneMapUncharted2Impl(color * 2.0);
     vec3 whiteScale = 1.0 / toneMapUncharted2Impl(vec3(W));
-    return LINEARtoSRGB(color * whiteScale);
+    return color * whiteScale;
 }
 
 // Hejl Richard tone map
 // see: http://filmicworlds.com/blog/filmic-tonemapping-operators/
 vec3 toneMapHejlRichard(vec3 color) {
     color = max(vec3(0.0), color - vec3(0.004));
-    return (color*(6.2*color+.5))/(color*(6.2*color+1.7)+0.06);
+    return SRGBtoLINEAR((color*(6.2*color+.5))/(color*(6.2*color+1.7)+0.06));
 }
 
 // ACES tone map
@@ -58,12 +57,12 @@ vec3 toneMapACES(vec3 color) {
     const float C = 2.43;
     const float D = 0.59;
     const float E = 0.14;
-    return LINEARtoSRGB(clamp((color * (A * color + B)) / (color * (C * color + D) + E), 0.0, 1.0));
+    return clamp((color * (A * color + B)) / (color * (C * color + D) + E), 0.0, 1.0);
 }
 
 vec3 defaultToneMap(vec3 color) {
     color = color/(color + 1.0);
-    return LINEARtoSRGB(color);
+    return color;
 }
 
 void main() {
@@ -80,7 +79,7 @@ void main() {
     } else if (TONE_MAP_MODE == TONE_MAP_MODE_ACES) {
         color = toneMapACES(bloomed);
     } else {
-        color = LINEARtoSRGB(bloomed);
+        color = bloomed;
     }
 
     finalColor = vec4(color, 1.0);
