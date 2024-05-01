@@ -55,7 +55,7 @@ fn run(config: Config, enable_debug: bool, path: Option<PathBuf>) {
 
     let context = Arc::new(Context::new(&window, enable_debug));
 
-    let renderer_settings = RendererSettings::default();
+    let mut renderer_settings = RendererSettings::new(&context);
 
     let environment = Environment::new(&context, config.env().path(), config.env().resolution());
     let mut gui = Gui::new(&window, renderer_settings);
@@ -141,16 +141,33 @@ fn run(config: Config, enable_debug: bool, path: Option<PathBuf>) {
                         }
                     }
 
-                    // Update renderer settings
-                    if let Some(renderer_settings) = gui.get_new_renderer_settings() {
-                        renderer.update_settings(renderer_settings);
+                    // Check if settings changed
+                    if let Some(new_renderer_settings) = gui.get_new_renderer_settings() {
+                        // recreate swapchain if hdr was toggled
+                        if renderer_settings.hdr_enabled != new_renderer_settings.hdr_enabled {
+                            renderer.recreate_swapchain(
+                                window.inner_size().into(),
+                                config.vsync(),
+                                new_renderer_settings.hdr_enabled.unwrap_or_default(),
+                            );
+                            dirty_swapchain = false;
+                        }
+
+                        // Update renderer
+                        renderer.update_settings(new_renderer_settings);
+
+                        renderer_settings = new_renderer_settings;
                     }
 
                     // If swapchain must be recreated wait for windows to not be minimized anymore
                     if dirty_swapchain {
                         let PhysicalSize { width, height } = window.inner_size();
                         if width > 0 && height > 0 {
-                            renderer.recreate_swapchain(window.inner_size().into(), config.vsync());
+                            renderer.recreate_swapchain(
+                                window.inner_size().into(),
+                                config.vsync(),
+                                renderer_settings.hdr_enabled.unwrap_or_default(),
+                            );
                         } else {
                             return;
                         }

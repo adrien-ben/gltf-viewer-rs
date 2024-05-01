@@ -144,6 +144,7 @@ impl Gui {
     pub fn get_new_renderer_settings(&self) -> Option<RendererSettings> {
         if self.state.renderer_settings_changed {
             Some(RendererSettings {
+                hdr_enabled: self.state.hdr_enabled,
                 emissive_intensity: self.state.emissive_intensity,
                 ssao_enabled: self.state.ssao_enabled,
                 ssao_kernel_size: SSAO_KERNEL_SIZES[self.state.ssao_kernel_size_index],
@@ -248,6 +249,12 @@ fn build_renderer_settings_window(ui: &mut Ui, state: &mut State) {
                 ui.heading("Settings");
                 ui.separator();
 
+                ui.add_enabled_ui(state.hdr_enabled.is_some(), |ui| {
+                    if let Some(hdr_enabled) = state.hdr_enabled.as_mut() {
+                        ui.checkbox(hdr_enabled, "Enable HDR");
+                    }
+                });
+
                 ui.add(
                     egui::Slider::new(&mut state.emissive_intensity, 1.0..=200.0)
                         .text("Emissive intensity")
@@ -316,6 +323,7 @@ struct State {
 
     reset_camera: bool,
 
+    hdr_enabled: Option<bool>,
     selected_output_mode: usize,
     selected_tone_map_mode: usize,
     emissive_intensity: f32,
@@ -332,6 +340,7 @@ struct State {
 impl State {
     fn new(renderer_settings: RendererSettings) -> Self {
         Self {
+            hdr_enabled: renderer_settings.hdr_enabled,
             selected_output_mode: renderer_settings.output_mode as _,
             selected_tone_map_mode: renderer_settings.tone_map_mode as _,
             emissive_intensity: renderer_settings.emissive_intensity,
@@ -345,6 +354,7 @@ impl State {
 
     fn reset(&self) -> Self {
         Self {
+            hdr_enabled: self.hdr_enabled,
             selected_output_mode: self.selected_output_mode,
             selected_tone_map_mode: self.selected_tone_map_mode,
             emissive_intensity: self.emissive_intensity,
@@ -357,7 +367,8 @@ impl State {
     }
 
     fn check_renderer_settings_changed(&mut self, other: &Self) {
-        self.renderer_settings_changed = self.selected_output_mode != other.selected_output_mode
+        self.renderer_settings_changed = self.hdr_enabled != other.hdr_enabled
+            || self.selected_output_mode != other.selected_output_mode
             || self.selected_tone_map_mode != other.selected_tone_map_mode
             || self.emissive_intensity != other.emissive_intensity
             || self.ssao_enabled != other.ssao_enabled
@@ -380,6 +391,7 @@ impl Default for State {
 
             reset_camera: false,
 
+            hdr_enabled: None,
             selected_output_mode: 0,
             selected_tone_map_mode: 0,
             emissive_intensity: 1.0,

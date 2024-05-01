@@ -1,5 +1,7 @@
 mod shared;
 
+pub use self::shared::HDR_SURFACE_FORMAT;
+
 use self::shared::*;
 use crate::MsaaSamples;
 use ash::{
@@ -112,6 +114,10 @@ impl Context {
 
     pub fn synchronization2(&self) -> &Synchronization2 {
         self.shared_context.synchronization2()
+    }
+
+    pub fn has_hdr_support(&self) -> bool {
+        self.shared_context.has_hdr_support()
     }
 
     pub fn general_command_pool(&self) -> vk::CommandPool {

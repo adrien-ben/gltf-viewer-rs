@@ -46,6 +46,7 @@ pub enum RenderError {
 
 #[derive(Clone, Copy, Debug)]
 pub struct RendererSettings {
+    pub hdr_enabled: Option<bool>,
     pub emissive_intensity: f32,
     pub ssao_enabled: bool,
     pub ssao_kernel_size: u32,
@@ -56,9 +57,10 @@ pub struct RendererSettings {
     pub bloom_strength: f32,
 }
 
-impl Default for RendererSettings {
-    fn default() -> Self {
+impl RendererSettings {
+    pub fn new(context: &Context) -> Self {
         Self {
+            hdr_enabled: context.has_hdr_support().then_some(false),
             emissive_intensity: DEFAULT_EMISSIVE_INTENSITY,
             ssao_enabled: true,
             ssao_kernel_size: DEFAULT_SSAO_KERNEL_SIZE,
@@ -106,8 +108,6 @@ impl Renderer {
         );
 
         let resolution = [config.resolution().width(), config.resolution().height()];
-        let swapchain_properties =
-            swapchain_support_details.get_ideal_swapchain_properties(resolution, config.vsync());
         let depth_format = find_depth_format(&context);
         let msaa_samples = context.get_max_usable_sample_count(config.msaa());
         log::debug!(
@@ -120,6 +120,10 @@ impl Renderer {
             Arc::clone(&context),
             swapchain_support_details,
             resolution,
+            settings
+                .hdr_enabled
+                .unwrap_or_default()
+                .then_some(HDR_SURFACE_FORMAT),
             config.vsync(),
         );
 
@@ -132,7 +136,7 @@ impl Renderer {
 
         let attachments = Attachments::new(
             &context,
-            swapchain_properties.extent,
+            swapchain.properties().extent,
             depth_format,
             msaa_samples,
         );
@@ -161,7 +165,7 @@ impl Renderer {
 
         let final_pass = FinalPass::create(
             Arc::clone(&context),
-            swapchain_properties.format.format,
+            swapchain.properties().format.format,
             &attachments,
             settings,
         );
@@ -171,7 +175,7 @@ impl Renderer {
             context.physical_device(),
             context.device().clone(),
             DynamicRendering {
-                color_attachment_format: swapchain_properties.format.format,
+                color_attachment_format: swapchain.properties().format.format,
                 depth_attachment_format: None,
             },
             Options {
@@ -848,7 +852,7 @@ impl Renderer {
         }
     }
 
-    pub fn recreate_swapchain(&mut self, dimensions: [u32; 2], vsync: bool) {
+    pub fn recreate_swapchain(&mut self, dimensions: [u32; 2], vsync: bool, hdr: bool) {
         log::debug!("Recreating swapchain.");
 
         self.wait_idle_gpu();
@@ -865,6 +869,7 @@ impl Renderer {
             Arc::clone(&self.context),
             swapchain_support_details,
             dimensions,
+            hdr.then_some(HDR_SURFACE_FORMAT),
             vsync,
         );
 
@@ -920,7 +925,17 @@ impl Renderer {
         self.bloom_pass.set_attachments(&self.attachments);
 
         // Final
+        self.final_pass
+            .set_output_format(swapchain_properties.format.format);
         self.final_pass.set_attachments(&self.attachments);
+
+        // UI Renderer
+        self.gui_renderer
+            .set_dynamic_rendering(DynamicRendering {
+                color_attachment_format: dbg!(swapchain_properties.format.format),
+                depth_attachment_format: None,
+            })
+            .expect("update gui renderer");
     }
 
     pub fn update_settings(&mut self, settings: RendererSettings) {

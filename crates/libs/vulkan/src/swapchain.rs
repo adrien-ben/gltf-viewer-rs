@@ -29,12 +29,16 @@ impl Swapchain {
         context: Arc<Context>,
         swapchain_support_details: SwapchainSupportDetails,
         dimensions: [u32; 2],
+        preferred_format: Option<vk::SurfaceFormatKHR>,
         preferred_vsync: bool,
     ) -> Self {
         log::debug!("Creating swapchain.");
 
-        let properties =
-            swapchain_support_details.get_ideal_swapchain_properties(dimensions, preferred_vsync);
+        let properties = swapchain_support_details.get_ideal_swapchain_properties(
+            preferred_format,
+            dimensions,
+            preferred_vsync,
+        );
 
         let format = properties.format;
         let present_mode = properties.present_mode;
@@ -234,12 +238,13 @@ impl SwapchainSupportDetails {
         }
     }
 
-    pub fn get_ideal_swapchain_properties(
+    fn get_ideal_swapchain_properties(
         &self,
+        preferred_format: Option<vk::SurfaceFormatKHR>,
         preferred_dimensions: [u32; 2],
         preferred_vsync: bool,
     ) -> SwapchainProperties {
-        let format = Self::choose_swapchain_surface_format(&self.formats);
+        let format = Self::choose_swapchain_surface_format(&self.formats, preferred_format);
         let present_mode =
             Self::choose_swapchain_surface_present_mode(&self.present_modes, preferred_vsync);
         let extent = Self::choose_swapchain_extent(self.capabilities, preferred_dimensions);
@@ -254,11 +259,18 @@ impl SwapchainSupportDetails {
 
     /// Choose the swapchain surface format.
     ///
-    /// Will choose R8G8B8A8_SRGB/SRGB_NONLINEAR if possible or
-    /// the first available otherwise.
+    /// Will choose the preferred format or R8G8B8A8_SRGB/SRGB_NONLINEAR or
+    /// the first available.
     fn choose_swapchain_surface_format(
         available_formats: &[vk::SurfaceFormatKHR],
+        preferred_format: Option<vk::SurfaceFormatKHR>,
     ) -> vk::SurfaceFormatKHR {
+        if let Some(format) = preferred_format {
+            if available_formats.contains(&format) {
+                return format;
+            }
+        }
+
         *available_formats
             .iter()
             .find(|format| {

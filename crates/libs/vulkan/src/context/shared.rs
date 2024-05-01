@@ -13,6 +13,11 @@ use std::{
 };
 use winit::window::Window;
 
+pub const HDR_SURFACE_FORMAT: vk::SurfaceFormatKHR = vk::SurfaceFormatKHR {
+    format: vk::Format::R16G16B16A16_SFLOAT,
+    color_space: vk::ColorSpaceKHR::EXTENDED_SRGB_LINEAR_EXT,
+};
+
 pub struct SharedContext {
     _entry: Entry,
     instance: Instance,
@@ -26,6 +31,7 @@ pub struct SharedContext {
     present_queue: vk::Queue,
     dynamic_rendering: DynamicRendering,
     synchronization2: Synchronization2,
+    has_hdr_support: bool,
 }
 
 impl SharedContext {
@@ -64,6 +70,13 @@ impl SharedContext {
         let dynamic_rendering = DynamicRendering::new(&instance, &device);
         let synchronization2 = Synchronization2::new(&instance, &device);
 
+        let has_hdr_support = unsafe {
+            surface
+                .get_physical_device_surface_formats(physical_device, surface_khr)
+                .expect("failed to list physical device surface formats")
+                .contains(&HDR_SURFACE_FORMAT)
+        };
+
         Self {
             _entry: entry,
             instance,
@@ -77,6 +90,7 @@ impl SharedContext {
             present_queue,
             dynamic_rendering,
             synchronization2,
+            has_hdr_support,
         }
     }
 }
@@ -98,6 +112,9 @@ fn create_instance(entry: &Entry, window: &Window, enable_debug: bool) -> Instan
     extension_names.push(vk::KhrGetPhysicalDeviceProperties2Fn::name().as_ptr());
     if enable_debug {
         extension_names.push(DebugUtils::name().as_ptr());
+    }
+    if has_ext_colorspace_support(entry) {
+        extension_names.push(vk::ExtSwapchainColorspaceFn::name().as_ptr());
     }
 
     let instance_create_info = vk::InstanceCreateInfo::builder()
@@ -178,6 +195,17 @@ fn is_device_suitable(
         && extention_support
         && is_swapchain_adequate
         && features.sampler_anisotropy == vk::TRUE
+}
+
+fn has_ext_colorspace_support(entry: &Entry) -> bool {
+    let extension_props = entry
+        .enumerate_instance_extension_properties(None)
+        .expect("Failed to enumerate instance extention properties");
+
+    extension_props.iter().any(|ext| {
+        let name = unsafe { CStr::from_ptr(ext.extension_name.as_ptr()) };
+        vk::ExtSwapchainColorspaceFn::name() == name
+    })
 }
 
 fn check_device_extension_support(instance: &Instance, device: vk::PhysicalDevice) -> bool {
@@ -365,6 +393,10 @@ impl SharedContext {
 
     pub fn synchronization2(&self) -> &Synchronization2 {
         &self.synchronization2
+    }
+
+    pub fn has_hdr_support(&self) -> bool {
+        self.has_hdr_support
     }
 }
 

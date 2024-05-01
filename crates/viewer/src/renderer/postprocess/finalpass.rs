@@ -113,6 +113,41 @@ impl FinalPass {
             .for_each(|s| update_descriptor_set(&self.context, *s, attachments))
     }
 
+    pub fn set_output_format(&mut self, format: vk::Format) {
+        self.destroy_pipelines();
+
+        self.default_pipeline = create_pipeline(
+            &self.context,
+            format,
+            self.pipeline_layout,
+            ToneMapMode::Default,
+        );
+        self.uncharted_pipeline = create_pipeline(
+            &self.context,
+            format,
+            self.pipeline_layout,
+            ToneMapMode::Uncharted,
+        );
+        self.hejl_richard_pipeline = create_pipeline(
+            &self.context,
+            format,
+            self.pipeline_layout,
+            ToneMapMode::HejlRichard,
+        );
+        self.aces_pipeline = create_pipeline(
+            &self.context,
+            format,
+            self.pipeline_layout,
+            ToneMapMode::Aces,
+        );
+        self.none_pipeline = create_pipeline(
+            &self.context,
+            format,
+            self.pipeline_layout,
+            ToneMapMode::None,
+        );
+    }
+
     pub fn cmd_draw(&self, command_buffer: vk::CommandBuffer, quad_model: &QuadModel) {
         let device = self.context.device();
         // Bind pipeline
@@ -171,18 +206,26 @@ impl FinalPass {
         // Draw
         unsafe { device.cmd_draw_indexed(command_buffer, 6, 1, 0, 0, 1) };
     }
-}
 
-impl Drop for FinalPass {
-    fn drop(&mut self) {
-        let device = self.context.device();
+    fn destroy_pipelines(&mut self) {
         unsafe {
+            let device = self.context.device();
             device.destroy_pipeline(self.default_pipeline, None);
             device.destroy_pipeline(self.uncharted_pipeline, None);
             device.destroy_pipeline(self.hejl_richard_pipeline, None);
             device.destroy_pipeline(self.aces_pipeline, None);
             device.destroy_pipeline(self.none_pipeline, None);
-            device.destroy_pipeline_layout(self.pipeline_layout, None);
+        }
+    }
+}
+
+impl Drop for FinalPass {
+    fn drop(&mut self) {
+        self.destroy_pipelines();
+        unsafe {
+            self.context
+                .device()
+                .destroy_pipeline_layout(self.pipeline_layout, None);
         }
     }
 }
