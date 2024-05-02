@@ -12,6 +12,7 @@ const uint TONE_MAP_MODE_DEFAULT = 0;
 const uint TONE_MAP_MODE_UNCHARTED = 1;
 const uint TONE_MAP_MODE_HEJL_RICHARD = 2;
 const uint TONE_MAP_MODE_ACES = 3;
+const uint TONE_MAP_MODE_ACESREC2020 = 4;
 
 layout(push_constant) uniform Constants {
     float bloomStrength;
@@ -60,6 +61,17 @@ vec3 toneMapACES(vec3 color) {
     return clamp((color * (A * color + B)) / (color * (C * color + D) + E), 0.0, 1.0);
 }
 
+// ACES approximation for HDR
+// https://knarkowicz.wordpress.com/2016/08/31/hdr-display-first-steps/
+vec3 toneMapACESRec2020(vec3 x) {
+    float a = 15.8f;
+    float b = 2.12f;
+    float c = 1.2f;
+    float d = 5.92f;
+    float e = 1.9f;
+    return ( x * ( a * x + b ) ) / ( x * ( c * x + d ) + e );
+}
+
 vec3 defaultToneMap(vec3 color) {
     color = color/(color + 1.0);
     return color;
@@ -78,6 +90,8 @@ void main() {
         color = toneMapHejlRichard(bloomed);
     } else if (TONE_MAP_MODE == TONE_MAP_MODE_ACES) {
         color = toneMapACES(bloomed);
+    } else if(TONE_MAP_MODE == TONE_MAP_MODE_ACESREC2020) {
+        color = toneMapACESRec2020(bloomed);
     } else {
         color = bloomed;
     }

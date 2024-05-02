@@ -50,9 +50,9 @@ using [Ash][2]. It runs on Window, Linux and MacOS.
   - [x] Animation controller
   - [x] Camera details
   - [x] Renderer settings
-- [] HDR display
+- [x] HDR display
   - [x] Allow enabling HDR (if supported by the device)
-  - [] Add HDR specific tonemapping
+  - [x] Add HDR specific tonemapping
 
 ## Requirements
 

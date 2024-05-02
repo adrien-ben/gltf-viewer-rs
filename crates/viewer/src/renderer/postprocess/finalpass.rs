@@ -14,6 +14,7 @@ pub struct FinalPass {
     uncharted_pipeline: vk::Pipeline,
     hejl_richard_pipeline: vk::Pipeline,
     aces_pipeline: vk::Pipeline,
+    aces_rec_2020_pipeline: vk::Pipeline,
     none_pipeline: vk::Pipeline,
     tone_map_mode: ToneMapMode,
     bloom_strength: f32,
@@ -25,13 +26,14 @@ pub enum ToneMapMode {
     Uncharted,
     HejlRichard,
     Aces,
+    AcesRec2020,
     None,
 }
 
 impl ToneMapMode {
-    pub fn all() -> [ToneMapMode; 5] {
+    pub fn all() -> [ToneMapMode; 6] {
         use ToneMapMode::*;
-        [Default, Uncharted, HejlRichard, Aces, None]
+        [Default, Uncharted, HejlRichard, Aces, AcesRec2020, None]
     }
 
     pub fn from_value(value: usize) -> Option<Self> {
@@ -41,7 +43,8 @@ impl ToneMapMode {
             1 => Some(Uncharted),
             2 => Some(HejlRichard),
             3 => Some(Aces),
-            4 => Some(None),
+            4 => Some(AcesRec2020),
+            5 => Some(None),
             _ => Option::None,
         }
     }
@@ -76,6 +79,12 @@ impl FinalPass {
         );
         let aces_pipeline =
             create_pipeline(&context, output_format, pipeline_layout, ToneMapMode::Aces);
+        let aces_rec_2020_pipeline = create_pipeline(
+            &context,
+            output_format,
+            pipeline_layout,
+            ToneMapMode::AcesRec2020,
+        );
         let none_pipeline =
             create_pipeline(&context, output_format, pipeline_layout, ToneMapMode::None);
 
@@ -90,6 +99,7 @@ impl FinalPass {
             uncharted_pipeline,
             hejl_richard_pipeline,
             aces_pipeline,
+            aces_rec_2020_pipeline,
             none_pipeline,
             tone_map_mode,
             bloom_strength,
@@ -140,6 +150,12 @@ impl FinalPass {
             self.pipeline_layout,
             ToneMapMode::Aces,
         );
+        self.aces_rec_2020_pipeline = create_pipeline(
+            &self.context,
+            format,
+            self.pipeline_layout,
+            ToneMapMode::AcesRec2020,
+        );
         self.none_pipeline = create_pipeline(
             &self.context,
             format,
@@ -156,6 +172,7 @@ impl FinalPass {
             ToneMapMode::Uncharted => self.uncharted_pipeline,
             ToneMapMode::HejlRichard => self.hejl_richard_pipeline,
             ToneMapMode::Aces => self.aces_pipeline,
+            ToneMapMode::AcesRec2020 => self.aces_rec_2020_pipeline,
             ToneMapMode::None => self.none_pipeline,
         };
 
@@ -214,6 +231,7 @@ impl FinalPass {
             device.destroy_pipeline(self.uncharted_pipeline, None);
             device.destroy_pipeline(self.hejl_richard_pipeline, None);
             device.destroy_pipeline(self.aces_pipeline, None);
+            device.destroy_pipeline(self.aces_rec_2020_pipeline, None);
             device.destroy_pipeline(self.none_pipeline, None);
         }
     }
