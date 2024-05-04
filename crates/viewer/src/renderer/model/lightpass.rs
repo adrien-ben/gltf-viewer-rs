@@ -4,6 +4,7 @@ use crate::renderer::{create_renderer_pipeline, RendererPipelineParameters, Rend
 use environment::*;
 use math::cgmath::Matrix4;
 use model::{Model, ModelVertex, Primitive, Texture, Workflow};
+use std::mem::offset_of;
 use std::{mem::size_of, sync::Arc};
 use util::*;
 use vulkan::ash::{vk, Device};
@@ -37,6 +38,7 @@ pub struct LightPass {
     pipeline_layout: vk::PipelineLayout,
     opaque_pipeline: vk::Pipeline,
     opaque_unculled_pipeline: vk::Pipeline,
+    opaque_transparent_pipeline: vk::Pipeline,
     transparent_pipeline: vk::Pipeline,
     output_mode: OutputMode,
     emissive_intensity: f32,
@@ -94,6 +96,18 @@ struct ConfigUniform {
     emissive_intensity: f32,
 }
 
+#[derive(Debug, Clone, Copy)]
+enum Pass {
+    /// Opaque geometry only, will discard masked fragments.
+    Opaque = 0,
+    /// Transparent geometry but non opaque pixels will be discarded.
+    /// It seems required for some models whose materials are BLEND but
+    /// alpha is actually 1.0.
+    OpaqueTransparent,
+    /// Actually transparent gerometry, opaque fragments will be discarded.
+    Transparent,
+}
+
 impl LightPass {
     pub fn create(
         context: Arc<Context>,
@@ -128,11 +142,32 @@ impl LightPass {
         );
 
         let pipeline_layout = create_pipeline_layout(context.device(), &descriptors);
-        let opaque_pipeline =
-            create_opaque_pipeline(&context, msaa_samples, true, depth_format, pipeline_layout);
+        let opaque_pipeline = create_opaque_pipeline(
+            &context,
+            Pass::Opaque,
+            msaa_samples,
+            true,
+            depth_format,
+            pipeline_layout,
+        );
 
-        let opaque_unculled_pipeline =
-            create_opaque_pipeline(&context, msaa_samples, false, depth_format, pipeline_layout);
+        let opaque_unculled_pipeline = create_opaque_pipeline(
+            &context,
+            Pass::Opaque,
+            msaa_samples,
+            false,
+            depth_format,
+            pipeline_layout,
+        );
+
+        let opaque_transparent_pipeline = create_opaque_pipeline(
+            &context,
+            Pass::OpaqueTransparent,
+            msaa_samples,
+            false,
+            depth_format,
+            pipeline_layout,
+        );
 
         let transparent_pipeline = create_transparent_pipeline(
             &context,
@@ -149,6 +184,7 @@ impl LightPass {
             pipeline_layout,
             opaque_pipeline,
             opaque_unculled_pipeline,
+            opaque_transparent_pipeline,
             transparent_pipeline,
             output_mode: settings.output_mode,
             emissive_intensity: settings.emissive_intensity,
@@ -214,15 +250,6 @@ impl LightPass {
             .expect("Cannot register draw commands because model was dropped");
         let model = model.borrow();
 
-        // Bind opaque pipeline
-        unsafe {
-            device.cmd_bind_pipeline(
-                command_buffer,
-                vk::PipelineBindPoint::GRAPHICS,
-                self.opaque_pipeline,
-            )
-        };
-
         // Bind static data
         unsafe {
             device.cmd_bind_descriptor_sets(
@@ -248,11 +275,19 @@ impl LightPass {
         };
 
         // Draw opaque primitives
+        unsafe {
+            device.cmd_bind_pipeline(
+                command_buffer,
+                vk::PipelineBindPoint::GRAPHICS,
+                self.opaque_pipeline,
+            )
+        };
+
         self.register_model_draw_commands(command_buffer, frame_index, &model, |p| {
             !p.material().is_transparent() && !p.material().is_double_sided()
         });
 
-        // Bind opaque without culling pipeline
+        // Draw opaque, double sided primitives
         unsafe {
             device.cmd_bind_pipeline(
                 command_buffer,
@@ -261,12 +296,24 @@ impl LightPass {
             )
         };
 
-        // Draw opaque, double sided primitives
         self.register_model_draw_commands(command_buffer, frame_index, &model, |p| {
             !p.material().is_transparent() && p.material().is_double_sided()
         });
 
-        // Bind transparent pipeline
+        // Draw opaque transparent
+        unsafe {
+            device.cmd_bind_pipeline(
+                command_buffer,
+                vk::PipelineBindPoint::GRAPHICS,
+                self.opaque_transparent_pipeline,
+            )
+        };
+
+        self.register_model_draw_commands(command_buffer, frame_index, &model, |p| {
+            p.material().is_transparent()
+        });
+
+        // Draw transparent primitives
         unsafe {
             device.cmd_bind_pipeline(
                 command_buffer,
@@ -274,7 +321,7 @@ impl LightPass {
                 self.transparent_pipeline,
             )
         };
-        // Draw transparent primitives
+
         self.register_model_draw_commands(command_buffer, frame_index, &model, |p| {
             p.material().is_transparent()
         });
@@ -419,6 +466,7 @@ impl Drop for LightPass {
         unsafe {
             device.destroy_pipeline(self.opaque_pipeline, None);
             device.destroy_pipeline(self.opaque_unculled_pipeline, None);
+            device.destroy_pipeline(self.opaque_transparent_pipeline, None);
             device.destroy_pipeline(self.transparent_pipeline, None);
             device.destroy_pipeline_layout(self.pipeline_layout, None);
         }
@@ -1007,12 +1055,13 @@ fn create_pipeline_layout(device: &Device, descriptors: &Descriptors) -> vk::Pip
 
 fn create_opaque_pipeline(
     context: &Arc<Context>,
+    pass: Pass,
     msaa_samples: vk::SampleCountFlags,
     enable_face_culling: bool,
     depth_format: vk::Format,
     layout: vk::PipelineLayout,
 ) -> vk::Pipeline {
-    let (specialization_info, _map_entries, _data) = create_model_frag_shader_specialization();
+    let (specialization_info, _map_entries, _data) = create_model_frag_shader_specialization(pass);
 
     let depth_stencil_info = vk::PipelineDepthStencilStateCreateInfo::builder()
         .depth_test_enable(true)
@@ -1067,7 +1116,8 @@ fn create_transparent_pipeline(
     layout: vk::PipelineLayout,
     parent: vk::Pipeline,
 ) -> vk::Pipeline {
-    let (specialization_info, _map_entries, _data) = create_model_frag_shader_specialization();
+    let (specialization_info, _map_entries, _data) =
+        create_model_frag_shader_specialization(Pass::Transparent);
 
     let depth_stencil_info = vk::PipelineDepthStencilStateCreateInfo::builder()
         .depth_test_enable(true)
@@ -1115,7 +1165,9 @@ fn create_transparent_pipeline(
     )
 }
 
-fn create_model_frag_shader_specialization() -> (
+fn create_model_frag_shader_specialization(
+    pass: Pass,
+) -> (
     vk::SpecializationInfo,
     Vec<vk::SpecializationMapEntry>,
     Vec<u8>,
@@ -1123,25 +1175,41 @@ fn create_model_frag_shader_specialization() -> (
     let map_entries = vec![
         vk::SpecializationMapEntry {
             constant_id: 0,
-            offset: 0,
+            offset: offset_of!(ModelShaderConstants, max_light_count) as _,
             size: size_of::<u32>(),
         },
         vk::SpecializationMapEntry {
             constant_id: 1,
-            offset: size_of::<u32>() as _,
+            offset: offset_of!(ModelShaderConstants, max_reflection_lod) as _,
+            size: size_of::<u32>(),
+        },
+        vk::SpecializationMapEntry {
+            constant_id: 2,
+            offset: offset_of!(ModelShaderConstants, pass) as _,
             size: size_of::<u32>(),
         },
     ];
 
     let max_reflection_lod = (PRE_FILTERED_MAP_SIZE as f32).log2().floor() as u32;
+    let constants = ModelShaderConstants {
+        max_light_count: MAX_LIGHT_COUNT,
+        max_reflection_lod,
+        pass: pass as _,
+    };
 
-    let data = [MAX_LIGHT_COUNT, max_reflection_lod];
-    let data = Vec::from(unsafe { any_as_u8_slice(&data) });
-
+    let data = Vec::from(unsafe { any_as_u8_slice(&constants) });
     let specialization_info = vk::SpecializationInfo::builder()
         .map_entries(&map_entries)
         .data(&data)
         .build();
 
     (specialization_info, map_entries, data)
+}
+
+#[derive(Debug, Clone, Copy)]
+#[repr(C)]
+struct ModelShaderConstants {
+    max_light_count: u32,
+    max_reflection_lod: u32,
+    pass: u32,
 }

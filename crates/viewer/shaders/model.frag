@@ -3,6 +3,11 @@
 // -- Constants --
 layout(constant_id = 0) const uint MAX_LIGHT_COUNT = 1;
 layout(constant_id = 1) const uint MAX_REFLECTION_LOD = 1;
+layout(constant_id = 2) const uint PASS = 0;
+
+const uint PASS_OPAQUE = 0;
+const uint PASS_OPAQUE_TRANSPARENT = 1;
+const uint PASS_TRANSPARENT = 2;
 
 const uint OUTPUT_MODE_FINAL = 0;
 const uint OUTPUT_MODE_COLOR = 1;
@@ -250,7 +255,23 @@ uint getAlphaMode() {
 }
 
 bool isMasked(vec4 baseColor) {
-    return getAlphaMode() == ALPHA_MODE_MASK && baseColor.a + ALPHA_CUTOFF_BIAS < material.alphaCutoff;
+    // discard masked fragments
+    if (PASS == PASS_OPAQUE) {
+        return getAlphaMode() == ALPHA_MODE_MASK && baseColor.a + ALPHA_CUTOFF_BIAS < material.alphaCutoff;
+    }
+
+    // discard non opaque fragment
+    if (PASS == PASS_OPAQUE_TRANSPARENT) {
+        return baseColor.a < (1.0 - ALPHA_CUTOFF_BIAS);
+    }
+
+    // discard opaque fragments
+    if (PASS == PASS_TRANSPARENT) {
+        return baseColor.a > (1.0 - ALPHA_CUTOFF_BIAS);
+    }
+
+    // no supposed to happen, so discard so it is noticable if it ever does
+    return true;
 }
 
 float getAlpha(vec4 baseColor) {
