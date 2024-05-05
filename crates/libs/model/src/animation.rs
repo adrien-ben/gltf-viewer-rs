@@ -315,7 +315,7 @@ pub fn load_animations(gltf_animations: GltfAnimations, data: &[Data]) -> Option
     let animations = gltf_animations
         .map(|a| map_animation(&a, data))
         .collect::<Vec<_>>();
-    let total_time = animations.get(0).map_or(0.0, |a| a.total_time);
+    let total_time = animations.first().map_or(0.0, |a| a.total_time);
 
     Some(Animations {
         animations,

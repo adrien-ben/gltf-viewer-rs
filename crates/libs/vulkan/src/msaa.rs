@@ -1,5 +1,6 @@
-#[derive(Copy, Clone, Debug, PartialOrd, PartialEq, Eq)]
+#[derive(Copy, Clone, Debug, PartialOrd, PartialEq, Eq, Default)]
 pub enum MsaaSamples {
+    #[default]
     S1,
     S2,
     S4,
@@ -7,10 +8,4 @@ pub enum MsaaSamples {
     S16,
     S32,
     S64,
-}
-
-impl Default for MsaaSamples {
-    fn default() -> Self {
-        MsaaSamples::S1
-    }
 }

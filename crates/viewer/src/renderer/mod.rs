@@ -810,7 +810,7 @@ impl Renderer {
         let ao_map = self
             .settings
             .ssao_enabled
-            .then(|| &self.attachments.ssao_blur);
+            .then_some(&self.attachments.ssao_blur);
 
         if let Some(model_renderer) = self.model_renderer.as_mut() {
             model_renderer
@@ -992,7 +992,7 @@ impl Renderer {
         if self.settings.ssao_enabled != enable {
             self.settings.ssao_enabled = enable;
             if let Some(renderer) = self.model_renderer.as_mut() {
-                let ao_map = enable.then(|| &self.attachments.ssao_blur);
+                let ao_map = enable.then_some(&self.attachments.ssao_blur);
                 renderer.light_pass.set_ao_map(ao_map);
             }
         }

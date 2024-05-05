@@ -132,8 +132,8 @@ impl Orbital {
         // Rotation
         if input.is_left_clicked() {
             let delta = input.cursor_delta();
-            let theta = delta[0] as f32 * ROTATION_SPEED_DEG.to_radians();
-            let phi = delta[1] as f32 * ROTATION_SPEED_DEG.to_radians();
+            let theta = delta[0] * ROTATION_SPEED_DEG.to_radians();
+            let phi = delta[1] * ROTATION_SPEED_DEG.to_radians();
             self.rotate(theta, phi);
         }
 

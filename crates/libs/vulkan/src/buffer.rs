@@ -3,7 +3,7 @@ use ash::vk;
 use std::{
     ffi::c_void,
     marker::{Send, Sync},
-    mem::size_of,
+    mem::size_of_val,
     sync::Arc,
 };
 
@@ -170,7 +170,7 @@ pub fn cmd_create_device_local_buffer_with_data<A, T: Copy>(
     usage: vk::BufferUsageFlags,
     data: &[T],
 ) -> (Buffer, Buffer) {
-    let size = (data.len() * size_of::<T>()) as vk::DeviceSize;
+    let size = size_of_val(data) as vk::DeviceSize;
     let staging_buffer =
         create_host_visible_buffer(context, vk::BufferUsageFlags::TRANSFER_SRC, data);
     let buffer = Buffer::create(
@@ -190,7 +190,7 @@ pub fn create_host_visible_buffer<T: Copy>(
     usage: vk::BufferUsageFlags,
     data: &[T],
 ) -> Buffer {
-    let size = (data.len() * size_of::<T>()) as vk::DeviceSize;
+    let size = size_of_val(data) as vk::DeviceSize;
     let mut buffer = Buffer::create(
         Arc::clone(context),
         size,

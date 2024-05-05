@@ -1,6 +1,6 @@
 use super::{buffer::*, context::*, image::*, util::*};
 use ash::vk;
-use std::{mem::size_of, sync::Arc};
+use std::{mem::size_of_val, sync::Arc};
 
 pub struct Texture {
     context: Arc<Context>,
@@ -66,7 +66,7 @@ impl Texture {
     ) -> (Self, Buffer) {
         let max_mip_levels = ((width.min(height) as f32).log2().floor() + 1.0) as u32;
         let extent = vk::Extent2D { width, height };
-        let image_size = (data.len() * size_of::<u8>()) as vk::DeviceSize;
+        let image_size = size_of_val(data) as vk::DeviceSize;
         let device = context.device();
 
         let mut buffer = Buffer::create(
@@ -81,9 +81,11 @@ impl Texture {
             mem_copy(ptr, data);
         }
 
-        let format = linear
-            .then_some(vk::Format::R8G8B8A8_UNORM)
-            .unwrap_or(vk::Format::R8G8B8A8_SRGB);
+        let format = if linear {
+            vk::Format::R8G8B8A8_UNORM
+        } else {
+            vk::Format::R8G8B8A8_SRGB
+        };
 
         let image = Image::create(
             Arc::clone(context),
@@ -159,7 +161,7 @@ impl Texture {
             1
         };
         let extent = vk::Extent2D { width, height };
-        let image_size = (data.len() * size_of::<f32>()) as vk::DeviceSize;
+        let image_size = size_of_val(data) as vk::DeviceSize;
         let device = context.device();
 
         let mut buffer = Buffer::create(

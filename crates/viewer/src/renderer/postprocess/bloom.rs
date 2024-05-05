@@ -183,7 +183,7 @@ impl BloomPass {
 
             // Bind descriptor sets
             unsafe {
-                let set_index = output_mip as usize;
+                let set_index = output_mip;
                 device.cmd_bind_descriptor_sets(
                     command_buffer,
                     vk::PipelineBindPoint::GRAPHICS,
@@ -329,7 +329,7 @@ impl BloomPass {
 
             // Bind descriptor sets
             unsafe {
-                let set_index = 1 + input_mip as usize;
+                let set_index = 1 + input_mip;
                 device.cmd_bind_descriptor_sets(
                     command_buffer,
                     vk::PipelineBindPoint::GRAPHICS,
