@@ -1,8 +1,9 @@
 use crate::camera::Camera;
 use crate::renderer::{OutputMode, RendererSettings, ToneMapMode, DEFAULT_BLOOM_STRENGTH};
-use crate::DEFAULT_FPS_MOVE_SPEED;
+use crate::{DEFAULT_FOV, DEFAULT_FPS_MOVE_SPEED, DEFAULT_Z_FAR, DEFAULT_Z_NEAR};
 use egui::{ClippedPrimitive, Context, TexturesDelta, Ui, ViewportId, Widget};
 use egui_winit::State as EguiWinit;
+use math::cgmath::Deg;
 use model::{metadata::*, PlaybackState};
 use vulkan::winit::event::WindowEvent;
 use vulkan::winit::window::Window as WinitWindow;
@@ -142,6 +143,18 @@ impl Gui {
         self.state.camera_mode
     }
 
+    pub fn camera_fov(&self) -> Deg<f32> {
+        Deg(self.state.camera_fov)
+    }
+
+    pub fn camera_z_near(&self) -> f32 {
+        self.state.camera_z_near
+    }
+
+    pub fn camera_z_far(&self) -> f32 {
+        self.state.camera_z_far
+    }
+
     pub fn camera_move_speed(&self) -> f32 {
         self.state.camera_move_speed
     }
@@ -247,14 +260,37 @@ fn build_camera_details_window(ui: &mut Ui, state: &mut State, camera: Option<Ca
                 });
 
                 if let CameraMode::Fps = state.camera_mode {
-                    ui.add(egui::Slider::new(&mut state.camera_move_speed, 1.0..=10.0));
+                    ui.add(
+                        egui::Slider::new(&mut state.camera_move_speed, 1.0..=10.0)
+                            .text("Move speed"),
+                    );
                 }
+
+                ui.add(egui::Slider::new(&mut state.camera_fov, 30.0..=90.0).text("FOV"));
+                ui.add(
+                    egui::Slider::new(&mut state.camera_z_near, 0.01..=10.0)
+                        .text("Near plane")
+                        .logarithmic(true)
+                        .max_decimals(2),
+                );
+                ui.add(
+                    egui::Slider::new(&mut state.camera_z_far, 10.0..=1000.0)
+                        .text("Far plane")
+                        .logarithmic(true),
+                );
 
                 let p = camera.position();
                 let t = camera.target();
                 ui.label(format!("Position: {:.3}, {:.3}, {:.3}", p.x, p.y, p.z));
                 ui.label(format!("Target: {:.3}, {:.3}, {:.3}", t.x, t.y, t.z));
+
                 state.reset_camera = ui.button("Reset").clicked();
+                if state.reset_camera {
+                    state.camera_fov = DEFAULT_FOV;
+                    state.camera_z_near = DEFAULT_Z_NEAR;
+                    state.camera_z_far = DEFAULT_Z_FAR;
+                    state.camera_move_speed = DEFAULT_FPS_MOVE_SPEED;
+                }
             }
         });
 }
@@ -341,6 +377,9 @@ struct State {
 
     camera_mode: CameraMode,
     camera_move_speed: f32,
+    camera_fov: f32,
+    camera_z_near: f32,
+    camera_z_far: f32,
     reset_camera: bool,
 
     hdr_enabled: Option<bool>,
@@ -383,7 +422,6 @@ impl State {
             ssao_kernel_size_index: self.ssao_kernel_size_index,
             ssao_enabled: self.ssao_enabled,
             camera_mode: self.camera_mode,
-            camera_move_speed: self.camera_move_speed,
             ..Default::default()
         }
     }
@@ -413,6 +451,9 @@ impl Default for State {
 
             camera_mode: CameraMode::Orbital,
             camera_move_speed: DEFAULT_FPS_MOVE_SPEED,
+            camera_fov: DEFAULT_FOV,
+            camera_z_near: DEFAULT_Z_NEAR,
+            camera_z_far: DEFAULT_Z_FAR,
             reset_camera: false,
 
             hdr_enabled: None,

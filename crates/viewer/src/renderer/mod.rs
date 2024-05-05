@@ -22,7 +22,7 @@ use ash::{vk, Device};
 use egui::{ClippedPrimitive, TextureId};
 use egui_ash_renderer::{DynamicRendering, Options, Renderer as GuiRenderer};
 use environment::Environment;
-use math::cgmath::{Deg, Matrix4, SquareMatrix, Vector3};
+use math::cgmath::{Matrix4, SquareMatrix, Vector3};
 use model_crate::Model;
 use std::cell::RefCell;
 use std::mem::size_of;
@@ -1030,12 +1030,13 @@ impl Renderer {
                 Vector3::new(0.0, 1.0, 0.0),
             );
 
-            const Z_NEAR: f32 = 0.01;
-            const Z_FAR: f32 = 100.0;
-            let proj = math::perspective(Deg(45.0), aspect, Z_NEAR, Z_FAR);
+            let z_near = camera.z_near;
+            let z_far = camera.z_far;
+
+            let proj = math::perspective(camera.fov, aspect, z_near, z_far);
             let inverted_proj = proj.invert().unwrap();
 
-            let ubo = CameraUBO::new(view, proj, inverted_proj, camera.position(), Z_NEAR, Z_FAR);
+            let ubo = CameraUBO::new(view, proj, inverted_proj, camera.position(), z_near, z_far);
             let buffer = &mut self.camera_uniform_buffers[frame_index];
             unsafe {
                 let data_ptr = buffer.map_memory();

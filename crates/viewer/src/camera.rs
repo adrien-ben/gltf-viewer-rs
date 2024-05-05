@@ -1,5 +1,5 @@
 use crate::controls::*;
-use math::cgmath::{InnerSpace, Matrix3, Matrix4, Point3, Rad, Vector3, Zero};
+use math::cgmath::{Deg, InnerSpace, Matrix3, Matrix4, Point3, Rad, Vector3, Zero};
 use math::clamp;
 
 const MIN_ORBITAL_CAMERA_DISTANCE: f32 = 0.5;
@@ -7,13 +7,37 @@ const TARGET_MOVEMENT_SPEED: f32 = 0.003;
 const ROTATION_SPEED_DEG: f32 = 0.4;
 pub const DEFAULT_FPS_MOVE_SPEED: f32 = 6.0;
 
+pub const DEFAULT_FOV: f32 = 45.0;
+pub const DEFAULT_Z_NEAR: f32 = 0.01;
+pub const DEFAULT_Z_FAR: f32 = 100.0;
+
 #[derive(Debug, Clone, Copy)]
-pub enum Camera {
+
+pub struct Camera {
+    mode: Mode,
+    pub fov: Deg<f32>,
+    pub z_near: f32,
+    pub z_far: f32,
+}
+
+impl Default for Camera {
+    fn default() -> Self {
+        Self {
+            mode: Default::default(),
+            fov: Deg(DEFAULT_FOV),
+            z_near: DEFAULT_Z_NEAR,
+            z_far: DEFAULT_Z_FAR,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+enum Mode {
     Orbital(Orbital),
     Fps(Fps),
 }
 
-impl Default for Camera {
+impl Default for Mode {
     fn default() -> Self {
         Self::Orbital(Default::default())
     }
@@ -21,49 +45,51 @@ impl Default for Camera {
 
 impl Camera {
     pub fn update(&mut self, input: &InputState, delta_time_secs: f32) {
-        match self {
-            Self::Orbital(c) => c.update(input, delta_time_secs),
-            Self::Fps(c) => c.update(input, delta_time_secs),
+        match &mut self.mode {
+            Mode::Orbital(c) => c.update(input, delta_time_secs),
+            Mode::Fps(c) => c.update(input, delta_time_secs),
         }
     }
 
     pub fn position(&self) -> Point3<f32> {
-        match self {
-            Self::Orbital(c) => c.position(),
-            Self::Fps(c) => c.position(),
+        match self.mode {
+            Mode::Orbital(c) => c.position(),
+            Mode::Fps(c) => c.position(),
         }
     }
 
     pub fn target(&self) -> Point3<f32> {
-        match self {
-            Self::Orbital(c) => c.target(),
-            Self::Fps(c) => c.target(),
+        match self.mode {
+            Mode::Orbital(c) => c.target(),
+            Mode::Fps(c) => c.target(),
         }
     }
 
     pub fn to_orbital(self) -> Self {
-        match self {
-            Self::Orbital(_) => self,
-            Self::Fps(c) => Self::Orbital(c.into()),
-        }
+        let mode = match self.mode {
+            Mode::Orbital(_) => self.mode,
+            Mode::Fps(c) => Mode::Orbital(c.into()),
+        };
+        Self { mode, ..self }
     }
 
     pub fn to_fps(self) -> Self {
-        match self {
-            Self::Fps(_) => self,
-            Self::Orbital(c) => Self::Fps(c.into()),
-        }
+        let mode = match self.mode {
+            Mode::Fps(_) => self.mode,
+            Mode::Orbital(c) => Mode::Fps(c.into()),
+        };
+        Self { mode, ..self }
     }
 
     pub fn set_move_speed(&mut self, move_speed: f32) {
-        if let Self::Fps(c) = self {
+        if let Mode::Fps(c) = &mut self.mode {
             c.move_speed = move_speed;
         }
     }
 }
 
 #[derive(Debug, Clone, Copy)]
-pub struct Orbital {
+struct Orbital {
     theta: f32,
     phi: f32,
     r: f32,
@@ -158,7 +184,7 @@ impl Orbital {
 }
 
 #[derive(Debug, Clone, Copy)]
-pub struct Fps {
+struct Fps {
     position: Point3<f32>,
     direction: Vector3<f32>,
     move_speed: f32,

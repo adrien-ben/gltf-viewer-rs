@@ -140,6 +140,9 @@ fn run(config: Config, enable_debug: bool, path: Option<PathBuf>) {
                             gui::CameraMode::Fps => camera.to_fps(),
                         };
 
+                        camera.fov = gui.camera_fov();
+                        camera.z_near = gui.camera_z_near();
+                        camera.z_far = gui.camera_z_far();
                         camera.set_move_speed(gui.camera_move_speed());
 
                         if !gui.is_hovered() {
