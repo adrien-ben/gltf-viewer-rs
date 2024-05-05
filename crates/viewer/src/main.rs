@@ -89,7 +89,7 @@ fn run(config: Config, enable_debug: bool, path: Option<PathBuf>) {
                 // End of event processing
                 Event::AboutToWait => {
                     let new_time = Instant::now();
-                    let delta_s = (new_time - time).as_secs_f64();
+                    let delta_s = (new_time - time).as_secs_f32();
                     time = new_time;
 
                     // Load new model
@@ -125,7 +125,7 @@ fn run(config: Config, enable_debug: bool, path: Option<PathBuf>) {
                         }
                         gui.set_animation_playback_state(model.get_animation_playback_state());
 
-                        let delta_s = delta_s as f32 * gui.get_animation_speed();
+                        let delta_s = delta_s * gui.get_animation_speed();
                         model.update(delta_s);
                     }
 
@@ -135,8 +135,15 @@ fn run(config: Config, enable_debug: bool, path: Option<PathBuf>) {
                             camera = Default::default();
                         }
 
+                        camera = match gui.camera_mode() {
+                            gui::CameraMode::Orbital => camera.to_orbital(),
+                            gui::CameraMode::Fps => camera.to_fps(),
+                        };
+
+                        camera.set_move_speed(gui.camera_move_speed());
+
                         if !gui.is_hovered() {
-                            camera.update(&input_state);
+                            camera.update(&input_state, delta_s);
                             gui.set_camera(Some(camera));
                         }
                     }
@@ -188,8 +195,7 @@ fn run(config: Config, enable_debug: bool, path: Option<PathBuf>) {
                             loader.load(path);
                         }
                         // Resizing
-                        WindowEvent::Resized(new_size) => {
-                            log::debug!("Window was resized. New size is {:?}", new_size);
+                        WindowEvent::Resized(_) => {
                             dirty_swapchain = true;
                         }
                         // Exit

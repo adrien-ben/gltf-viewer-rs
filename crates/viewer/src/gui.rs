@@ -1,5 +1,6 @@
 use crate::camera::Camera;
 use crate::renderer::{OutputMode, RendererSettings, ToneMapMode, DEFAULT_BLOOM_STRENGTH};
+use crate::DEFAULT_FPS_MOVE_SPEED;
 use egui::{ClippedPrimitive, Context, TexturesDelta, Ui, ViewportId, Widget};
 use egui_winit::State as EguiWinit;
 use model::{metadata::*, PlaybackState};
@@ -137,6 +138,14 @@ impl Gui {
         self.state.animation_speed
     }
 
+    pub fn camera_mode(&self) -> CameraMode {
+        self.state.camera_mode
+    }
+
+    pub fn camera_move_speed(&self) -> f32 {
+        self.state.camera_move_speed
+    }
+
     pub fn should_reset_camera(&self) -> bool {
         self.state.reset_camera
     }
@@ -232,6 +241,15 @@ fn build_camera_details_window(ui: &mut Ui, state: &mut State, camera: Option<Ca
         .default_open(false)
         .show(ui, |ui| {
             if let Some(camera) = camera {
+                ui.horizontal(|ui| {
+                    ui.radio_value(&mut state.camera_mode, CameraMode::Orbital, "Orbital");
+                    ui.radio_value(&mut state.camera_mode, CameraMode::Fps, "Fps");
+                });
+
+                if let CameraMode::Fps = state.camera_mode {
+                    ui.add(egui::Slider::new(&mut state.camera_move_speed, 1.0..=10.0));
+                }
+
                 let p = camera.position();
                 let t = camera.target();
                 ui.label(format!("Position: {:.3}, {:.3}, {:.3}", p.x, p.y, p.z));
@@ -321,6 +339,8 @@ struct State {
     stop_animation: bool,
     animation_speed: f32,
 
+    camera_mode: CameraMode,
+    camera_move_speed: f32,
     reset_camera: bool,
 
     hdr_enabled: Option<bool>,
@@ -362,6 +382,8 @@ impl State {
             ssao_strength: self.ssao_strength,
             ssao_kernel_size_index: self.ssao_kernel_size_index,
             ssao_enabled: self.ssao_enabled,
+            camera_mode: self.camera_mode,
+            camera_move_speed: self.camera_move_speed,
             ..Default::default()
         }
     }
@@ -389,6 +411,8 @@ impl Default for State {
             stop_animation: false,
             animation_speed: 1.0,
 
+            camera_mode: CameraMode::Orbital,
+            camera_move_speed: DEFAULT_FPS_MOVE_SPEED,
             reset_camera: false,
 
             hdr_enabled: None,
@@ -405,4 +429,10 @@ impl Default for State {
             hovered: false,
         }
     }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum CameraMode {
+    Orbital,
+    Fps,
 }

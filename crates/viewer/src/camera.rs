@@ -1,39 +1,113 @@
 use crate::controls::*;
-use math::cgmath::{InnerSpace, Matrix4, Point3, Vector3};
+use math::cgmath::{InnerSpace, Matrix3, Matrix4, Point3, Rad, Vector3, Zero};
 use math::clamp;
 
 const MIN_ORBITAL_CAMERA_DISTANCE: f32 = 0.5;
 const TARGET_MOVEMENT_SPEED: f32 = 0.003;
+const ROTATION_SPEED_DEG: f32 = 0.4;
+pub const DEFAULT_FPS_MOVE_SPEED: f32 = 6.0;
 
-#[derive(Clone, Copy)]
-pub struct Camera {
+#[derive(Debug, Clone, Copy)]
+pub enum Camera {
+    Orbital(Orbital),
+    Fps(Fps),
+}
+
+impl Default for Camera {
+    fn default() -> Self {
+        Self::Orbital(Default::default())
+    }
+}
+
+impl Camera {
+    pub fn update(&mut self, input: &InputState, delta_time_secs: f32) {
+        match self {
+            Self::Orbital(c) => c.update(input, delta_time_secs),
+            Self::Fps(c) => c.update(input, delta_time_secs),
+        }
+    }
+
+    pub fn position(&self) -> Point3<f32> {
+        match self {
+            Self::Orbital(c) => c.position(),
+            Self::Fps(c) => c.position(),
+        }
+    }
+
+    pub fn target(&self) -> Point3<f32> {
+        match self {
+            Self::Orbital(c) => c.target(),
+            Self::Fps(c) => c.target(),
+        }
+    }
+
+    pub fn to_orbital(self) -> Self {
+        match self {
+            Self::Orbital(_) => self,
+            Self::Fps(c) => Self::Orbital(c.into()),
+        }
+    }
+
+    pub fn to_fps(self) -> Self {
+        match self {
+            Self::Fps(_) => self,
+            Self::Orbital(c) => Self::Fps(c.into()),
+        }
+    }
+
+    pub fn set_move_speed(&mut self, move_speed: f32) {
+        if let Self::Fps(c) = self {
+            c.move_speed = move_speed;
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct Orbital {
     theta: f32,
     phi: f32,
     r: f32,
     target: Point3<f32>,
 }
 
-impl Camera {
-    pub fn position(&self) -> Point3<f32> {
-        Point3::new(
-            self.target[0] + self.r * self.phi.sin() * self.theta.sin(),
-            self.target[1] + self.r * self.phi.cos(),
-            self.target[2] + self.r * self.phi.sin() * self.theta.cos(),
-        )
-    }
-
-    pub fn target(&self) -> Point3<f32> {
-        self.target
+impl Default for Orbital {
+    fn default() -> Self {
+        Self {
+            theta: 0.0_f32.to_radians(),
+            phi: 90.0_f32.to_radians(),
+            r: 10.0,
+            target: Point3::new(0.0, 0.0, 0.0),
+        }
     }
 }
 
-impl Camera {
-    pub fn update(&mut self, input: &InputState) {
+impl From<Fps> for Orbital {
+    fn from(fps: Fps) -> Self {
+        let Point3 { x, y, z } = fps.position;
+        let xx = x * x;
+        let yy = y * y;
+        let zz = z * z;
+
+        let r = (xx + yy + zz).sqrt();
+        let theta = x.signum() * (z / (f32::EPSILON + (zz + xx).sqrt())).acos();
+        let phi = (y / (r + f32::EPSILON)).acos();
+
+        Self {
+            r,
+            theta,
+            phi,
+            target: Point3::new(0.0, 0.0, 0.0),
+        }
+    }
+}
+
+impl Orbital {
+    fn update(&mut self, input: &InputState, _: f32) {
         // Rotation
         if input.is_left_clicked() {
             let delta = input.cursor_delta();
-            let theta = delta[0] as f32 * (0.2_f32).to_radians();
-            let phi = delta[1] as f32 * (0.2_f32).to_radians();
+            let theta = delta[0] as f32 * ROTATION_SPEED_DEG.to_radians();
+            let phi = delta[1] as f32 * ROTATION_SPEED_DEG.to_radians();
             self.rotate(theta, phi);
         }
 
@@ -41,7 +115,7 @@ impl Camera {
         if input.is_right_clicked() {
             let position = self.position();
             let forward = (self.target - position).normalize();
-            let up = Vector3::new(0.0, 1.0, 0.0);
+            let up = Vector3::unit_y();
             let right = up.cross(forward).normalize();
             let up = forward.cross(right.normalize());
 
@@ -69,16 +143,102 @@ impl Camera {
             self.r -= r;
         }
     }
+
+    fn position(&self) -> Point3<f32> {
+        Point3::new(
+            self.target[0] + self.r * self.phi.sin() * self.theta.sin(),
+            self.target[1] + self.r * self.phi.cos(),
+            self.target[2] + self.r * self.phi.sin() * self.theta.cos(),
+        )
+    }
+
+    fn target(&self) -> Point3<f32> {
+        self.target
+    }
 }
 
-impl Default for Camera {
+#[derive(Debug, Clone, Copy)]
+pub struct Fps {
+    position: Point3<f32>,
+    direction: Vector3<f32>,
+    move_speed: f32,
+}
+
+impl Default for Fps {
     fn default() -> Self {
-        Camera {
-            theta: 0.0_f32.to_radians(),
-            phi: 90.0_f32.to_radians(),
-            r: 10.0,
-            target: Point3::new(0.0, 0.0, 0.0),
+        Self {
+            position: Point3::new(0.0, 0.0, 10.0),
+            direction: -Vector3::unit_z(),
+            move_speed: DEFAULT_FPS_MOVE_SPEED,
         }
+    }
+}
+
+impl From<Orbital> for Fps {
+    fn from(orbital: Orbital) -> Self {
+        let position = orbital.position();
+        let target = orbital.target();
+        let direction = (target - position).normalize();
+        Self {
+            position,
+            direction,
+            move_speed: DEFAULT_FPS_MOVE_SPEED,
+        }
+    }
+}
+
+impl Fps {
+    fn update(&mut self, input: &InputState, delta_time_secs: f32) {
+        let forward = self.direction.normalize();
+        let up = Vector3::unit_y();
+        let right = up.cross(forward).normalize();
+        let up = forward.cross(right.normalize());
+
+        // compute movement
+        let mut move_dir = Vector3::zero();
+        if input.is_forward_pressed() {
+            move_dir += forward;
+        }
+        if input.is_backward_pressed() {
+            move_dir -= forward;
+        }
+        if input.is_left_pressed() {
+            move_dir += right;
+        }
+        if input.is_right_pressed() {
+            move_dir -= right;
+        }
+        if input.is_up_pressed() {
+            move_dir += up;
+        }
+        if input.is_down_pressed() {
+            move_dir -= up;
+        }
+
+        if !move_dir.is_zero() {
+            move_dir = move_dir.normalize() * delta_time_secs * self.move_speed;
+        }
+
+        self.position += move_dir;
+
+        // compute rotation
+        if input.is_left_clicked() {
+            let delta = input.cursor_delta();
+
+            let rot_speed = delta_time_secs * ROTATION_SPEED_DEG;
+            let rot_y = Matrix3::<f32>::from_angle_y(Rad(-delta[0] * rot_speed));
+            let rot_x = Matrix3::<f32>::from_axis_angle(right, Rad(delta[1] * rot_speed));
+
+            self.direction = (rot_x * rot_y * forward).normalize();
+        }
+    }
+
+    fn position(&self) -> Point3<f32> {
+        self.position
+    }
+
+    fn target(&self) -> Point3<f32> {
+        self.position + self.direction.normalize()
     }
 }
 

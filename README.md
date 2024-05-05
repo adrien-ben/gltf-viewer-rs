@@ -34,9 +34,9 @@ using [Ash][2]. It runs on Window, Linux and MacOS.
   - [x] KHR_materials_pbrSpecularGlossiness
   - [x] KHR_materials_emissive_strength
   - [ ] KHR_draco_mesh_compression
-- [ ] Camera controls
+- [x] Camera controls
   - [x] Orbital
-  - [ ] First Person
+  - [x] First Person
 - [x] Drag and drop
 - [x] Background loading
 - [ ] Post processing
@@ -63,9 +63,16 @@ using [Ash][2]. It runs on Window, Linux and MacOS.
 
 ## Controls
 
+Orbital camera:
 - Left click and move to rotate camera around origin
 - Right click and move to move camera
 - Mouse wheel to un/zoom
+
+FPS camera:
+- WASD to move
+- Left Ctrl to go down
+- Space to go up
+- Left click to rotate
 
 ## Build it
 
