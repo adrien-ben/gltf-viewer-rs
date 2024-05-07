@@ -21,12 +21,15 @@ const uint OUTPUT_MODE_ALPHA = 8;
 const uint OUTPUT_MODE_UVS0 = 9;
 const uint OUTPUT_MODE_UVS1 = 10;
 const uint OUTPUT_MODE_SSAO = 11;
+const uint OUTPUT_MODE_CLEARCOAT_FACTOR = 12;
+const uint OUTPUT_MODE_CLEARCOAT_ROUGHNESS = 13;
+const uint OUTPUT_MODE_CLEARCOAT_NORMAL = 14;
 
 const vec3 DIELECTRIC_SPECULAR = vec3(0.04);
 const vec3 BLACK = vec3(0.0);
 const float PI = 3.14159;
 
-const uint NO_TEXTURE_ID = 255;
+const uint NO_TEXTURE_ID = 3;
 
 const uint ALPHA_MODE_MASK = 1;
 const uint ALPHA_MODE_BLEND = 2;
@@ -47,6 +50,9 @@ struct TextureChannels {
     uint emissive;
     uint normal;
     uint occlusion;
+    uint clearcoatFactor;
+    uint clearcoatRoughness;
+    uint clearcoatNormal;
 };
 
 struct Light {
@@ -66,6 +72,10 @@ struct PbrInfo {
     vec3 specular;
     float roughness;
     bool metallicRoughnessWorkflow;
+    vec3 normal;
+    float clearcoatFactor;
+    float clearcoatRoughness;
+    vec3 clearcoatNormal;
 };
 
 // -- Inputs --
@@ -79,29 +89,35 @@ layout(location = 5) in mat3 oTBN;
 // -- Push constants
 layout(push_constant) uniform MaterialUniform {
     vec4 color;
-    // Contains the emissive factor and roughness (or glossiness) factor.
-    // - emissive: emissiveAndRoughnessGlossiness.rgb
-    // - roughness: emissiveAndRoughnessGlossiness.a (for metallic/roughness workflows)
-    // - glossiness: emissiveAndRoughnessGlossiness.a (for specular/glossiness workflows)
-    vec4 emissiveAndRoughnessGlossiness;
-    // Contains the metallic (or specular) factor and occlusion factor.
-    // - metallic: metallicSpecularAndOcclusion.r (for metallic/roughness workflows)
-    // - specular: metallicSpecularAndOcclusion.rgb (for specular/glossiness workflows)
-    // - occlusion: metallicSpecularAndOcclusion.a
-    vec4 metallicSpecularAndOcclusion;
-    // Contains the texture channels for color metallic/roughness emissive and normal
-    // [0-7] Color texture channel
-    // [8-15] metallic/roughness texture channel
-    // [16-23] emissive texture channel
-    // [24-31] normals texture channel
-    uint colorMetallicRoughnessEmissiveNormalTextureChannels;
-    // Contains occlusion texture channel, alpha mode and unlit flag
-    // [0-7] Occlusion texture channel
-    // [8-15] Alpha mode
-    // [16-23] Unlit flag
-    // [24-31] Workflow (metallic/roughness or specular/glossiness)
-    uint occlusionTextureChannelAlphaModeUnlitFlagAndWorkflow;
+    vec3 emissiveFactor;
+    // - roughness for metallic/roughness workflows
+    // - glossiness for specular/glossiness workflows
+    float roughnessGlossiness;
+    // Contains the metallic (or specular) factor.
+    // - metallic: r (for metallic/roughness workflows)
+    // - specular: rgb (for specular/glossiness workflows)
+    vec3 metallicSpecular;
+    float occlusion;
     float alphaCutoff;
+    float clearcoatFactor;
+    float clearcoatRoughness;
+    // Contains the texture channels. Each channel taking 2 bits
+    // [0-1] Color texture channel
+    // [2-3] metallic/roughness or specular/glossiness texture channel
+    // [4-5] emissive texture channel
+    // [6-7] normals texture channel
+    // [8-9] Occlusion texture channel
+    // [10-11] Clearcoat factor texture channel
+    // [12-13] Clearcoat roughness texture channel
+    // [14-15] Clearcoat normal texture channel
+    // [16-31] Reserved
+    uint texturesChannels;
+    // Contains alpha mode, unlit flag and workflow flag
+    // [0-7] Alpha mode
+    // [8-15] Unlit flag
+    // [16-23] Workflow (metallic/roughness or specular/glossiness)
+    // [24-31] Reserved
+    uint alphaModeUnlitFlagAndWorkflow;
     uint lightCount;
     uint outputMode;
     float emissiveIntensity;
@@ -130,18 +146,24 @@ layout(binding = 8, set = 2) uniform sampler2D normalsSampler;
 layout(binding = 9, set = 2) uniform sampler2D materialSampler;
 layout(binding = 10, set = 2) uniform sampler2D occlusionSampler;
 layout(binding = 11, set = 2) uniform sampler2D emissiveSampler;
-layout(binding = 12, set = 3) uniform sampler2D aoMapSampler;
+layout(binding = 12, set = 2) uniform sampler2D clearcoatFactorSampler;
+layout(binding = 13, set = 2) uniform sampler2D clearcoatRoughnessSampler;
+layout(binding = 14, set = 2) uniform sampler2D clearcoatNormalSampler;
+layout(binding = 15, set = 3) uniform sampler2D aoMapSampler;
 
 // Output
 layout(location = 0) out vec4 outColor;
 
 TextureChannels getTextureChannels() {
     return TextureChannels(
-        (material.colorMetallicRoughnessEmissiveNormalTextureChannels >> 24) & 255,
-        (material.colorMetallicRoughnessEmissiveNormalTextureChannels >> 16) & 255,
-        (material.colorMetallicRoughnessEmissiveNormalTextureChannels >> 8) & 255,
-        material.colorMetallicRoughnessEmissiveNormalTextureChannels & 255,
-        (material.occlusionTextureChannelAlphaModeUnlitFlagAndWorkflow >> 24) & 255
+        (material.texturesChannels >> 30) & 3,
+        (material.texturesChannels >> 28) & 3,
+        (material.texturesChannels >> 26) & 3,
+        (material.texturesChannels >> 24) & 3,
+        (material.texturesChannels >> 22) & 3,
+        (material.texturesChannels >> 20) & 3,
+        (material.texturesChannels >> 18) & 3,
+        (material.texturesChannels >> 16) & 3
     );
 }
 
@@ -162,7 +184,7 @@ vec4 getBaseColor(TextureChannels textureChannels) {
 }
 
 float getMetallic(TextureChannels textureChannels) {
-    float metallic = material.metallicSpecularAndOcclusion.r;
+    float metallic = material.metallicSpecular.r;
     if(textureChannels.material != NO_TEXTURE_ID) {
         vec2 uv = getUV(textureChannels.material);
         metallic *= texture(materialSampler, uv).b;
@@ -171,7 +193,7 @@ float getMetallic(TextureChannels textureChannels) {
 }
 
 vec3 getSpecular(TextureChannels textureChannels) {
-    vec3 specular = material.metallicSpecularAndOcclusion.rgb;
+    vec3 specular = material.metallicSpecular;
     if(textureChannels.material != NO_TEXTURE_ID) {
         vec2 uv = getUV(textureChannels.material);
         specular *= texture(materialSampler, uv).rgb;
@@ -194,7 +216,7 @@ float convertMetallic(vec3 diffuse, vec3 specular, float maxSpecular) {
 }
 
 float getRoughness(TextureChannels textureChannels, bool metallicRoughnessWorkflow) {
-    float roughness = material.emissiveAndRoughnessGlossiness.a;
+    float roughness = material.roughnessGlossiness;
     if(textureChannels.material != NO_TEXTURE_ID) {
         vec2 uv = getUV(textureChannels.material);
         if (metallicRoughnessWorkflow) {
@@ -211,7 +233,7 @@ float getRoughness(TextureChannels textureChannels, bool metallicRoughnessWorkfl
 }
 
 vec3 getEmissiveColor(TextureChannels textureChannels) {
-    vec3 emissive = material.emissiveAndRoughnessGlossiness.rgb;
+    vec3 emissive = material.emissiveFactor;
     if(textureChannels.emissive != NO_TEXTURE_ID) {
         vec2 uv = getUV(textureChannels.emissive);
         emissive *= texture(emissiveSampler, uv).rgb;
@@ -247,17 +269,18 @@ vec3 occludeAmbientColor(vec3 ambientColor, TextureChannels textureChannels) {
         vec2 uv = getUV(textureChannels.occlusion);
         sampledOcclusion = texture(occlusionSampler, uv).r;
     }
-    return mix(ambientColor, ambientColor * sampledOcclusion, material.metallicSpecularAndOcclusion.a) * aoMapSample;
+    return mix(ambientColor, ambientColor * sampledOcclusion, material.occlusion) * aoMapSample;
 }
 
 uint getAlphaMode() {
-    return (material.occlusionTextureChannelAlphaModeUnlitFlagAndWorkflow >> 16) & 255;
+    return (material.alphaModeUnlitFlagAndWorkflow >> 24) & 255;
 }
 
 bool isMasked(vec4 baseColor) {
     // discard masked fragments
     if (PASS == PASS_OPAQUE) {
-        return getAlphaMode() == ALPHA_MODE_MASK && baseColor.a + ALPHA_CUTOFF_BIAS < material.alphaCutoff;
+        float alphaCutoff = material.alphaCutoff;
+        return getAlphaMode() == ALPHA_MODE_MASK && baseColor.a + ALPHA_CUTOFF_BIAS < alphaCutoff;
     }
 
     // discard non opaque fragment
@@ -282,7 +305,7 @@ float getAlpha(vec4 baseColor) {
 }
 
 bool isUnlit() {
-    uint unlitFlag = (material.occlusionTextureChannelAlphaModeUnlitFlagAndWorkflow >> 8) & 255;
+    uint unlitFlag = (material.alphaModeUnlitFlagAndWorkflow >> 16) & 255;
     if (unlitFlag == UNLIT_FLAG_UNLIT) {
         return true;
     }
@@ -290,11 +313,44 @@ bool isUnlit() {
 }
 
 bool isMetallicRoughnessWorkflow() {
-    uint workflow = material.occlusionTextureChannelAlphaModeUnlitFlagAndWorkflow & 255;
+    uint workflow = (material.alphaModeUnlitFlagAndWorkflow >> 8) & 255;
     if (workflow == METALLIC_ROUGHNESS_WORKFLOW) {
         return true;
     }
     return false;
+}
+
+float getClearcoatFactor(TextureChannels textureChannels) {
+    float factor = material.clearcoatFactor;
+    if(textureChannels.clearcoatFactor != NO_TEXTURE_ID) {
+        vec2 uv = getUV(textureChannels.clearcoatFactor);
+        factor *= texture(clearcoatFactorSampler, uv).r;
+    }
+    return factor;
+}
+
+float getClearcoatRoughness(TextureChannels textureChannels) {
+    float roughness = material.clearcoatRoughness;
+    if(textureChannels.clearcoatRoughness != NO_TEXTURE_ID) {
+        vec2 uv = getUV(textureChannels.clearcoatRoughness);
+        roughness *= texture(clearcoatRoughnessSampler, uv).g;
+    }
+    return roughness;
+}
+
+vec3 getClearcoatNormal(TextureChannels textureChannels) {
+    vec3 normal = normalize(oNormals);
+    if (textureChannels.clearcoatNormal != NO_TEXTURE_ID) {
+        vec2 uv = getUV(textureChannels.clearcoatNormal);
+        vec3 normalMap = texture(clearcoatNormalSampler, uv).rgb * 2.0 - 1.0;
+        normal = normalize(oTBN * normalMap);
+    }
+    
+    if (!gl_FrontFacing) {
+        normal *= -1.0;
+    }
+
+    return normal;
 }
 
 vec3 f(vec3 f0, vec3 v, vec3 h) {
@@ -334,13 +390,14 @@ float computeAttenuation(float distance, float range) {
 
 vec3 computeColor(
     PbrInfo pbrInfo,
-    vec3 n,
     vec3 l,
     vec3 v,
     vec3 h,
     vec3 lightColor,
     float lightIntensity
 ) {
+    vec3 n = pbrInfo.normal;
+    
     vec3 color = vec3(0.0);
     if (dot(n, l) > 0.0 || dot(n, v) > 0.0) {
         vec3 cDiffuse;
@@ -364,16 +421,30 @@ vec3 computeColor(
         vec3 fSpecular = max(f * vis * d, 0.0);
         color = max(dot(n, l), 0.0) * (fDiffuse + fSpecular) * lightColor * lightIntensity;
     }
+
+    n = pbrInfo.clearcoatNormal;
+    if (dot(n, l) > 0.0 || dot(n, v) > 0.0) {
+        float a = pbrInfo.clearcoatRoughness * pbrInfo.clearcoatRoughness;
+
+        vec3 f = f(DIELECTRIC_SPECULAR, v, h);
+        float vis = vis(n, l, v, a);
+        float d = d(a, n, h);
+
+        vec3 fSpecular = max(f * vis * d, 0.0) * pbrInfo.clearcoatFactor;
+
+        color = color * (1.0 - fSpecular) + (fSpecular * lightColor * lightIntensity);
+    }
+
     return color;
 }
 
-vec3 computeDirectionalLight(Light light, PbrInfo pbrInfo, vec3 n, vec3 v) {
+vec3 computeDirectionalLight(Light light, PbrInfo pbrInfo, vec3 v) {
     vec3 l = -normalize(light.direction.xyz);
     vec3 h = normalize(l + v);
-    return computeColor(pbrInfo, n, l, v, h, light.color.rgb, light.intensity);
+    return computeColor(pbrInfo, l, v, h, light.color.rgb, light.intensity);
 }
 
-vec3 computePointLight(Light light, PbrInfo pbrInfo, vec3 n, vec3 v) {
+vec3 computePointLight(Light light, PbrInfo pbrInfo, vec3 v) {
     vec3 toLight = light.position.xyz - oPositions;
     float distance = length(toLight);
     vec3 l = normalize(toLight);
@@ -381,10 +452,10 @@ vec3 computePointLight(Light light, PbrInfo pbrInfo, vec3 n, vec3 v) {
 
     float attenuation = computeAttenuation(distance, light.range);
 
-    return computeColor(pbrInfo, n, l, v, h, light.color.rgb, light.intensity * attenuation);
+    return computeColor(pbrInfo, l, v, h, light.color.rgb, light.intensity * attenuation);
 }
 
-vec3 computeSpotLight(Light light, PbrInfo pbrInfo, vec3 n, vec3 v) {
+vec3 computeSpotLight(Light light, PbrInfo pbrInfo, vec3 v) {
     vec3 invLightDir = -normalize(light.direction.xyz);
 
     vec3 toLight = light.position.xyz - oPositions;
@@ -398,7 +469,7 @@ vec3 computeSpotLight(Light light, PbrInfo pbrInfo, vec3 n, vec3 v) {
     float angularAttenuation = max(0.0, cd * light.angleScale + light.angleOffset);
     angularAttenuation *= angularAttenuation;
 
-    return computeColor(pbrInfo, n, l, v, h, light.color.rgb, light.intensity * attenuation * angularAttenuation);
+    return computeColor(pbrInfo, l, v, h, light.color.rgb, light.intensity * attenuation * angularAttenuation);
 }
 
 vec3 prefilteredReflectionLinear(vec3 R, float roughness) {
@@ -415,15 +486,16 @@ vec3 prefilteredReflection(vec3 R, float roughness) {
 	return textureLod(preFilteredSampler, R, lod).rgb;
 }
 
-vec3 computeIBL(PbrInfo pbrInfo, vec3 v, vec3 n) {
+vec3 computeIBL(PbrInfo pbrInfo, vec3 v) {
 
     vec3 f0 = pbrInfo.specular;
     if (pbrInfo.metallicRoughnessWorkflow) {
         f0 = mix(DIELECTRIC_SPECULAR, pbrInfo.baseColor, pbrInfo.metallic);
     }
 
-    vec3 f = f(f0, v, n, pbrInfo.roughness);
-    vec3 kD = 1.0 - f;
+    vec3 n = pbrInfo.normal;
+    vec3 fBase = f(f0, v, n, pbrInfo.roughness);
+    vec3 kD = 1.0 - fBase;
     kD *= 1.0 - pbrInfo.metallic;
 
     vec3 irradiance = texture(irradianceMapSampler, n).rgb;
@@ -432,9 +504,22 @@ vec3 computeIBL(PbrInfo pbrInfo, vec3 v, vec3 n) {
     vec3 r = normalize(reflect(-v, n));
     vec3 reflection = prefilteredReflection(r, pbrInfo.roughness);
     vec2 envBRDF = texture(brdfLookupSampler, vec2(max(dot(n, v), 0.0), pbrInfo.roughness)).rg;
-    vec3 specular = reflection * (f * envBRDF.x + envBRDF.y);
+    vec3 specular = reflection * (fBase * envBRDF.x + envBRDF.y);
 
-    return kD * diffuse + specular;
+    // clearcoat layer
+    vec3 cn = pbrInfo.clearcoatNormal;
+    vec3 fClearcoat = f(DIELECTRIC_SPECULAR, v, cn, pbrInfo.clearcoatRoughness);
+
+    vec3 cr = normalize(reflect(-v, cn));
+    vec3 cReflection = prefilteredReflection(cr, pbrInfo.clearcoatRoughness);
+    vec2 cEnvBRDF = texture(brdfLookupSampler, vec2(max(dot(cn, v), 0.0), pbrInfo.clearcoatRoughness)).rg;
+    vec3 cSpecular = cReflection * (fClearcoat * cEnvBRDF.x + cEnvBRDF.y);
+
+    // final color
+    vec3 baseLayer = kD * diffuse + specular;
+    vec3 clearcoat = cSpecular * pbrInfo.clearcoatFactor;
+    
+    return baseLayer * (1.0 - fClearcoat * pbrInfo.clearcoatFactor) + clearcoat; 
 }
 
 void main() {
@@ -463,12 +548,26 @@ void main() {
         metallic = convertMetallic(baseColor.rgb, specular, maxSpecular);
     }
 
-    PbrInfo pbrInfo = PbrInfo(baseColor.rgb, metallic, specular, roughness, metallicRoughnessWorkflow);
-
     vec3 emissive = getEmissiveColor(textureChannels);
+
+    float clearcoatFactor = getClearcoatFactor(textureChannels);
+    float clearcoatRoughness = getClearcoatRoughness(textureChannels);
+    vec3 clearcoatNormal = getClearcoatNormal(textureChannels);
 
     vec3 n = getNormal(textureChannels);
     vec3 v = normalize(cameraUBO.eye.xyz - oPositions);
+
+    PbrInfo pbrInfo = PbrInfo(
+        baseColor.rgb, 
+        metallic, 
+        specular, 
+        roughness, 
+        metallicRoughnessWorkflow, 
+        n,
+        clearcoatFactor,
+        clearcoatRoughness,
+        clearcoatNormal
+    );
 
     vec3 color = vec3(0.0);
 
@@ -478,15 +577,15 @@ void main() {
         uint lightType = light.type;
 
         if (lightType == DIRECTIONAL_LIGHT_TYPE) {
-            color += computeDirectionalLight(light, pbrInfo, n, v);
+            color += computeDirectionalLight(light, pbrInfo, v);
         } else if (lightType == POINT_LIGHT_TYPE) {
-            color += computePointLight(light, pbrInfo, n, v);
+            color += computePointLight(light, pbrInfo, v);
         } else if (lightType == SPOT_LIGHT_TYPE) {
-            color += computeSpotLight(light, pbrInfo, n, v);
+            color += computeSpotLight(light, pbrInfo, v);
         }
     }
 
-    vec3 ambient = computeIBL(pbrInfo, v, n);
+    vec3 ambient = computeIBL(pbrInfo, v);
 
     color += emissive + occludeAmbientColor(ambient, textureChannels);
 
@@ -515,5 +614,11 @@ void main() {
     } else if (material.outputMode == OUTPUT_MODE_SSAO) {
         float ao = sampleAOMap();
         outColor = vec4(vec3(ao), 1.0);
+    } else if (material.outputMode == OUTPUT_MODE_CLEARCOAT_FACTOR) {
+        outColor = vec4(vec3(clearcoatFactor), 1.0);
+    } else if (material.outputMode == OUTPUT_MODE_CLEARCOAT_ROUGHNESS) {
+        outColor = vec4(vec3(clearcoatRoughness), 1.0);
+    } else if (material.outputMode == OUTPUT_MODE_CLEARCOAT_NORMAL) {
+        outColor = outColor = vec4(clearcoatNormal*0.5 + 0.5, 1.0);
     }
 }

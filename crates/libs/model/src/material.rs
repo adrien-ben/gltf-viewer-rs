@@ -21,6 +21,7 @@ pub struct Material {
     alpha_cutoff: f32,
     double_sided: bool,
     is_unlit: bool,
+    clearcoat: Option<Clearcoat>,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -82,6 +83,49 @@ impl SpecularGlossinessWorkflow {
 
     pub fn get_specular_glossiness_texture_index(&self) -> Option<usize> {
         self.specular_glossiness_texture.map(|info| info.index)
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default)]
+pub struct Clearcoat {
+    factor: f32,
+    roughness: f32,
+    factor_texture: Option<TextureInfo>,
+    roughness_texture: Option<TextureInfo>,
+    normal_texture: Option<TextureInfo>,
+}
+
+impl Clearcoat {
+    pub fn factor(&self) -> f32 {
+        self.factor
+    }
+
+    pub fn roughness(&self) -> f32 {
+        self.roughness
+    }
+
+    pub fn factor_texture(&self) -> Option<TextureInfo> {
+        self.factor_texture
+    }
+
+    pub fn factor_texture_index(&self) -> Option<usize> {
+        self.factor_texture.map(|info| info.index)
+    }
+
+    pub fn roughness_texture(&self) -> Option<TextureInfo> {
+        self.roughness_texture
+    }
+
+    pub fn roughness_texture_index(&self) -> Option<usize> {
+        self.roughness_texture.map(|info| info.index)
+    }
+
+    pub fn normal_texture(&self) -> Option<TextureInfo> {
+        self.normal_texture
+    }
+
+    pub fn normal_texture_index(&self) -> Option<usize> {
+        self.normal_texture.map(|info| info.index)
     }
 }
 
@@ -150,6 +194,10 @@ impl Material {
         self.is_unlit
     }
 
+    pub fn get_clearcoat(&self) -> Option<Clearcoat> {
+        self.clearcoat
+    }
+
     pub fn get_workflow(&self) -> Workflow {
         self.workflow
     }
@@ -212,6 +260,14 @@ impl<'a> From<GltfMaterial<'a>> for Material {
 
         let is_unlit = material.unlit();
 
+        let clearcoat = material.clearcoat().map(|m| Clearcoat {
+            factor: m.clearcoat_factor(),
+            roughness: m.clearcoat_roughness_factor(),
+            factor_texture: get_texture(m.clearcoat_texture()),
+            roughness_texture: get_texture(m.clearcoat_roughness_texture()),
+            normal_texture: get_texture(m.clearcoat_normal_texture()),
+        });
+
         Material {
             color,
             emissive,
@@ -225,6 +281,7 @@ impl<'a> From<GltfMaterial<'a>> for Material {
             alpha_cutoff,
             double_sided,
             is_unlit,
+            clearcoat,
         }
     }
 }

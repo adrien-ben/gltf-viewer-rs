@@ -33,6 +33,7 @@ using [Ash][2]. It runs on Window, Linux and MacOS.
   - [x] KHR_materials_unlit
   - [x] KHR_materials_pbrSpecularGlossiness
   - [x] KHR_materials_emissive_strength
+  - [x] KHR_materials_clearcoat
   - [ ] KHR_draco_mesh_compression
 - [x] Camera controls
   - [x] Orbital

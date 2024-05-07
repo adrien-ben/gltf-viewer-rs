@@ -10,6 +10,8 @@ use util::*;
 use vulkan::ash::{vk, Device};
 use vulkan::{Buffer, Context, Texture as VulkanTexture};
 
+const SAMPLERS_PER_PRIMITIVE: u32 = 8;
+
 const DYNAMIC_DATA_SET_INDEX: u32 = 0;
 const STATIC_DATA_SET_INDEX: u32 = 1;
 const PER_PRIMITIVE_DATA_SET_INDEX: u32 = 2;
@@ -27,7 +29,10 @@ const NORMALS_SAMPLER_BINDING: u32 = 8;
 const MATERIAL_SAMPLER_BINDING: u32 = 9;
 const OCCLUSION_SAMPLER_BINDING: u32 = 10;
 const EMISSIVE_SAMPLER_BINDING: u32 = 11;
-const AO_MAP_SAMPLER_BINDING: u32 = 12;
+const CLEARCOAT_FACTOR_SAMPLER_BINDING: u32 = 12;
+const CLEARCOAT_ROUGHNESS_SAMPLER_BINDING: u32 = 13;
+const CLEARCOAT_NORMAL_SAMPLER_BINDING: u32 = 14;
+const AO_MAP_SAMPLER_BINDING: u32 = 15;
 
 const MAX_LIGHT_COUNT: u32 = 8;
 
@@ -58,14 +63,30 @@ pub enum OutputMode {
     TexCoord0,
     TexCoord1,
     Ssao,
+    ClearcoatFactor,
+    ClearcoatRoughness,
+    ClearcoatNormal,
 }
 
 impl OutputMode {
-    pub fn all() -> [OutputMode; 12] {
+    pub fn all() -> [OutputMode; 15] {
         use OutputMode::*;
         [
-            Final, Color, Emissive, Metallic, Specular, Roughness, Occlusion, Normal, Alpha,
-            TexCoord0, TexCoord1, Ssao,
+            Final,
+            Color,
+            Emissive,
+            Metallic,
+            Specular,
+            Roughness,
+            Occlusion,
+            Normal,
+            Alpha,
+            TexCoord0,
+            TexCoord1,
+            Ssao,
+            ClearcoatFactor,
+            ClearcoatRoughness,
+            ClearcoatNormal,
         ]
     }
 
@@ -84,6 +105,9 @@ impl OutputMode {
             9 => Some(TexCoord0),
             10 => Some(TexCoord1),
             11 => Some(Ssao),
+            12 => Some(ClearcoatFactor),
+            13 => Some(ClearcoatRoughness),
+            14 => Some(ClearcoatNormal),
             _ => None,
         }
     }
@@ -556,7 +580,7 @@ fn create_descriptor_pool(
 
     let descriptor_count = descriptors_resources.camera_buffers.len() as u32;
     let primitive_count = descriptors_resources.model.primitive_count() as u32;
-    let textures_desc_count = primitive_count * 5;
+    let textures_desc_count = primitive_count * SAMPLERS_PER_PRIMITIVE;
 
     let pool_sizes = [
         vk::DescriptorPoolSize {
@@ -833,6 +857,24 @@ fn create_per_primitive_descriptor_set_layout(device: &Device) -> vk::Descriptor
             .descriptor_count(1)
             .stage_flags(vk::ShaderStageFlags::FRAGMENT)
             .build(),
+        vk::DescriptorSetLayoutBinding::builder()
+            .binding(CLEARCOAT_FACTOR_SAMPLER_BINDING)
+            .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
+            .descriptor_count(1)
+            .stage_flags(vk::ShaderStageFlags::FRAGMENT)
+            .build(),
+        vk::DescriptorSetLayoutBinding::builder()
+            .binding(CLEARCOAT_ROUGHNESS_SAMPLER_BINDING)
+            .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
+            .descriptor_count(1)
+            .stage_flags(vk::ShaderStageFlags::FRAGMENT)
+            .build(),
+        vk::DescriptorSetLayoutBinding::builder()
+            .binding(CLEARCOAT_NORMAL_SAMPLER_BINDING)
+            .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
+            .descriptor_count(1)
+            .stage_flags(vk::ShaderStageFlags::FRAGMENT)
+            .build(),
     ];
 
     let layout_info = vk::DescriptorSetLayoutCreateInfo::builder().bindings(&bindings);
@@ -903,6 +945,23 @@ fn create_per_primitive_descriptor_sets(
                 resources.dummy_texture,
             );
 
+            let clearcoat = material.get_clearcoat().unwrap_or_default();
+            let clearcoat_factor_info = create_descriptor_image_info(
+                clearcoat.factor_texture_index(),
+                textures,
+                resources.dummy_texture,
+            );
+            let clearcoat_roughness_info = create_descriptor_image_info(
+                clearcoat.roughness_texture_index(),
+                textures,
+                resources.dummy_texture,
+            );
+            let clearcoat_normal_info = create_descriptor_image_info(
+                clearcoat.normal_texture_index(),
+                textures,
+                resources.dummy_texture,
+            );
+
             let set = sets[primitive_index];
             primitive_index += 1;
 
@@ -936,6 +995,24 @@ fn create_per_primitive_descriptor_sets(
                     .dst_binding(EMISSIVE_SAMPLER_BINDING)
                     .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
                     .image_info(&emissive_info)
+                    .build(),
+                vk::WriteDescriptorSet::builder()
+                    .dst_set(set)
+                    .dst_binding(CLEARCOAT_FACTOR_SAMPLER_BINDING)
+                    .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
+                    .image_info(&clearcoat_factor_info)
+                    .build(),
+                vk::WriteDescriptorSet::builder()
+                    .dst_set(set)
+                    .dst_binding(CLEARCOAT_ROUGHNESS_SAMPLER_BINDING)
+                    .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
+                    .image_info(&clearcoat_roughness_info)
+                    .build(),
+                vk::WriteDescriptorSet::builder()
+                    .dst_set(set)
+                    .dst_binding(CLEARCOAT_NORMAL_SAMPLER_BINDING)
+                    .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
+                    .image_info(&clearcoat_normal_info)
                     .build(),
             ];
 
