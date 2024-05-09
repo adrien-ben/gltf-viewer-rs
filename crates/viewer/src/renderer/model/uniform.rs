@@ -1,6 +1,6 @@
 use super::JointsBuffer;
 use math::cgmath::{InnerSpace, Matrix4, SquareMatrix, Vector4};
-use model::{Light, Material, Model, Type, Workflow, MAX_JOINTS_PER_MESH};
+use model::{Light, Material, Model, TextureInfo, Type, Workflow, MAX_JOINTS_PER_MESH};
 use std::{mem::size_of, sync::Arc};
 use vulkan::{ash::vk, Buffer, Context};
 
@@ -106,10 +106,19 @@ pub struct MaterialUniform {
     occlusion_texture_channel: u32,
     clearcoat_factor_texture_channel: u32,
     clearcoat_roughness_texture_channel: u32,
-    clearcoat_normal_texture_channel: u32,
+    clearcoat_normals_texture_channel: u32,
     alpha_mode: u32,
     is_unlit: vk::Bool32,
     workflow: u32,
+    pad: [u32; 2],
+    color_texture_transform: Matrix4<f32>,
+    material_texture_transform: Matrix4<f32>,
+    emissive_texture_transform: Matrix4<f32>,
+    normals_texture_transform: Matrix4<f32>,
+    occlusion_texture_transform: Matrix4<f32>,
+    clearcoat_factor_texture_transform: Matrix4<f32>,
+    clearcoat_roughness_texture_transform: Matrix4<f32>,
+    clearcoat_normals_texture_transform: Matrix4<f32>,
 }
 
 impl From<Material> for MaterialUniform {
@@ -139,31 +148,45 @@ impl From<Material> for MaterialUniform {
         let color_texture_channel = material
             .get_color_texture()
             .map_or(NO_TEXTURE_ID, |info| info.get_channel());
-        let material_texture_channel = match material.get_workflow() {
+        let color_texture_transform = get_texture_transform(material.get_color_texture());
+
+        let material_texture = match material.get_workflow() {
             Workflow::MetallicRoughness(workflow) => workflow.get_metallic_roughness_texture(),
             Workflow::SpecularGlossiness(workflow) => workflow.get_specular_glossiness_texture(),
-        }
-        .map_or(NO_TEXTURE_ID, |t| t.get_channel());
+        };
+        let material_texture_channel = material_texture.map_or(NO_TEXTURE_ID, |t| t.get_channel());
+        let material_texture_transform = get_texture_transform(material_texture);
+
         let emissive_texture_channel = material
             .get_emissive_texture()
             .map_or(NO_TEXTURE_ID, |info| info.get_channel());
+        let emissive_texture_transform = get_texture_transform(material.get_emissive_texture());
+
         let normals_texture_channel = material
             .get_normals_texture()
             .map_or(NO_TEXTURE_ID, |info| info.get_channel());
+        let normals_texture_transform = get_texture_transform(material.get_normals_texture());
+
         let occlusion_texture_channel = material
             .get_occlusion_texture()
             .map_or(NO_TEXTURE_ID, |info| info.get_channel());
+        let occlusion_texture_transform = get_texture_transform(material.get_occlusion_texture());
+
         let clearcoat_factor_texture_channel = clearcoat
             .factor_texture()
             .map_or(NO_TEXTURE_ID, |info| info.get_channel());
+        let clearcoat_factor_texture_transform = get_texture_transform(clearcoat.factor_texture());
 
         let clearcoat_roughness_texture_channel = clearcoat
             .roughness_texture()
             .map_or(NO_TEXTURE_ID, |info| info.get_channel());
+        let clearcoat_roughness_texture_transform =
+            get_texture_transform(clearcoat.roughness_texture());
 
-        let clearcoat_normal_texture_channel = clearcoat
+        let clearcoat_normals_texture_channel = clearcoat
             .normal_texture()
             .map_or(NO_TEXTURE_ID, |info| info.get_channel());
+        let clearcoat_normals_texture_transform = get_texture_transform(clearcoat.normal_texture());
 
         let alpha_mode = material.get_alpha_mode();
         let is_unlit = material.is_unlit().into();
@@ -183,18 +206,32 @@ impl From<Material> for MaterialUniform {
             clearcoat_factor,
             clearcoat_roughness,
             color_texture_channel,
+            color_texture_transform,
             material_texture_channel,
+            material_texture_transform,
             emissive_texture_channel,
+            emissive_texture_transform,
             normals_texture_channel,
+            normals_texture_transform,
             occlusion_texture_channel,
+            occlusion_texture_transform,
             clearcoat_factor_texture_channel,
+            clearcoat_factor_texture_transform,
             clearcoat_roughness_texture_channel,
-            clearcoat_normal_texture_channel,
+            clearcoat_roughness_texture_transform,
+            clearcoat_normals_texture_channel,
+            clearcoat_normals_texture_transform,
             alpha_mode,
             is_unlit,
             workflow,
+            pad: [0; 2],
         }
     }
+}
+
+fn get_texture_transform(info: Option<TextureInfo>) -> Matrix4<f32> {
+    info.and_then(|t| t.transform())
+        .map_or(Matrix4::identity(), Matrix4::from)
 }
 
 pub fn create_transform_ubos(context: &Arc<Context>, model: &Model, count: u32) -> Vec<Buffer> {

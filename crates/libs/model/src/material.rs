@@ -1,8 +1,9 @@
 use gltf::{
     material::{AlphaMode, Material as GltfMaterial, NormalTexture, OcclusionTexture},
-    texture::Info,
+    texture::{Info, TextureTransform},
     Document,
 };
+use math::cgmath::{Matrix3, Rad};
 
 const ALPHA_MODE_OPAQUE: u32 = 0;
 const ALPHA_MODE_MASK: u32 = 1;
@@ -53,6 +54,7 @@ impl Default for Material {
 pub struct TextureInfo {
     index: usize,
     channel: u32,
+    transform: Option<Matrix3<f32>>,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -236,6 +238,10 @@ impl TextureInfo {
     pub fn get_channel(&self) -> u32 {
         self.channel
     }
+
+    pub fn transform(&self) -> Option<Matrix3<f32>> {
+        self.transform
+    }
 }
 
 pub(crate) fn create_materials_from_gltf(document: &Document) -> Vec<Material> {
@@ -316,16 +322,38 @@ impl<'a> From<GltfMaterial<'a>> for Material {
 }
 
 fn get_texture(texture_info: Option<Info>) -> Option<TextureInfo> {
-    texture_info.map(|tex_info| TextureInfo {
-        index: tex_info.texture().index(),
-        channel: tex_info.tex_coord(),
+    texture_info.map(|tex_info| {
+        let transform = tex_info
+            .texture_transform()
+            .map(|tt| map_texture_transform(&tt));
+        let channel = tex_info
+            .texture_transform()
+            .and_then(|tt| tt.tex_coord())
+            .unwrap_or(tex_info.tex_coord());
+
+        TextureInfo {
+            index: tex_info.texture().index(),
+            channel,
+            transform,
+        }
     })
 }
 
 fn get_normals_texture(texture_info: Option<NormalTexture>) -> Option<TextureInfo> {
-    texture_info.map(|tex_info| TextureInfo {
-        index: tex_info.texture().index(),
-        channel: tex_info.tex_coord(),
+    texture_info.map(|tex_info| {
+        let transform = tex_info
+            .texture_transform()
+            .map(|tt| map_texture_transform(&tt));
+        let channel = tex_info
+            .texture_transform()
+            .and_then(|tt| tt.tex_coord())
+            .unwrap_or(tex_info.tex_coord());
+
+        TextureInfo {
+            index: tex_info.texture().index(),
+            channel,
+            transform,
+        }
     })
 }
 
@@ -334,12 +362,31 @@ fn get_occlusion(texture_info: Option<OcclusionTexture>) -> (f32, Option<Texture
         .as_ref()
         .map_or(0.0, |tex_info| tex_info.strength());
 
-    let texture = texture_info.map(|tex_info| TextureInfo {
-        index: tex_info.texture().index(),
-        channel: tex_info.tex_coord(),
+    let texture = texture_info.map(|tex_info| {
+        let transform = tex_info
+            .texture_transform()
+            .map(|tt| map_texture_transform(&tt));
+        let channel = tex_info
+            .texture_transform()
+            .and_then(|tt| tt.tex_coord())
+            .unwrap_or(tex_info.tex_coord());
+
+        TextureInfo {
+            index: tex_info.texture().index(),
+            channel,
+            transform,
+        }
     });
 
     (strength, texture)
+}
+
+fn map_texture_transform(tt: &TextureTransform) -> Matrix3<f32> {
+    let translation = Matrix3::from_translation(tt.offset().into());
+    let rotation = Matrix3::from_angle_z(Rad(-tt.rotation()));
+    let scale = Matrix3::from_nonuniform_scale(tt.scale()[0], tt.scale()[1]);
+
+    translation * rotation * scale
 }
 
 fn get_alpha_mode_index(alpha_mode: AlphaMode) -> u32 {

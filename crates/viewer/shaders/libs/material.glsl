@@ -27,32 +27,16 @@ struct Material {
     uint occlusionTextureChannel;
     uint clearcoatFactorTextureChannel;
     uint clearcoatRoughnessTextureChannel;
-    uint clearcoatNormalTextureChannel;
+    uint clearcoatNormalsTextureChannel;
     uint alphaMode;
     bool isUnlit;
     uint workflow;
+    mat4 colorTextureTransform;
+    mat4 materialTextureTransform;
+    mat4 emissiveTextureTransform;
+    mat4 normalsTextureTransform;
+    mat4 occlusionTextureTransform;
+    mat4 clearcoatFactorTextureTransform;
+    mat4 clearcoatRoughnessTextureTransform;
+    mat4 clearcoatNormalsTextureTransform;
 };
-
-struct TextureChannels {
-    uint color;
-    uint material;
-    uint emissive;
-    uint normal;
-    uint occlusion;
-    uint clearcoatFactor;
-    uint clearcoatRoughness;
-    uint clearcoatNormal;
-};
-
-TextureChannels getTextureChannels(Material m) {
-    return TextureChannels(
-        m.colorTextureChannel,
-        m.materialTextureChannel,
-        m.emissiveTextureChannel,
-        m.normalsTextureChannel,
-        m.occlusionTextureChannel,
-        m.clearcoatFactorTextureChannel,
-        m.clearcoatRoughnessTextureChannel,
-        m.clearcoatNormalTextureChannel
-    );
-}

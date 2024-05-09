@@ -111,35 +111,33 @@ layout(binding = 17, set = 4) uniform MaterialUBO {
 // Output
 layout(location = 0) out vec4 outColor;
 
-vec2 getUV(uint texChannel) {
-    if (texChannel == 0) {
-        return oTexcoords0;
-    }
-    return oTexcoords1;
+vec2 getUV(uint texChannel, mat4 transform) {
+    vec2 uv = texChannel == 0 ? oTexcoords0 : oTexcoords1;
+    return (transform * vec4(uv, 1.0, 1.0)).xy;
 }
 
-vec4 getBaseColor(TextureChannels textureChannels) {
+vec4 getBaseColor() {
     vec4 color = material.color;
-    if(textureChannels.color != NO_TEXTURE_ID) {
-        vec2 uv = getUV(textureChannels.color);
+    if(material.colorTextureChannel != NO_TEXTURE_ID) {
+        vec2 uv = getUV(material.colorTextureChannel, material.colorTextureTransform);
         color *= texture(colorSampler, uv);
     }
     return color * oColors;
 }
 
-float getMetallic(TextureChannels textureChannels) {
+float getMetallic() {
     float metallic = material.metallicSpecular.r;
-    if(textureChannels.material != NO_TEXTURE_ID) {
-        vec2 uv = getUV(textureChannels.material);
+    if(material.materialTextureChannel != NO_TEXTURE_ID) {
+        vec2 uv = getUV(material.materialTextureChannel, material.materialTextureTransform);
         metallic *= texture(materialSampler, uv).b;
     }
     return metallic;
 }
 
-vec3 getSpecular(TextureChannels textureChannels) {
+vec3 getSpecular() {
     vec3 specular = material.metallicSpecular;
-    if(textureChannels.material != NO_TEXTURE_ID) {
-        vec2 uv = getUV(textureChannels.material);
+    if(material.materialTextureChannel != NO_TEXTURE_ID) {
+        vec2 uv = getUV(material.materialTextureChannel, material.materialTextureTransform);
         specular *= texture(materialSampler, uv).rgb;
     }
     return specular;
@@ -159,10 +157,10 @@ float convertMetallic(vec3 diffuse, vec3 specular, float maxSpecular) {
     return clamp((-b + sqrt(D)) / (2.0 * a), 0.0, 1.0);
 }
 
-float getRoughness(TextureChannels textureChannels, bool metallicRoughnessWorkflow) {
+float getRoughness(bool metallicRoughnessWorkflow) {
     float roughness = material.roughnessGlossiness;
-    if(textureChannels.material != NO_TEXTURE_ID) {
-        vec2 uv = getUV(textureChannels.material);
+    if(material.materialTextureChannel != NO_TEXTURE_ID) {
+        vec2 uv = getUV(material.materialTextureChannel, material.materialTextureTransform);
         if (metallicRoughnessWorkflow) {
             roughness *= texture(materialSampler, uv).g;
         } else {
@@ -176,19 +174,19 @@ float getRoughness(TextureChannels textureChannels, bool metallicRoughnessWorkfl
     return (1 - roughness);
 }
 
-vec3 getEmissiveColor(TextureChannels textureChannels) {
+vec3 getEmissiveColor() {
     vec3 emissive = material.emissiveFactor;
-    if(textureChannels.emissive != NO_TEXTURE_ID) {
-        vec2 uv = getUV(textureChannels.emissive);
+    if(material.emissiveTextureChannel != NO_TEXTURE_ID) {
+        vec2 uv = getUV(material.emissiveTextureChannel, material.emissiveTextureTransform);
         emissive *= texture(emissiveSampler, uv).rgb;
     }
     return emissive * config.emissiveIntensity;
 }
 
-vec3 getNormal(TextureChannels textureChannels) {
+vec3 getNormal() {
     vec3 normal = normalize(oNormals);
-    if (textureChannels.normal != NO_TEXTURE_ID) {
-        vec2 uv = getUV(textureChannels.normal);
+    if (material.normalsTextureChannel != NO_TEXTURE_ID) {
+        vec2 uv = getUV(material.normalsTextureChannel, material.normalsTextureTransform);
         vec3 normalMap = texture(normalsSampler, uv).rgb * 2.0 - 1.0;
         normal = normalize(oTBN * normalMap);
     }
@@ -206,11 +204,11 @@ float sampleAOMap() {
     return texture(aoMapSampler, coords).r;
 }
 
-vec3 occludeAmbientColor(vec3 ambientColor, TextureChannels textureChannels) {
+vec3 occludeAmbientColor(vec3 ambientColor) {
     float aoMapSample = sampleAOMap();
     float sampledOcclusion = 0.0;
-    if (textureChannels.occlusion != NO_TEXTURE_ID) {
-        vec2 uv = getUV(textureChannels.occlusion);
+    if (material.occlusionTextureChannel != NO_TEXTURE_ID) {
+        vec2 uv = getUV(material.occlusionTextureChannel, material.occlusionTextureTransform);
         sampledOcclusion = texture(occlusionSampler, uv).r;
     }
     return mix(ambientColor, ambientColor * sampledOcclusion, material.occlusion) * aoMapSample;
@@ -260,28 +258,28 @@ bool isMetallicRoughnessWorkflow() {
     return false;
 }
 
-float getClearcoatFactor(TextureChannels textureChannels) {
+float getClearcoatFactor() {
     float factor = material.clearcoatFactor;
-    if(textureChannels.clearcoatFactor != NO_TEXTURE_ID) {
-        vec2 uv = getUV(textureChannels.clearcoatFactor);
+    if(material.clearcoatFactorTextureChannel != NO_TEXTURE_ID) {
+        vec2 uv = getUV(material.clearcoatFactorTextureChannel, material.clearcoatFactorTextureTransform);
         factor *= texture(clearcoatFactorSampler, uv).r;
     }
     return factor;
 }
 
-float getClearcoatRoughness(TextureChannels textureChannels) {
+float getClearcoatRoughness() {
     float roughness = material.clearcoatRoughness;
-    if(textureChannels.clearcoatRoughness != NO_TEXTURE_ID) {
-        vec2 uv = getUV(textureChannels.clearcoatRoughness);
+    if(material.clearcoatRoughnessTextureChannel != NO_TEXTURE_ID) {
+        vec2 uv = getUV(material.clearcoatRoughnessTextureChannel, material.clearcoatRoughnessTextureTransform);
         roughness *= texture(clearcoatRoughnessSampler, uv).g;
     }
     return roughness;
 }
 
-vec3 getClearcoatNormal(TextureChannels textureChannels) {
+vec3 getClearcoatNormal() {
     vec3 normal = normalize(oNormals);
-    if (textureChannels.clearcoatNormal != NO_TEXTURE_ID) {
-        vec2 uv = getUV(textureChannels.clearcoatNormal);
+    if (material.clearcoatNormalsTextureChannel != NO_TEXTURE_ID) {
+        vec2 uv = getUV(material.clearcoatNormalsTextureChannel, material.clearcoatNormalsTextureTransform);
         vec3 normalMap = texture(clearcoatNormalSampler, uv).rgb * 2.0 - 1.0;
         normal = normalize(oTBN * normalMap);
     }
@@ -463,9 +461,7 @@ vec3 computeIBL(PbrInfo pbrInfo, vec3 v) {
 }
 
 void main() {
-    TextureChannels textureChannels = getTextureChannels(material);
-
-    vec4 baseColor = getBaseColor(textureChannels);
+    vec4 baseColor = getBaseColor();
     if (isMasked(baseColor)) {
         discard;
     }
@@ -477,24 +473,24 @@ void main() {
     }
 
     bool metallicRoughnessWorkflow = isMetallicRoughnessWorkflow();
-    vec3 specular = getSpecular(textureChannels);
-    float roughness = getRoughness(textureChannels, metallicRoughnessWorkflow);
+    vec3 specular = getSpecular();
+    float roughness = getRoughness(metallicRoughnessWorkflow);
 
     float metallic;
     if (metallicRoughnessWorkflow) {
-        metallic = getMetallic(textureChannels);
+        metallic = getMetallic();
     } else {
         float maxSpecular = max(specular.r, max(specular.g, specular.b));
         metallic = convertMetallic(baseColor.rgb, specular, maxSpecular);
     }
 
-    vec3 emissive = getEmissiveColor(textureChannels);
+    vec3 emissive = getEmissiveColor();
 
-    float clearcoatFactor = getClearcoatFactor(textureChannels);
-    float clearcoatRoughness = getClearcoatRoughness(textureChannels);
-    vec3 clearcoatNormal = getClearcoatNormal(textureChannels);
+    float clearcoatFactor = getClearcoatFactor();
+    float clearcoatRoughness = getClearcoatRoughness();
+    vec3 clearcoatNormal = getClearcoatNormal();
 
-    vec3 n = getNormal(textureChannels);
+    vec3 n = getNormal();
     vec3 v = normalize(camera.eye.xyz - oPositions);
 
     PbrInfo pbrInfo = PbrInfo(
@@ -527,7 +523,7 @@ void main() {
 
     vec3 ambient = computeIBL(pbrInfo, v);
 
-    color += emissive + occludeAmbientColor(ambient, textureChannels);
+    color += emissive + occludeAmbientColor(ambient);
 
     uint outputMode = config.outputMode;
     if (outputMode == OUTPUT_MODE_FINAL) {
@@ -543,7 +539,7 @@ void main() {
     } else if (outputMode == OUTPUT_MODE_ROUGHNESS) {
         outColor = vec4(vec3(roughness), 1.0);
     } else if (outputMode == OUTPUT_MODE_OCCLUSION) {
-        outColor = vec4(occludeAmbientColor(vec3(1.0), textureChannels), 1.0);
+        outColor = vec4(occludeAmbientColor(vec3(1.0)), 1.0);
     } else if (outputMode == OUTPUT_MODE_NORMAL) {
         outColor = vec4(n*0.5 + 0.5, 1.0);
     } else if (outputMode == OUTPUT_MODE_ALPHA) {
