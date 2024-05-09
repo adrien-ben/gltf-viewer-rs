@@ -4,18 +4,24 @@ use model::{Light, Material, Model, Type, Workflow, MAX_JOINTS_PER_MESH};
 use std::{mem::size_of, sync::Arc};
 use vulkan::{ash::vk, Buffer, Context};
 
+pub const MAX_LIGHT_COUNT: usize = 8;
 const DEFAULT_LIGHT_DIRECTION: [f32; 4] = [0.0, 0.0, -1.0, 0.0];
 const DIRECTIONAL_LIGHT_TYPE: u32 = 0;
 const POINT_LIGHT_TYPE: u32 = 1;
 const SPOT_LIGHT_TYPE: u32 = 2;
-const NO_TEXTURE_ID: u32 = 3; // MAX u2
-const UNLIT_FLAG_LIT: u32 = 0;
-const UNLIT_FLAG_UNLIT: u32 = 1;
+const NO_TEXTURE_ID: u32 = u8::MAX as _;
 const METALLIC_ROUGHNESS_WORKFLOW: u32 = 0;
 const SPECULAR_GLOSSINESS_WORKFLOW: u32 = 1;
 
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, Default)]
 #[repr(C)]
+pub struct LightsUBO {
+    pub count: u32,
+    pub lights: [LightUniform; MAX_LIGHT_COUNT],
+}
+
+#[derive(Copy, Clone, Debug, Default)]
+#[repr(C, align(16))]
 pub struct LightUniform {
     position: [f32; 4],
     direction: [f32; 4],
@@ -77,7 +83,7 @@ impl From<(Matrix4<f32>, Light)> for LightUniform {
 }
 
 #[repr(C)]
-#[derive(Clone, Copy)]
+#[derive(Debug, Clone, Copy)]
 #[allow(dead_code)]
 pub struct MaterialUniform {
     color: [f32; 4],
@@ -93,23 +99,17 @@ pub struct MaterialUniform {
     alpha_cutoff: f32,
     clearcoat_factor: f32,
     clearcoat_roughness: f32,
-    // Contains the texture channels. Each channel taking 2 bits
-    // [0-1] Color texture channel
-    // [2-3] metallic/roughness or specular/glossiness texture channel
-    // [4-5] emissive texture channel
-    // [6-7] normals texture channel
-    // [8-9] Occlusion texture channel
-    // [10-11] Clearcoat factor texture channel
-    // [12-13] Clearcoat roughness texture channel
-    // [14-15] Clearcoat normal texture channel
-    // [16-31] Reserved
-    textures_channels: u32,
-    // Contains alpha mode, unlit flag and workflow flag
-    // [0-7] Alpha mode
-    // [8-15] Unlit flag
-    // [16-23] Workflow (metallic/roughness or specular/glossiness)
-    // [24-31] Reserved
-    alpha_mode_unlit_flag_and_workflow: u32,
+    color_texture_channel: u32,
+    material_texture_channel: u32,
+    emissive_texture_channel: u32,
+    normals_texture_channel: u32,
+    occlusion_texture_channel: u32,
+    clearcoat_factor_texture_channel: u32,
+    clearcoat_roughness_texture_channel: u32,
+    clearcoat_normal_texture_channel: u32,
+    alpha_mode: u32,
+    is_unlit: vk::Bool32,
+    workflow: u32,
 }
 
 impl From<Material> for MaterialUniform {
@@ -136,62 +136,41 @@ impl From<Material> for MaterialUniform {
         let clearcoat_factor = clearcoat.factor();
         let clearcoat_roughness = clearcoat.roughness();
 
-        let textures_channels = {
-            let color = material
-                .get_color_texture()
-                .map_or(NO_TEXTURE_ID, |info| info.get_channel());
-            let metallic_roughness = match material.get_workflow() {
-                Workflow::MetallicRoughness(workflow) => workflow.get_metallic_roughness_texture(),
-                Workflow::SpecularGlossiness(workflow) => {
-                    workflow.get_specular_glossiness_texture()
-                }
-            }
-            .map_or(NO_TEXTURE_ID, |t| t.get_channel());
-            let emissive = material
-                .get_emissive_texture()
-                .map_or(NO_TEXTURE_ID, |info| info.get_channel());
-            let normal = material
-                .get_normals_texture()
-                .map_or(NO_TEXTURE_ID, |info| info.get_channel());
-            let occlusion = material
-                .get_occlusion_texture()
-                .map_or(NO_TEXTURE_ID, |info| info.get_channel());
-            let clearcoat_factor = clearcoat
-                .factor_texture()
-                .map_or(NO_TEXTURE_ID, |info| info.get_channel());
+        let color_texture_channel = material
+            .get_color_texture()
+            .map_or(NO_TEXTURE_ID, |info| info.get_channel());
+        let material_texture_channel = match material.get_workflow() {
+            Workflow::MetallicRoughness(workflow) => workflow.get_metallic_roughness_texture(),
+            Workflow::SpecularGlossiness(workflow) => workflow.get_specular_glossiness_texture(),
+        }
+        .map_or(NO_TEXTURE_ID, |t| t.get_channel());
+        let emissive_texture_channel = material
+            .get_emissive_texture()
+            .map_or(NO_TEXTURE_ID, |info| info.get_channel());
+        let normals_texture_channel = material
+            .get_normals_texture()
+            .map_or(NO_TEXTURE_ID, |info| info.get_channel());
+        let occlusion_texture_channel = material
+            .get_occlusion_texture()
+            .map_or(NO_TEXTURE_ID, |info| info.get_channel());
+        let clearcoat_factor_texture_channel = clearcoat
+            .factor_texture()
+            .map_or(NO_TEXTURE_ID, |info| info.get_channel());
 
-            let clearcoat_roughness = clearcoat
-                .roughness_texture()
-                .map_or(NO_TEXTURE_ID, |info| info.get_channel());
+        let clearcoat_roughness_texture_channel = clearcoat
+            .roughness_texture()
+            .map_or(NO_TEXTURE_ID, |info| info.get_channel());
 
-            let clearcoat_normal = clearcoat
-                .normal_texture()
-                .map_or(NO_TEXTURE_ID, |info| info.get_channel());
+        let clearcoat_normal_texture_channel = clearcoat
+            .normal_texture()
+            .map_or(NO_TEXTURE_ID, |info| info.get_channel());
 
-            (color << 30)
-                | (metallic_roughness << 28)
-                | (emissive << 26)
-                | (normal << 24)
-                | (occlusion << 22)
-                | (clearcoat_factor << 20)
-                | (clearcoat_roughness << 18)
-                | (clearcoat_normal << 16)
-        };
-
-        let alpha_mode_unlit_flag_and_workflow = {
-            let alpha_mode = material.get_alpha_mode();
-            let unlit_flag = if material.is_unlit() {
-                UNLIT_FLAG_UNLIT
-            } else {
-                UNLIT_FLAG_LIT
-            };
-            let workflow = if let Workflow::MetallicRoughness { .. } = workflow {
-                METALLIC_ROUGHNESS_WORKFLOW
-            } else {
-                SPECULAR_GLOSSINESS_WORKFLOW
-            };
-
-            (alpha_mode << 24) | (unlit_flag << 16) | (workflow << 8)
+        let alpha_mode = material.get_alpha_mode();
+        let is_unlit = material.is_unlit().into();
+        let workflow = if let Workflow::MetallicRoughness { .. } = workflow {
+            METALLIC_ROUGHNESS_WORKFLOW
+        } else {
+            SPECULAR_GLOSSINESS_WORKFLOW
         };
 
         MaterialUniform {
@@ -203,8 +182,17 @@ impl From<Material> for MaterialUniform {
             alpha_cutoff,
             clearcoat_factor,
             clearcoat_roughness,
-            textures_channels,
-            alpha_mode_unlit_flag_and_workflow,
+            color_texture_channel,
+            material_texture_channel,
+            emissive_texture_channel,
+            normals_texture_channel,
+            occlusion_texture_channel,
+            clearcoat_factor_texture_channel,
+            clearcoat_roughness_texture_channel,
+            clearcoat_normal_texture_channel,
+            alpha_mode,
+            is_unlit,
+            workflow,
         }
     }
 }
@@ -266,23 +254,28 @@ pub fn create_skin_ubos(
     (buffers, matrices)
 }
 
-pub fn create_lights_ubos(context: &Arc<Context>, model: &Model, count: u32) -> Vec<Buffer> {
-    let light_count = model
-        .nodes()
-        .nodes()
-        .iter()
-        .filter(|n| n.light_index().is_some())
-        .count();
+/// create a ubo containing model's materials
+/// first is a default material (used for primitives that do no reference a material)
+/// then the materials actually defined by the model
+pub fn create_materials_ubo(context: &Arc<Context>, model: &Model) -> Buffer {
+    let material_count = 1 + model.materials().len() as vk::DeviceSize;
+    let elem_size = context.get_ubo_alignment::<MaterialUniform>() as vk::DeviceSize;
+    let size = elem_size * material_count;
+    Buffer::create(
+        Arc::clone(context),
+        size,
+        vk::BufferUsageFlags::UNIFORM_BUFFER,
+        vk::MemoryPropertyFlags::HOST_VISIBLE | vk::MemoryPropertyFlags::HOST_COHERENT,
+    )
+}
 
-    // Buffer size cannot be 0 so we allocate at least anough space for one light
-    // Probably a bad idea but I'd rather avoid creating a specific shader
-    let buffer_size = std::cmp::max(1, light_count) * size_of::<LightUniform>();
-
+pub fn create_lights_ubos(context: &Arc<Context>, count: u32) -> Vec<Buffer> {
+    let size = size_of::<LightsUBO>();
     (0..count)
         .map(|_| {
             Buffer::create(
                 Arc::clone(context),
-                buffer_size as vk::DeviceSize,
+                size as _,
                 vk::BufferUsageFlags::UNIFORM_BUFFER,
                 vk::MemoryPropertyFlags::HOST_VISIBLE | vk::MemoryPropertyFlags::HOST_COHERENT,
             )

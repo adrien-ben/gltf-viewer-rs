@@ -1,4 +1,7 @@
 #version 450
+#extension GL_GOOGLE_include_directive : require
+
+#include "libs/camera.glsl"
 
 layout(location = 0) in vec3 vPositions;
 layout(location = 1) in vec3 vNormals;
@@ -9,20 +12,15 @@ layout(location = 5) in vec4 vWeights;
 layout(location = 6) in uvec4 vJoints;
 layout(location = 7) in vec4 vColors;
 
-layout(binding = 0, set = 0) uniform CameraUBO {
-    mat4 view;
-    mat4 proj;
-    mat4 invertedProj;
-    vec4 eye;
-    float zNear;
-    float zFar;
-} cameraUBO;
+layout(binding = 0, set = 0) uniform Frame {
+    Camera camera;
+};
 
-layout(binding = 2, set = 0) uniform TransformUBO {
+layout(binding = 3, set = 0) uniform TransformUBO {
     mat4 matrix;
 } transform;
 
-layout(binding = 3, set = 0) uniform SkinUBO {
+layout(binding = 4, set = 0) uniform SkinUBO {
     mat4 jointMatrices[512];
 } skin;
 
@@ -53,5 +51,5 @@ void main() {
     oPositions = (world * vec4(vPositions, 1.0)).xyz;
     oTBN = mat3(tangent, bitangent, normal);
     oColors = vColors;
-    gl_Position = cameraUBO.proj * cameraUBO.view * world * vec4(vPositions, 1.0);
+    gl_Position = camera.proj * camera.view * world * vec4(vPositions, 1.0);
 }

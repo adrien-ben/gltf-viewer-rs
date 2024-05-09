@@ -35,6 +35,7 @@ pub struct Model {
     animations: Option<Animations>,
     skins: Vec<Skin>,
     textures: Textures,
+    materials: Vec<Material>,
     lights: Vec<Light>,
 }
 
@@ -99,6 +100,8 @@ impl Model {
             &images,
         );
 
+        let materials = create_materials_from_gltf(&document);
+
         let lights = create_lights_from_gltf(&document);
 
         let model = Model {
@@ -109,6 +112,7 @@ impl Model {
             animations,
             skins,
             textures,
+            materials,
             lights,
         };
 
@@ -218,6 +222,10 @@ impl Model {
 
     pub fn textures(&self) -> &[Texture] {
         &self.textures.textures
+    }
+
+    pub fn materials(&self) -> &[Material] {
+        &self.materials
     }
 
     pub fn lights(&self) -> &[Light] {

@@ -6,12 +6,14 @@ mod uniform;
 use gbufferpass::GBufferPass;
 use lightpass::LightPass;
 use math::cgmath::Matrix4;
+use model::Material;
 use model::Model;
 use model::MAX_JOINTS_PER_MESH;
 use std::cell::RefCell;
 use std::rc::Weak;
 use std::sync::Arc;
 use uniform::*;
+use vulkan::ash::vk;
 use vulkan::{mem_copy, mem_copy_aligned, Buffer, Context};
 
 type JointsBuffer = [Matrix4<f32>; MAX_JOINTS_PER_MESH];
@@ -22,7 +24,8 @@ pub struct ModelData {
     transform_ubos: Vec<Buffer>,
     skin_ubos: Vec<Buffer>,
     skin_matrices: Vec<Vec<JointsBuffer>>,
-    light_buffers: Vec<Buffer>,
+    materials_ubo: Buffer,
+    light_ubos: Vec<Buffer>,
 }
 
 pub struct ModelRenderer {
@@ -40,7 +43,8 @@ impl ModelData {
         let transform_ubos = create_transform_ubos(&context, &model_rc.borrow(), image_count);
         let (skin_ubos, skin_matrices) =
             create_skin_ubos(&context, &model_rc.borrow(), image_count);
-        let light_buffers = create_lights_ubos(&context, &model_rc.borrow(), image_count);
+        let materials_ubo = create_materials_ubo(&context, &model_rc.borrow());
+        let light_ubos = create_lights_ubos(&context, image_count);
 
         Self {
             context,
@@ -48,7 +52,8 @@ impl ModelData {
             transform_ubos,
             skin_ubos,
             skin_matrices,
-            light_buffers,
+            materials_ubo,
+            light_ubos,
         }
     }
 
@@ -90,29 +95,52 @@ impl ModelData {
                 }
             }
 
-            let elem_size = &self.context.get_ubo_alignment::<JointsBuffer>();
+            let elem_size = self.context.get_ubo_alignment::<JointsBuffer>();
             let buffer = &mut self.skin_ubos[frame_index];
             unsafe {
                 let data_ptr = buffer.map_memory();
-                mem_copy_aligned(data_ptr, u64::from(*elem_size), skin_matrices);
+                mem_copy_aligned(data_ptr, u64::from(elem_size), skin_matrices);
             }
         }
 
         // Update light buffers
         {
-            let uniforms = model
+            let mut lights_ubo = LightsUBO::default();
+
+            for (i, ln) in model
                 .nodes()
                 .nodes()
                 .iter()
                 .filter(|n| n.light_index().is_some())
                 .map(|n| (n.transform(), n.light_index().unwrap()))
                 .map(|(t, i)| (t, model.lights()[i]).into())
-                .collect::<Vec<LightUniform>>();
+                .enumerate()
+                .take(MAX_LIGHT_COUNT)
+            {
+                lights_ubo.count += 1;
+                lights_ubo.lights[i] = ln;
+            }
 
-            if !uniforms.is_empty() {
-                let buffer = &mut self.light_buffers[frame_index];
+            let buffer = &mut self.light_ubos[frame_index];
+            let data_ptr = buffer.map_memory();
+            unsafe { mem_copy(data_ptr, &[lights_ubo]) };
+        }
+
+        // Update materials buffer
+        {
+            let mut ubos: Vec<MaterialUniform> = vec![Material::default().into()];
+            model
+                .materials()
+                .iter()
+                .copied()
+                .map(|m| m.into())
+                .for_each(|m| ubos.push(m));
+
+            let elem_size = self.context.get_ubo_alignment::<MaterialUniform>() as vk::DeviceSize;
+            let buffer = &mut self.materials_ubo;
+            unsafe {
                 let data_ptr = buffer.map_memory();
-                unsafe { mem_copy(data_ptr, &uniforms) };
+                mem_copy_aligned(data_ptr, elem_size, &ubos);
             }
         }
     }

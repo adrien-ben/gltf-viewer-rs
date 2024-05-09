@@ -81,7 +81,8 @@ pub struct Renderer {
     command_buffers: Vec<vk::CommandBuffer>,
     in_flight_frames: InFlightFrames,
     environment: Environment,
-    camera_uniform_buffers: Vec<Buffer>,
+    camera_ubos: Vec<Buffer>,
+    config_ubos: Vec<Buffer>,
     attachments: Attachments,
     skybox_renderer: SkyboxRenderer,
     model_renderer: Option<ModelRenderer>,
@@ -131,8 +132,8 @@ impl Renderer {
 
         let in_flight_frames = create_sync_objects(&context);
 
-        let camera_uniform_buffers =
-            create_camera_uniform_buffers(&context, swapchain.image_count() as u32);
+        let camera_ubos = create_camera_ubos(&context, swapchain.image_count() as u32);
+        let config_ubos = create_config_ubos(&context, swapchain.image_count() as u32);
 
         let attachments = Attachments::new(
             &context,
@@ -143,7 +144,7 @@ impl Renderer {
 
         let skybox_renderer = SkyboxRenderer::create(
             Arc::clone(&context),
-            &camera_uniform_buffers,
+            &camera_ubos,
             &environment,
             msaa_samples,
             depth_format,
@@ -153,7 +154,7 @@ impl Renderer {
             Arc::clone(&context),
             &attachments.gbuffer_normals,
             &attachments.gbuffer_depth,
-            &camera_uniform_buffers,
+            &camera_ubos,
             settings,
         );
 
@@ -195,7 +196,8 @@ impl Renderer {
             command_buffers,
             in_flight_frames,
             environment,
-            camera_uniform_buffers,
+            camera_ubos,
+            config_ubos,
             attachments,
             skybox_renderer,
             model_renderer: None,
@@ -268,17 +270,28 @@ fn create_sync_objects(context: &Arc<Context>) -> InFlightFrames {
     InFlightFrames::new(Arc::clone(context), sync_objects_vec)
 }
 
-fn create_camera_uniform_buffers(context: &Arc<Context>, count: u32) -> Vec<Buffer> {
+fn create_camera_ubos(context: &Arc<Context>, count: u32) -> Vec<Buffer> {
     (0..count)
         .map(|_| {
-            let mut buffer = Buffer::create(
+            Buffer::create(
                 Arc::clone(context),
                 size_of::<CameraUBO>() as _,
                 vk::BufferUsageFlags::UNIFORM_BUFFER,
                 vk::MemoryPropertyFlags::HOST_VISIBLE | vk::MemoryPropertyFlags::HOST_COHERENT,
-            );
-            buffer.map_memory();
-            buffer
+            )
+        })
+        .collect::<Vec<_>>()
+}
+
+fn create_config_ubos(context: &Arc<Context>, count: u32) -> Vec<Buffer> {
+    (0..count)
+        .map(|_| {
+            Buffer::create(
+                Arc::clone(context),
+                size_of::<ConfigUBO>() as _,
+                vk::BufferUsageFlags::UNIFORM_BUFFER,
+                vk::MemoryPropertyFlags::HOST_VISIBLE | vk::MemoryPropertyFlags::HOST_COHERENT,
+            )
         })
         .collect::<Vec<_>>()
 }
@@ -815,11 +828,12 @@ impl Renderer {
         if let Some(model_renderer) = self.model_renderer.as_mut() {
             model_renderer
                 .gbuffer_pass
-                .set_model(&model_data, &self.camera_uniform_buffers);
+                .set_model(&model_data, &self.camera_ubos);
 
             model_renderer.light_pass.set_model(
                 &model_data,
-                &self.camera_uniform_buffers,
+                &self.camera_ubos,
+                &self.config_ubos,
                 &self.environment,
                 ao_map,
             );
@@ -829,14 +843,15 @@ impl Renderer {
             let gbuffer_pass = GBufferPass::create(
                 Arc::clone(&self.context),
                 &model_data,
-                &self.camera_uniform_buffers,
+                &self.camera_ubos,
                 self.depth_format,
             );
 
             let light_pass = LightPass::create(
                 Arc::clone(&self.context),
                 &model_data,
-                &self.camera_uniform_buffers,
+                &self.camera_ubos,
+                &self.config_ubos,
                 &self.environment,
                 ao_map,
                 self.msaa_samples,
@@ -1037,7 +1052,20 @@ impl Renderer {
             let inverted_proj = proj.invert().unwrap();
 
             let ubo = CameraUBO::new(view, proj, inverted_proj, camera.position(), z_near, z_far);
-            let buffer = &mut self.camera_uniform_buffers[frame_index];
+            let buffer = &mut self.camera_ubos[frame_index];
+            unsafe {
+                let data_ptr = buffer.map_memory();
+                mem_copy(data_ptr, &[ubo]);
+            }
+        }
+
+        // Config
+        {
+            let ubo = ConfigUBO {
+                emissive_intensity: self.settings.emissive_intensity,
+                output_mode: self.settings.output_mode as u32,
+            };
+            let buffer = &mut self.config_ubos[frame_index];
             unsafe {
                 let data_ptr = buffer.map_memory();
                 mem_copy(data_ptr, &[ubo]);
@@ -1194,4 +1222,12 @@ impl SyncObjects {
             device.destroy_fence(self.fence, None);
         }
     }
+}
+
+#[repr(C, align(4))]
+#[allow(dead_code)]
+#[derive(Debug, Clone, Copy)]
+struct ConfigUBO {
+    output_mode: u32,
+    emissive_intensity: f32,
 }

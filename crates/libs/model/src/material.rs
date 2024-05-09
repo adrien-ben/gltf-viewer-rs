@@ -1,6 +1,7 @@
 use gltf::{
     material::{AlphaMode, Material as GltfMaterial, NormalTexture, OcclusionTexture},
     texture::Info,
+    Document,
 };
 
 const ALPHA_MODE_OPAQUE: u32 = 0;
@@ -22,6 +23,30 @@ pub struct Material {
     double_sided: bool,
     is_unlit: bool,
     clearcoat: Option<Clearcoat>,
+}
+
+impl Default for Material {
+    fn default() -> Self {
+        Self {
+            color: [1.0, 1.0, 1.0, 1.0],
+            emissive: [0.0, 0.0, 0.0],
+            occlusion: 0.0,
+            color_texture: None,
+            emissive_texture: None,
+            normals_texture: None,
+            occlusion_texture: None,
+            workflow: Workflow::MetallicRoughness(MetallicRoughnessWorkflow {
+                metallic: 1.0,
+                roughness: 1.0,
+                metallic_roughness_texture: None,
+            }),
+            alpha_mode: ALPHA_MODE_OPAQUE,
+            alpha_cutoff: 0.5,
+            double_sided: false,
+            is_unlit: false,
+            clearcoat: None,
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -211,6 +236,10 @@ impl TextureInfo {
     pub fn get_channel(&self) -> u32 {
         self.channel
     }
+}
+
+pub(crate) fn create_materials_from_gltf(document: &Document) -> Vec<Material> {
+    document.materials().map(Material::from).collect()
 }
 
 impl<'a> From<GltfMaterial<'a>> for Material {

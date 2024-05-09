@@ -1,4 +1,7 @@
 #version 450
+#extension GL_GOOGLE_include_directive : require
+
+#include "libs/camera.glsl"
 
 layout (constant_id = 0) const uint SSAO_KERNEL_SIZE = 32;
 
@@ -18,20 +21,15 @@ layout(binding = 3, set = 1) uniform SSAOKernel {
 	vec4 samples[SSAO_KERNEL_SIZE];
 } ssaoKernel;
 
-layout(binding = 4, set = 2) uniform CameraUBO {
-    mat4 view;
-    mat4 proj;
-    mat4 invertedProj;
-    vec4 eye;
-    float zNear;
-    float zFar;
-} cameraUBO;
+layout(binding = 4, set = 2) uniform Frame {
+    Camera camera;
+};
 
 layout(location = 0) out float finalColor;
 
 float linearDepth(vec2 uv) {
-    float near = cameraUBO.zNear;
-    float far = cameraUBO.zFar;
+    float near = camera.zNear;
+    float far = camera.zFar;
     float depth = texture(depthSampler, uv).r;
     return (near * far) / (far + depth * (near - far));
 }
@@ -64,7 +62,7 @@ void main() {
         
         // project sample position:
         vec4 offset = vec4(kSample, 1.0);
-        offset = cameraUBO.proj * offset;
+        offset = camera.proj * offset;
         offset.xy /= offset.w;
         offset.xy = offset.xy * 0.5 + 0.5;
         

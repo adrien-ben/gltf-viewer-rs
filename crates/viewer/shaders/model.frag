@@ -1,4 +1,8 @@
 #version 450
+#extension GL_GOOGLE_include_directive : require
+
+#include "libs/camera.glsl"
+#include "libs/material.glsl"
 
 // -- Constants --
 layout(constant_id = 0) const uint MAX_LIGHT_COUNT = 1;
@@ -29,32 +33,11 @@ const vec3 DIELECTRIC_SPECULAR = vec3(0.04);
 const vec3 BLACK = vec3(0.0);
 const float PI = 3.14159;
 
-const uint NO_TEXTURE_ID = 3;
-
-const uint ALPHA_MODE_MASK = 1;
-const uint ALPHA_MODE_BLEND = 2;
-const float ALPHA_CUTOFF_BIAS = 0.0000001;
-
 const uint DIRECTIONAL_LIGHT_TYPE = 0;
 const uint POINT_LIGHT_TYPE = 1;
 const uint SPOT_LIGHT_TYPE = 2;
 
-const uint UNLIT_FLAG_UNLIT = 1;
-
-const uint METALLIC_ROUGHNESS_WORKFLOW = 0;
-
 // -- Structures --
-struct TextureChannels {
-    uint color;
-    uint material;
-    uint emissive;
-    uint normal;
-    uint occlusion;
-    uint clearcoatFactor;
-    uint clearcoatRoughness;
-    uint clearcoatNormal;
-};
-
 struct Light {
     vec4 position;
     vec4 direction;
@@ -78,6 +61,11 @@ struct PbrInfo {
     vec3 clearcoatNormal;
 };
 
+struct Config {
+    uint outputMode;
+    float emissiveIntensity;
+};
+
 // -- Inputs --
 layout(location = 0) in vec3 oNormals;
 layout(location = 1) in vec2 oTexcoords0;
@@ -86,86 +74,42 @@ layout(location = 3) in vec3 oPositions;
 layout(location = 4) in vec4 oColors;
 layout(location = 5) in mat3 oTBN;
 
-// -- Push constants
-layout(push_constant) uniform MaterialUniform {
-    vec4 color;
-    vec3 emissiveFactor;
-    // - roughness for metallic/roughness workflows
-    // - glossiness for specular/glossiness workflows
-    float roughnessGlossiness;
-    // Contains the metallic (or specular) factor.
-    // - metallic: r (for metallic/roughness workflows)
-    // - specular: rgb (for specular/glossiness workflows)
-    vec3 metallicSpecular;
-    float occlusion;
-    float alphaCutoff;
-    float clearcoatFactor;
-    float clearcoatRoughness;
-    // Contains the texture channels. Each channel taking 2 bits
-    // [0-1] Color texture channel
-    // [2-3] metallic/roughness or specular/glossiness texture channel
-    // [4-5] emissive texture channel
-    // [6-7] normals texture channel
-    // [8-9] Occlusion texture channel
-    // [10-11] Clearcoat factor texture channel
-    // [12-13] Clearcoat roughness texture channel
-    // [14-15] Clearcoat normal texture channel
-    // [16-31] Reserved
-    uint texturesChannels;
-    // Contains alpha mode, unlit flag and workflow flag
-    // [0-7] Alpha mode
-    // [8-15] Unlit flag
-    // [16-23] Workflow (metallic/roughness or specular/glossiness)
-    // [24-31] Reserved
-    uint alphaModeUnlitFlagAndWorkflow;
-    uint lightCount;
-    uint outputMode;
-    float emissiveIntensity;
-} material;
-
 // -- Descriptors --
-layout(binding = 0, set = 0) uniform Camera {
-    mat4 view;
-    mat4 proj;
-    mat4 invertedProj;
-    vec4 eye;
-    float zNear;
-    float zFar;
-} cameraUBO;
-layout(binding = 1, set = 0) uniform Lights {
+layout(binding = 0, set = 0) uniform CameraUBO {
+    Camera camera;
+};
+
+layout(binding = 1, set = 0) uniform ConfigUBO {
+    Config config;
+};
+
+layout(binding = 2, set = 0) uniform LightsUBO {
+    uint count;
     Light lights[MAX_LIGHT_COUNT];
 } lights;
-layout(binding = 4, set = 1) uniform samplerCube irradianceMapSampler;
-layout(binding = 5, set = 1) uniform samplerCube preFilteredSampler;
-layout(binding = 6, set = 1) uniform sampler2D brdfLookupSampler;
-layout(binding = 7, set = 2) uniform sampler2D colorSampler;
-layout(binding = 8, set = 2) uniform sampler2D normalsSampler;
+
+layout(binding = 5, set = 1) uniform samplerCube irradianceMapSampler;
+layout(binding = 6, set = 1) uniform samplerCube preFilteredSampler;
+layout(binding = 7, set = 1) uniform sampler2D brdfLookupSampler;
+layout(binding = 8, set = 2) uniform sampler2D colorSampler;
+layout(binding = 9, set = 2) uniform sampler2D normalsSampler;
 // This sampler contains either:
 // - metallic (b) + glossiness (g) for metallic/roughness workflow
 // - specular (rgb) + glossiness (a) for specular/glossiness workflow
-layout(binding = 9, set = 2) uniform sampler2D materialSampler;
-layout(binding = 10, set = 2) uniform sampler2D occlusionSampler;
-layout(binding = 11, set = 2) uniform sampler2D emissiveSampler;
-layout(binding = 12, set = 2) uniform sampler2D clearcoatFactorSampler;
-layout(binding = 13, set = 2) uniform sampler2D clearcoatRoughnessSampler;
-layout(binding = 14, set = 2) uniform sampler2D clearcoatNormalSampler;
-layout(binding = 15, set = 3) uniform sampler2D aoMapSampler;
+layout(binding = 10, set = 2) uniform sampler2D materialSampler;
+layout(binding = 11, set = 2) uniform sampler2D occlusionSampler;
+layout(binding = 12, set = 2) uniform sampler2D emissiveSampler;
+layout(binding = 13, set = 2) uniform sampler2D clearcoatFactorSampler;
+layout(binding = 14, set = 2) uniform sampler2D clearcoatRoughnessSampler;
+layout(binding = 15, set = 2) uniform sampler2D clearcoatNormalSampler;
+layout(binding = 16, set = 3) uniform sampler2D aoMapSampler;
+
+layout(binding = 17, set = 4) uniform MaterialUBO {
+    Material material;
+};
 
 // Output
 layout(location = 0) out vec4 outColor;
-
-TextureChannels getTextureChannels() {
-    return TextureChannels(
-        (material.texturesChannels >> 30) & 3,
-        (material.texturesChannels >> 28) & 3,
-        (material.texturesChannels >> 26) & 3,
-        (material.texturesChannels >> 24) & 3,
-        (material.texturesChannels >> 22) & 3,
-        (material.texturesChannels >> 20) & 3,
-        (material.texturesChannels >> 18) & 3,
-        (material.texturesChannels >> 16) & 3
-    );
-}
 
 vec2 getUV(uint texChannel) {
     if (texChannel == 0) {
@@ -238,7 +182,7 @@ vec3 getEmissiveColor(TextureChannels textureChannels) {
         vec2 uv = getUV(textureChannels.emissive);
         emissive *= texture(emissiveSampler, uv).rgb;
     }
-    return emissive * material.emissiveIntensity;
+    return emissive * config.emissiveIntensity;
 }
 
 vec3 getNormal(TextureChannels textureChannels) {
@@ -273,7 +217,7 @@ vec3 occludeAmbientColor(vec3 ambientColor, TextureChannels textureChannels) {
 }
 
 uint getAlphaMode() {
-    return (material.alphaModeUnlitFlagAndWorkflow >> 24) & 255;
+    return material.alphaMode;
 }
 
 bool isMasked(vec4 baseColor) {
@@ -305,15 +249,11 @@ float getAlpha(vec4 baseColor) {
 }
 
 bool isUnlit() {
-    uint unlitFlag = (material.alphaModeUnlitFlagAndWorkflow >> 16) & 255;
-    if (unlitFlag == UNLIT_FLAG_UNLIT) {
-        return true;
-    }
-    return false;
+    return material.isUnlit;
 }
 
 bool isMetallicRoughnessWorkflow() {
-    uint workflow = (material.alphaModeUnlitFlagAndWorkflow >> 8) & 255;
+    uint workflow = material.workflow;
     if (workflow == METALLIC_ROUGHNESS_WORKFLOW) {
         return true;
     }
@@ -523,7 +463,7 @@ vec3 computeIBL(PbrInfo pbrInfo, vec3 v) {
 }
 
 void main() {
-    TextureChannels textureChannels = getTextureChannels();
+    TextureChannels textureChannels = getTextureChannels(material);
 
     vec4 baseColor = getBaseColor(textureChannels);
     if (isMasked(baseColor)) {
@@ -555,7 +495,7 @@ void main() {
     vec3 clearcoatNormal = getClearcoatNormal(textureChannels);
 
     vec3 n = getNormal(textureChannels);
-    vec3 v = normalize(cameraUBO.eye.xyz - oPositions);
+    vec3 v = normalize(camera.eye.xyz - oPositions);
 
     PbrInfo pbrInfo = PbrInfo(
         baseColor.rgb, 
@@ -571,7 +511,7 @@ void main() {
 
     vec3 color = vec3(0.0);
 
-    for (int i = 0; i < material.lightCount; i++) {
+    for (int i = 0; i < lights.count; i++) {
 
         Light light = lights.lights[i];
         uint lightType = light.type;
@@ -589,36 +529,37 @@ void main() {
 
     color += emissive + occludeAmbientColor(ambient, textureChannels);
 
-    if (material.outputMode == OUTPUT_MODE_FINAL) {
+    uint outputMode = config.outputMode;
+    if (outputMode == OUTPUT_MODE_FINAL) {
         outColor = vec4(color, alpha);
-    } else if (material.outputMode == OUTPUT_MODE_COLOR) {
+    } else if (outputMode == OUTPUT_MODE_COLOR) {
         outColor = vec4(baseColor.rgb, 1.0);
-    } else if (material.outputMode == OUTPUT_MODE_EMISSIVE) {
+    } else if (outputMode == OUTPUT_MODE_EMISSIVE) {
         outColor = vec4(emissive, 1.0);
-    } else if (material.outputMode == OUTPUT_MODE_METALLIC) {
+    } else if (outputMode == OUTPUT_MODE_METALLIC) {
         outColor = vec4(vec3(metallic), 1.0);
-    } else if (material.outputMode == OUTPUT_MODE_SPECULAR) {
+    } else if (outputMode == OUTPUT_MODE_SPECULAR) {
         outColor = vec4(specular, 1.0);
-    } else if (material.outputMode == OUTPUT_MODE_ROUGHNESS) {
+    } else if (outputMode == OUTPUT_MODE_ROUGHNESS) {
         outColor = vec4(vec3(roughness), 1.0);
-    } else if (material.outputMode == OUTPUT_MODE_OCCLUSION) {
+    } else if (outputMode == OUTPUT_MODE_OCCLUSION) {
         outColor = vec4(occludeAmbientColor(vec3(1.0), textureChannels), 1.0);
-    } else if (material.outputMode == OUTPUT_MODE_NORMAL) {
+    } else if (outputMode == OUTPUT_MODE_NORMAL) {
         outColor = vec4(n*0.5 + 0.5, 1.0);
-    } else if (material.outputMode == OUTPUT_MODE_ALPHA) {
+    } else if (outputMode == OUTPUT_MODE_ALPHA) {
         outColor = vec4(vec3(baseColor.a), 1.0);
-    } else if (material.outputMode == OUTPUT_MODE_UVS0) {
+    } else if (outputMode == OUTPUT_MODE_UVS0) {
         outColor = vec4(vec2(oTexcoords0), 0.0, 1.0);
-    } else if (material.outputMode == OUTPUT_MODE_UVS1) {
+    } else if (outputMode == OUTPUT_MODE_UVS1) {
         outColor = vec4(vec2(oTexcoords1), 0.0, 1.0);
-    } else if (material.outputMode == OUTPUT_MODE_SSAO) {
+    } else if (outputMode == OUTPUT_MODE_SSAO) {
         float ao = sampleAOMap();
         outColor = vec4(vec3(ao), 1.0);
-    } else if (material.outputMode == OUTPUT_MODE_CLEARCOAT_FACTOR) {
+    } else if (outputMode == OUTPUT_MODE_CLEARCOAT_FACTOR) {
         outColor = vec4(vec3(clearcoatFactor), 1.0);
-    } else if (material.outputMode == OUTPUT_MODE_CLEARCOAT_ROUGHNESS) {
+    } else if (outputMode == OUTPUT_MODE_CLEARCOAT_ROUGHNESS) {
         outColor = vec4(vec3(clearcoatRoughness), 1.0);
-    } else if (material.outputMode == OUTPUT_MODE_CLEARCOAT_NORMAL) {
+    } else if (outputMode == OUTPUT_MODE_CLEARCOAT_NORMAL) {
         outColor = outColor = vec4(clearcoatNormal*0.5 + 0.5, 1.0);
     }
 }

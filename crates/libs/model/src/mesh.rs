@@ -42,6 +42,7 @@ pub struct Primitive {
     vertices: VertexBuffer,
     indices: Option<IndexBuffer>,
     material: Material,
+    material_index: Option<usize>,
     aabb: Aabb<f32>,
 }
 
@@ -62,6 +63,10 @@ impl Primitive {
         self.material
     }
 
+    pub fn material_index(&self) -> Option<usize> {
+        self.material_index
+    }
+
     pub fn aabb(&self) -> Aabb<f32> {
         self.aabb
     }
@@ -78,6 +83,7 @@ struct PrimitiveData {
     indices: Option<IndexBufferPart>,
     vertices: VertexBufferPart,
     material: Material,
+    material_index: Option<usize>,
     aabb: Aabb<f32>,
 }
 
@@ -172,6 +178,7 @@ pub fn create_meshes_from_gltf(
                     indices,
                     vertices: (offset, accessor.count()),
                     material,
+                    material_index: primitive.material().index(),
                     aabb,
                 });
             }
@@ -227,6 +234,7 @@ pub fn create_meshes_from_gltf(
                             vertices: vertex_buffer,
                             indices: index_buffer,
                             material: buffers.material,
+                            material_index: buffers.material_index,
                             aabb: buffers.aabb,
                         }
                     })

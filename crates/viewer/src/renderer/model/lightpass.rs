@@ -12,29 +12,30 @@ use vulkan::{Buffer, Context, Texture as VulkanTexture};
 
 const SAMPLERS_PER_PRIMITIVE: u32 = 8;
 
-const DYNAMIC_DATA_SET_INDEX: u32 = 0;
+const PER_NODE_DYNAMIC_DATA_SET_INDEX: u32 = 0;
 const STATIC_DATA_SET_INDEX: u32 = 1;
 const PER_PRIMITIVE_DATA_SET_INDEX: u32 = 2;
 const INPUT_SET_INDEX: u32 = 3;
+const PER_PRIMITIVE_DYNAMIC_DATA_SET_INDEX: u32 = 4;
 
 const CAMERA_UBO_BINDING: u32 = 0;
-const LIGHT_UBO_BINDING: u32 = 1;
-const TRANSFORMS_UBO_BINDING: u32 = 2;
-const SKINS_UBO_BINDING: u32 = 3;
-const IRRADIANCE_SAMPLER_BINDING: u32 = 4;
-const PRE_FILTERED_SAMPLER_BINDING: u32 = 5;
-const BRDF_SAMPLER_BINDING: u32 = 6;
-const COLOR_SAMPLER_BINDING: u32 = 7;
-const NORMALS_SAMPLER_BINDING: u32 = 8;
-const MATERIAL_SAMPLER_BINDING: u32 = 9;
-const OCCLUSION_SAMPLER_BINDING: u32 = 10;
-const EMISSIVE_SAMPLER_BINDING: u32 = 11;
-const CLEARCOAT_FACTOR_SAMPLER_BINDING: u32 = 12;
-const CLEARCOAT_ROUGHNESS_SAMPLER_BINDING: u32 = 13;
-const CLEARCOAT_NORMAL_SAMPLER_BINDING: u32 = 14;
-const AO_MAP_SAMPLER_BINDING: u32 = 15;
-
-const MAX_LIGHT_COUNT: u32 = 8;
+const CONFIG_UBO_BINDING: u32 = 1;
+const LIGHT_UBO_BINDING: u32 = 2;
+const TRANSFORMS_UBO_BINDING: u32 = 3;
+const SKINS_UBO_BINDING: u32 = 4;
+const IRRADIANCE_SAMPLER_BINDING: u32 = 5;
+const PRE_FILTERED_SAMPLER_BINDING: u32 = 6;
+const BRDF_SAMPLER_BINDING: u32 = 7;
+const COLOR_SAMPLER_BINDING: u32 = 8;
+const NORMALS_SAMPLER_BINDING: u32 = 9;
+const MATERIAL_SAMPLER_BINDING: u32 = 10;
+const OCCLUSION_SAMPLER_BINDING: u32 = 11;
+const EMISSIVE_SAMPLER_BINDING: u32 = 12;
+const CLEARCOAT_FACTOR_SAMPLER_BINDING: u32 = 13;
+const CLEARCOAT_ROUGHNESS_SAMPLER_BINDING: u32 = 14;
+const CLEARCOAT_NORMAL_SAMPLER_BINDING: u32 = 15;
+const AO_MAP_SAMPLER_BINDING: u32 = 16;
+const MATERIAL_UBO_BINDING: u32 = 17;
 
 pub struct LightPass {
     context: Arc<Context>,
@@ -113,13 +114,6 @@ impl OutputMode {
     }
 }
 
-#[allow(dead_code)]
-struct ConfigUniform {
-    light_count: u32,
-    output_mode: u32,
-    emissive_intensity: f32,
-}
-
 #[derive(Debug, Clone, Copy)]
 enum Pass {
     /// Opaque geometry only, will discard masked fragments.
@@ -136,7 +130,8 @@ impl LightPass {
     pub fn create(
         context: Arc<Context>,
         model_data: &ModelData,
-        camera_buffers: &[Buffer],
+        camera_ubos: &[Buffer],
+        config_ubos: &[Buffer],
         environment: &Environment,
         ao_map: Option<&VulkanTexture>,
         msaa_samples: vk::SampleCountFlags,
@@ -153,16 +148,17 @@ impl LightPass {
         let descriptors = create_descriptors(
             &context,
             DescriptorsResources {
-                camera_buffers,
+                camera_ubos,
+                config_ubos,
                 model_transform_buffers: &model_data.transform_ubos,
                 model_skin_buffers: &model_data.skin_ubos,
-                light_buffers: &model_data.light_buffers,
+                model_materials_buffer: &model_data.materials_ubo,
+                light_buffers: &model_data.light_ubos,
                 dummy_texture: &dummy_texture,
                 environment,
-
                 model: &model_rc.borrow(),
+                ao_map: ao_map.unwrap_or(&dummy_texture),
             },
-            ao_map.unwrap_or(&dummy_texture),
         );
 
         let pipeline_layout = create_pipeline_layout(context.device(), &descriptors);
@@ -236,7 +232,8 @@ impl LightPass {
     pub fn set_model(
         &mut self,
         model_data: &ModelData,
-        camera_buffers: &[Buffer],
+        camera_ubos: &[Buffer],
+        config_ubos: &[Buffer],
         environment: &Environment,
         ao_map: Option<&VulkanTexture>,
     ) {
@@ -248,16 +245,18 @@ impl LightPass {
         self.descriptors = create_descriptors(
             &self.context,
             DescriptorsResources {
-                camera_buffers,
+                camera_ubos,
+                config_ubos,
                 model_transform_buffers: &model_data.transform_ubos,
                 model_skin_buffers: &model_data.skin_ubos,
-                light_buffers: &model_data.light_buffers,
+                model_materials_buffer: &model_data.materials_ubo,
+                light_buffers: &model_data.light_ubos,
                 dummy_texture: &self.dummy_texture,
                 environment,
 
                 model: &model_rc.borrow(),
+                ao_map: ao_map.unwrap_or(&self.dummy_texture),
             },
-            ao_map.unwrap_or(&self.dummy_texture),
         );
     }
 
@@ -380,8 +379,8 @@ impl LightPass {
                     command_buffer,
                     vk::PipelineBindPoint::GRAPHICS,
                     self.pipeline_layout,
-                    DYNAMIC_DATA_SET_INDEX,
-                    &self.descriptors.dynamic_data_sets[frame_index..=frame_index],
+                    PER_NODE_DYNAMIC_DATA_SET_INDEX,
+                    &self.descriptors.per_node_dynamic_data_sets[frame_index..=frame_index],
                     &[
                         model_transform_ubo_offset * index as u32,
                         model_skin_ubo_offset * skin_index as u32,
@@ -391,6 +390,11 @@ impl LightPass {
 
             for primitive in mesh.primitives().iter().filter(primitive_filter) {
                 let primitive_index = primitive.index();
+                let material_index = primitive
+                    .material_index()
+                    .map(|i| i + 1)
+                    .unwrap_or_default();
+                let material_ubo_offset = self.context.get_ubo_alignment::<MaterialUniform>();
 
                 // Bind descriptor sets
                 unsafe {
@@ -401,8 +405,17 @@ impl LightPass {
                         PER_PRIMITIVE_DATA_SET_INDEX,
                         &self.descriptors.per_primitive_sets[primitive_index..=primitive_index],
                         &[],
-                    )
-                };
+                    );
+
+                    device.cmd_bind_descriptor_sets(
+                        command_buffer,
+                        vk::PipelineBindPoint::GRAPHICS,
+                        self.pipeline_layout,
+                        PER_PRIMITIVE_DYNAMIC_DATA_SET_INDEX,
+                        &[self.descriptors.per_primitive_dynamic_data_set],
+                        &[material_index as u32 * material_ubo_offset],
+                    );
+                }
 
                 unsafe {
                     device.cmd_bind_vertex_buffers(
@@ -423,34 +436,6 @@ impl LightPass {
                         );
                     }
                 }
-
-                // Push material constants
-                unsafe {
-                    let material: MaterialUniform = primitive.material().into();
-                    let mut data = any_as_u8_slice(&material).to_vec();
-
-                    let light_count = model
-                        .nodes()
-                        .nodes()
-                        .iter()
-                        .filter(|n| n.light_index().is_some())
-                        .count() as u32;
-
-                    let config = ConfigUniform {
-                        light_count,
-                        output_mode: self.output_mode as _,
-                        emissive_intensity: self.emissive_intensity,
-                    };
-                    data.extend_from_slice(any_as_u8_slice(&config));
-
-                    device.cmd_push_constants(
-                        command_buffer,
-                        self.pipeline_layout,
-                        vk::ShaderStageFlags::FRAGMENT,
-                        0,
-                        data.as_slice(),
-                    );
-                };
 
                 // Draw geometry
                 match primitive.indices() {
@@ -499,26 +484,31 @@ impl Drop for LightPass {
 
 #[derive(Copy, Clone)]
 struct DescriptorsResources<'a> {
-    camera_buffers: &'a [Buffer],
+    camera_ubos: &'a [Buffer],
+    config_ubos: &'a [Buffer],
     model_transform_buffers: &'a [Buffer],
     model_skin_buffers: &'a [Buffer],
+    model_materials_buffer: &'a Buffer,
     light_buffers: &'a [Buffer],
     dummy_texture: &'a VulkanTexture,
     environment: &'a Environment,
     model: &'a Model,
+    ao_map: &'a VulkanTexture,
 }
 
 pub struct Descriptors {
     context: Arc<Context>,
     pool: vk::DescriptorPool,
-    dynamic_data_layout: vk::DescriptorSetLayout,
-    dynamic_data_sets: Vec<vk::DescriptorSet>,
+    per_node_dynamic_data_layout: vk::DescriptorSetLayout,
+    per_node_dynamic_data_sets: Vec<vk::DescriptorSet>,
     static_data_layout: vk::DescriptorSetLayout,
     static_data_set: vk::DescriptorSet,
     per_primitive_layout: vk::DescriptorSetLayout,
     per_primitive_sets: Vec<vk::DescriptorSet>,
     input_layout: vk::DescriptorSetLayout,
     input_set: vk::DescriptorSet,
+    per_primitive_dynamic_data_layout: vk::DescriptorSetLayout,
+    per_primitive_dynamic_data_set: vk::DescriptorSet,
 }
 
 impl Drop for Descriptors {
@@ -526,24 +516,26 @@ impl Drop for Descriptors {
         let device = self.context.device();
         unsafe {
             device.destroy_descriptor_pool(self.pool, None);
+            device.destroy_descriptor_set_layout(self.per_primitive_dynamic_data_layout, None);
             device.destroy_descriptor_set_layout(self.input_layout, None);
-            device.destroy_descriptor_set_layout(self.dynamic_data_layout, None);
+            device.destroy_descriptor_set_layout(self.per_node_dynamic_data_layout, None);
             device.destroy_descriptor_set_layout(self.static_data_layout, None);
             device.destroy_descriptor_set_layout(self.per_primitive_layout, None);
         }
     }
 }
 
-fn create_descriptors(
-    context: &Arc<Context>,
-    resources: DescriptorsResources,
-    ao_map: &VulkanTexture,
-) -> Descriptors {
+fn create_descriptors(context: &Arc<Context>, resources: DescriptorsResources) -> Descriptors {
     let pool = create_descriptor_pool(context.device(), resources);
 
-    let dynamic_data_layout = create_dynamic_data_descriptor_set_layout(context.device());
-    let dynamic_data_sets =
-        create_dynamic_data_descriptor_sets(context, pool, dynamic_data_layout, resources);
+    let per_node_dynamic_data_layout =
+        create_per_node_dynamic_data_descriptor_set_layout(context.device());
+    let per_node_dynamic_data_sets = create_per_node_dynamic_data_descriptor_sets(
+        context,
+        pool,
+        per_node_dynamic_data_layout,
+        resources,
+    );
 
     let static_data_layout = create_static_data_descriptor_set_layout(context.device());
     let static_data_set =
@@ -554,19 +546,30 @@ fn create_descriptors(
         create_per_primitive_descriptor_sets(context, pool, per_primitive_layout, resources);
 
     let input_layout = create_input_descriptor_set_layout(context.device());
-    let input_set = create_input_descriptor_set(context, pool, input_layout, ao_map);
+    let input_set = create_input_descriptor_set(context, pool, input_layout, resources.ao_map);
+
+    let per_primitive_dynamic_data_layout =
+        create_per_primitive_dynamic_data_descriptor_set_layout(context.device());
+    let per_primitive_dynamic_data_set = create_per_primitive_dynamic_data_descriptor_set(
+        context,
+        pool,
+        per_primitive_dynamic_data_layout,
+        resources,
+    );
 
     Descriptors {
         context: Arc::clone(context),
         pool,
-        dynamic_data_layout,
-        dynamic_data_sets,
+        per_node_dynamic_data_layout,
+        per_node_dynamic_data_sets,
         static_data_layout,
         static_data_set,
         per_primitive_layout,
         per_primitive_sets,
         input_layout,
         input_set,
+        per_primitive_dynamic_data_layout,
+        per_primitive_dynamic_data_set,
     }
 }
 
@@ -575,21 +578,24 @@ fn create_descriptor_pool(
     descriptors_resources: DescriptorsResources,
 ) -> vk::DescriptorPool {
     const GLOBAL_TEXTURES_COUNT: u32 = 4; // irradiance, prefiltered, brdf lut, ao
+    const PER_FRAME_SETS_COUNT: u32 = 3; // camera, config, lights
     const STATIC_SETS_COUNT: u32 = 1;
     const INPUT_SETS_COUNT: u32 = 1;
+    const PER_NODE_SETS_COUNT: u32 = 2;
+    const MATERIAL_SETS_COUNT: u32 = 1;
 
-    let descriptor_count = descriptors_resources.camera_buffers.len() as u32;
+    let descriptor_count = descriptors_resources.camera_ubos.len() as u32;
     let primitive_count = descriptors_resources.model.primitive_count() as u32;
     let textures_desc_count = primitive_count * SAMPLERS_PER_PRIMITIVE;
 
     let pool_sizes = [
         vk::DescriptorPoolSize {
             ty: vk::DescriptorType::UNIFORM_BUFFER,
-            descriptor_count: descriptor_count * 2,
+            descriptor_count: descriptor_count * PER_FRAME_SETS_COUNT,
         },
         vk::DescriptorPoolSize {
             ty: vk::DescriptorType::UNIFORM_BUFFER_DYNAMIC,
-            descriptor_count: descriptor_count * 2,
+            descriptor_count: descriptor_count * PER_NODE_SETS_COUNT + MATERIAL_SETS_COUNT,
         },
         vk::DescriptorPoolSize {
             ty: vk::DescriptorType::COMBINED_IMAGE_SAMPLER,
@@ -599,19 +605,31 @@ fn create_descriptor_pool(
 
     let create_info = vk::DescriptorPoolCreateInfo::builder()
         .pool_sizes(&pool_sizes)
-        .max_sets(descriptor_count + STATIC_SETS_COUNT + INPUT_SETS_COUNT + primitive_count)
+        .max_sets(
+            descriptor_count
+                + STATIC_SETS_COUNT
+                + INPUT_SETS_COUNT
+                + primitive_count
+                + MATERIAL_SETS_COUNT,
+        )
         .flags(vk::DescriptorPoolCreateFlags::FREE_DESCRIPTOR_SET);
 
     unsafe { device.create_descriptor_pool(&create_info, None).unwrap() }
 }
 
-fn create_dynamic_data_descriptor_set_layout(device: &Device) -> vk::DescriptorSetLayout {
+fn create_per_node_dynamic_data_descriptor_set_layout(device: &Device) -> vk::DescriptorSetLayout {
     let bindings = [
         vk::DescriptorSetLayoutBinding::builder()
             .binding(CAMERA_UBO_BINDING)
             .descriptor_type(vk::DescriptorType::UNIFORM_BUFFER)
             .descriptor_count(1)
             .stage_flags(vk::ShaderStageFlags::VERTEX | vk::ShaderStageFlags::FRAGMENT)
+            .build(),
+        vk::DescriptorSetLayoutBinding::builder()
+            .binding(CONFIG_UBO_BINDING)
+            .descriptor_type(vk::DescriptorType::UNIFORM_BUFFER)
+            .descriptor_count(1)
+            .stage_flags(vk::ShaderStageFlags::FRAGMENT)
             .build(),
         vk::DescriptorSetLayoutBinding::builder()
             .binding(LIGHT_UBO_BINDING)
@@ -642,13 +660,13 @@ fn create_dynamic_data_descriptor_set_layout(device: &Device) -> vk::DescriptorS
     }
 }
 
-fn create_dynamic_data_descriptor_sets(
+fn create_per_node_dynamic_data_descriptor_sets(
     context: &Arc<Context>,
     pool: vk::DescriptorPool,
     layout: vk::DescriptorSetLayout,
     resources: DescriptorsResources,
 ) -> Vec<vk::DescriptorSet> {
-    let layouts = (0..resources.camera_buffers.len())
+    let layouts = (0..resources.camera_ubos.len())
         .map(|_| layout)
         .collect::<Vec<_>>();
 
@@ -663,13 +681,20 @@ fn create_dynamic_data_descriptor_sets(
     };
 
     sets.iter().enumerate().for_each(|(i, set)| {
-        let camera_ubo = &resources.camera_buffers[i];
+        let camera_ubo = &resources.camera_ubos[i];
+        let config_ubo = &resources.config_ubos[i];
         let light_buffer = &resources.light_buffers[i];
         let model_transform_ubo = &resources.model_transform_buffers[i];
         let model_skin_ubo = &resources.model_skin_buffers[i];
 
         let camera_buffer_info = [vk::DescriptorBufferInfo::builder()
             .buffer(camera_ubo.buffer)
+            .offset(0)
+            .range(vk::WHOLE_SIZE)
+            .build()];
+
+        let config_buffer_info = [vk::DescriptorBufferInfo::builder()
+            .buffer(config_ubo.buffer)
             .offset(0)
             .range(vk::WHOLE_SIZE)
             .build()];
@@ -698,6 +723,12 @@ fn create_dynamic_data_descriptor_sets(
                 .dst_binding(CAMERA_UBO_BINDING)
                 .descriptor_type(vk::DescriptorType::UNIFORM_BUFFER)
                 .buffer_info(&camera_buffer_info)
+                .build(),
+            vk::WriteDescriptorSet::builder()
+                .dst_set(*set)
+                .dst_binding(CONFIG_UBO_BINDING)
+                .descriptor_type(vk::DescriptorType::UNIFORM_BUFFER)
+                .buffer_info(&config_buffer_info)
                 .build(),
             vk::WriteDescriptorSet::builder()
                 .dst_set(*set)
@@ -912,6 +943,7 @@ fn create_per_primitive_descriptor_sets(
     for mesh in model.meshes() {
         for primitive in mesh.primitives() {
             let material = primitive.material();
+
             let albedo_info = create_descriptor_image_info(
                 material.get_color_texture_index(),
                 textures,
@@ -1066,6 +1098,64 @@ fn create_input_descriptor_set(
     set
 }
 
+fn create_per_primitive_dynamic_data_descriptor_set_layout(
+    device: &Device,
+) -> vk::DescriptorSetLayout {
+    let bindings = [vk::DescriptorSetLayoutBinding::builder()
+        .binding(MATERIAL_UBO_BINDING)
+        .descriptor_type(vk::DescriptorType::UNIFORM_BUFFER_DYNAMIC)
+        .descriptor_count(1)
+        .stage_flags(vk::ShaderStageFlags::FRAGMENT)
+        .build()];
+
+    let layout_info = vk::DescriptorSetLayoutCreateInfo::builder().bindings(&bindings);
+
+    unsafe {
+        device
+            .create_descriptor_set_layout(&layout_info, None)
+            .unwrap()
+    }
+}
+
+fn create_per_primitive_dynamic_data_descriptor_set(
+    context: &Arc<Context>,
+    pool: vk::DescriptorPool,
+    layout: vk::DescriptorSetLayout,
+    resources: DescriptorsResources,
+) -> vk::DescriptorSet {
+    let layouts = [layout];
+    let allocate_info = vk::DescriptorSetAllocateInfo::builder()
+        .descriptor_pool(pool)
+        .set_layouts(&layouts);
+    let set = unsafe {
+        context
+            .device()
+            .allocate_descriptor_sets(&allocate_info)
+            .unwrap()[0]
+    };
+
+    let material_buffer_info = [vk::DescriptorBufferInfo::builder()
+        .buffer(resources.model_materials_buffer.buffer)
+        .offset(0)
+        .range(size_of::<MaterialUniform>() as _)
+        .build()];
+
+    let descriptor_writes = [vk::WriteDescriptorSet::builder()
+        .dst_set(set)
+        .dst_binding(MATERIAL_UBO_BINDING)
+        .descriptor_type(vk::DescriptorType::UNIFORM_BUFFER_DYNAMIC)
+        .buffer_info(&material_buffer_info)
+        .build()];
+
+    unsafe {
+        context
+            .device()
+            .update_descriptor_sets(&descriptor_writes, &[])
+    }
+
+    set
+}
+
 fn update_input_descriptor_set(
     context: &Arc<Context>,
     set: vk::DescriptorSet,
@@ -1111,21 +1201,14 @@ fn create_descriptor_image_info(
 
 fn create_pipeline_layout(device: &Device, descriptors: &Descriptors) -> vk::PipelineLayout {
     let layouts = [
-        descriptors.dynamic_data_layout,
+        descriptors.per_node_dynamic_data_layout,
         descriptors.static_data_layout,
         descriptors.per_primitive_layout,
         descriptors.input_layout,
+        descriptors.per_primitive_dynamic_data_layout,
     ];
 
-    let size = size_of::<MaterialUniform>() + size_of::<ConfigUniform>();
-    let push_constant_range = [vk::PushConstantRange {
-        stage_flags: vk::ShaderStageFlags::FRAGMENT,
-        offset: 0,
-        size: size as _,
-    }];
-    let layout_info = vk::PipelineLayoutCreateInfo::builder()
-        .set_layouts(&layouts)
-        .push_constant_ranges(&push_constant_range);
+    let layout_info = vk::PipelineLayoutCreateInfo::builder().set_layouts(&layouts);
 
     unsafe { device.create_pipeline_layout(&layout_info, None).unwrap() }
 }
@@ -1269,7 +1352,7 @@ fn create_model_frag_shader_specialization(
 
     let max_reflection_lod = (PRE_FILTERED_MAP_SIZE as f32).log2().floor() as u32;
     let constants = ModelShaderConstants {
-        max_light_count: MAX_LIGHT_COUNT,
+        max_light_count: MAX_LIGHT_COUNT as _,
         max_reflection_lod,
         pass: pass as _,
     };
