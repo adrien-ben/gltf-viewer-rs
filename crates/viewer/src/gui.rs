@@ -66,7 +66,7 @@ impl Gui {
             pixels_per_point,
             ..
         } = self.egui.run(raw_input, |ctx: &Context| {
-            egui::Window::new("Menu")
+            egui::Window::new("Menu ('H' to toggle)")
                 .default_open(false)
                 .show(ctx, |ui| {
                     build_renderer_settings_window(ui, &mut self.state);

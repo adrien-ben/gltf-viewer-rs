@@ -7,6 +7,8 @@ mod ssao;
 
 extern crate model as model_crate;
 
+use crate::gui::RenderData;
+
 use self::attachments::Attachments;
 use self::fullscreen::QuadModel;
 use self::model::gbufferpass::GBufferPass;
@@ -19,7 +21,7 @@ use super::camera::{Camera, CameraUBO};
 use super::config::Config;
 use super::gui::Gui;
 use ash::{vk, Device};
-use egui::{ClippedPrimitive, TextureId};
+use egui::TextureId;
 use egui_ash_renderer::{DynamicRendering, Options, Renderer as GuiRenderer};
 use environment::Environment;
 use math::cgmath::{Matrix4, SquareMatrix, Vector3};
@@ -301,7 +303,7 @@ impl Renderer {
         &mut self,
         window: &Window,
         camera: Camera,
-        gui: &mut Gui,
+        gui: Option<&mut Gui>,
     ) -> Result<(), RenderError> {
         log::trace!("Drawing frame.");
         let sync_objects = self.in_flight_frames.next().unwrap();
@@ -330,23 +332,31 @@ impl Renderer {
 
         unsafe { self.context.device().reset_fences(&wait_fences).unwrap() };
 
+        // UI
         if !self.in_flight_frames.gui_textures_to_free.is_empty() {
             self.gui_renderer
                 .free_textures(&self.in_flight_frames.gui_textures_to_free)
                 .unwrap();
         }
 
-        let render_data = gui.render(window); // TODO: free textures
+        let ui_render_data = gui.map(|gui| {
+            let render_data = gui.render(window);
 
-        self.in_flight_frames.gui_textures_to_free = render_data.textures_delta.free;
+            self.in_flight_frames.gui_textures_to_free.clear();
+            self.in_flight_frames
+                .gui_textures_to_free
+                .extend_from_slice(&render_data.textures_delta.free);
 
-        self.gui_renderer
-            .set_textures(
-                self.context.graphics_compute_queue(),
-                self.context.transient_command_pool(),
-                &render_data.textures_delta.set,
-            )
-            .unwrap();
+            self.gui_renderer
+                .set_textures(
+                    self.context.graphics_compute_queue(),
+                    self.context.transient_command_pool(),
+                    &render_data.textures_delta.set,
+                )
+                .unwrap();
+
+            render_data
+        });
 
         // record_command_buffer
         {
@@ -372,12 +382,7 @@ impl Renderer {
                 };
             }
 
-            self.cmd_draw(
-                command_buffer,
-                frame_index,
-                render_data.pixels_per_point,
-                &render_data.clipped_primitives,
-            );
+            self.cmd_draw(command_buffer, frame_index, ui_render_data.as_ref());
 
             // End command buffer
             unsafe {
@@ -447,8 +452,7 @@ impl Renderer {
         &mut self,
         command_buffer: vk::CommandBuffer,
         frame_index: usize,
-        pixels_per_point: f32,
-        gui_primitives: &[ClippedPrimitive],
+        ui_render_data: Option<&RenderData>,
     ) {
         if self.settings.ssao_enabled {
             // GBuffer pass
@@ -792,9 +796,21 @@ impl Renderer {
             self.final_pass.cmd_draw(command_buffer, &self.quad_model);
 
             // Draw UI
-            self.gui_renderer
-                .cmd_draw(command_buffer, extent, pixels_per_point, gui_primitives)
-                .unwrap();
+            if let Some(RenderData {
+                pixels_per_point,
+                clipped_primitives,
+                ..
+            }) = ui_render_data
+            {
+                self.gui_renderer
+                    .cmd_draw(
+                        command_buffer,
+                        extent,
+                        *pixels_per_point,
+                        &clipped_primitives,
+                    )
+                    .unwrap();
+            }
 
             unsafe {
                 self.context

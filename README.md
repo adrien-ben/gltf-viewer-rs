@@ -65,6 +65,8 @@ using [Ash][2]. It runs on Window, Linux and MacOS.
 
 ## Controls
 
+- 'H' to toggle UI
+
 Orbital camera:
 - Left click and move to rotate camera around origin
 - Right click and move to move camera

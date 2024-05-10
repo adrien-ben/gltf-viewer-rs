@@ -14,8 +14,9 @@ use std::{cell::RefCell, error::Error, path::PathBuf, rc::Rc, sync::Arc, time::I
 use vulkan::*;
 use winit::{
     dpi::PhysicalSize,
-    event::{Event, WindowEvent},
+    event::{ElementState, Event, KeyEvent, WindowEvent},
     event_loop::{ControlFlow, EventLoop},
+    keyboard::Key,
     window::{Fullscreen, WindowBuilder},
 };
 
@@ -59,6 +60,7 @@ fn run(config: Config, enable_debug: bool, path: Option<PathBuf>) {
 
     let environment = Environment::new(&context, config.env().path(), config.env().resolution());
     let mut gui = Gui::new(&window, renderer_settings);
+    let mut enable_ui = true;
     let mut renderer = Renderer::create(
         Arc::clone(&context),
         &config,
@@ -183,8 +185,9 @@ fn run(config: Config, enable_debug: bool, path: Option<PathBuf>) {
                         }
                     }
 
+                    let gui = enable_ui.then_some(&mut gui);
                     dirty_swapchain = matches!(
-                        renderer.render(&window, camera, &mut gui),
+                        renderer.render(&window, camera, gui),
                         Err(RenderError::DirtySwapchain)
                     );
                 }
@@ -200,6 +203,20 @@ fn run(config: Config, enable_debug: bool, path: Option<PathBuf>) {
                         // Resizing
                         WindowEvent::Resized(_) => {
                             dirty_swapchain = true;
+                        }
+                        // Key events
+                        WindowEvent::KeyboardInput {
+                            event:
+                                KeyEvent {
+                                    logical_key: Key::Character(c),
+                                    state: ElementState::Pressed,
+                                    ..
+                                },
+                            ..
+                        } => {
+                            if c == "h" {
+                                enable_ui = !enable_ui;
+                            }
                         }
                         // Exit
                         WindowEvent::CloseRequested => {
