@@ -110,7 +110,8 @@ pub struct MaterialUniform {
     alpha_mode: u32,
     is_unlit: vk::Bool32,
     workflow: u32,
-    pad: [u32; 2],
+    ior: f32,
+    pad: [u32; 1],
     color_texture_transform: Matrix4<f32>,
     material_texture_transform: Matrix4<f32>,
     emissive_texture_transform: Matrix4<f32>,
@@ -196,6 +197,8 @@ impl From<Material> for MaterialUniform {
             SPECULAR_GLOSSINESS_WORKFLOW
         };
 
+        let ior = material.get_ior();
+
         MaterialUniform {
             color,
             emissive_factor,
@@ -224,7 +227,8 @@ impl From<Material> for MaterialUniform {
             alpha_mode,
             is_unlit,
             workflow,
-            pad: [0; 2],
+            ior,
+            pad: [0; 1],
         }
     }
 }

@@ -9,6 +9,8 @@ const ALPHA_MODE_OPAQUE: u32 = 0;
 const ALPHA_MODE_MASK: u32 = 1;
 const ALPHA_MODE_BLEND: u32 = 2;
 
+const DEFAULT_IOR: f32 = 1.5;
+
 #[derive(Clone, Copy, Debug)]
 pub struct Material {
     color: [f32; 4],
@@ -24,6 +26,7 @@ pub struct Material {
     double_sided: bool,
     is_unlit: bool,
     clearcoat: Option<Clearcoat>,
+    ior: f32,
 }
 
 impl Default for Material {
@@ -46,6 +49,7 @@ impl Default for Material {
             double_sided: false,
             is_unlit: false,
             clearcoat: None,
+            ior: DEFAULT_IOR,
         }
     }
 }
@@ -228,6 +232,10 @@ impl Material {
     pub fn get_workflow(&self) -> Workflow {
         self.workflow
     }
+
+    pub fn get_ior(&self) -> f32 {
+        self.ior
+    }
 }
 
 impl TextureInfo {
@@ -303,6 +311,8 @@ impl<'a> From<GltfMaterial<'a>> for Material {
             normal_texture: get_texture(m.clearcoat_normal_texture()),
         });
 
+        let ior = material.ior().unwrap_or(DEFAULT_IOR);
+
         Material {
             color,
             emissive,
@@ -317,6 +327,7 @@ impl<'a> From<GltfMaterial<'a>> for Material {
             double_sided,
             is_unlit,
             clearcoat,
+            ior,
         }
     }
 }

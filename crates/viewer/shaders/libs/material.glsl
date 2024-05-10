@@ -31,6 +31,7 @@ struct Material {
     uint alphaMode;
     bool isUnlit;
     uint workflow;
+    float ior;
     mat4 colorTextureTransform;
     mat4 materialTextureTransform;
     mat4 emissiveTextureTransform;

@@ -29,7 +29,7 @@ const uint OUTPUT_MODE_CLEARCOAT_FACTOR = 12;
 const uint OUTPUT_MODE_CLEARCOAT_ROUGHNESS = 13;
 const uint OUTPUT_MODE_CLEARCOAT_NORMAL = 14;
 
-const vec3 DIELECTRIC_SPECULAR = vec3(0.04);
+const vec3 CLEARCOAT_DIELECTRIC_SPECULAR = vec3(0.04);
 const vec3 BLACK = vec3(0.0);
 const float PI = 3.14159;
 
@@ -59,6 +59,7 @@ struct PbrInfo {
     float clearcoatFactor;
     float clearcoatRoughness;
     vec3 clearcoatNormal;
+    vec3 dielectricSpecular;
 };
 
 struct Config {
@@ -341,8 +342,8 @@ vec3 computeColor(
         vec3 cDiffuse;
         vec3 f0;
         if (pbrInfo.metallicRoughnessWorkflow) {
-            cDiffuse = mix(pbrInfo.baseColor * (1.0 - DIELECTRIC_SPECULAR.r), BLACK, pbrInfo.metallic);
-            f0 = mix(DIELECTRIC_SPECULAR, pbrInfo.baseColor, pbrInfo.metallic);
+            cDiffuse = mix(pbrInfo.baseColor * (1.0 - pbrInfo.dielectricSpecular.r), BLACK, pbrInfo.metallic);
+            f0 = mix(pbrInfo.dielectricSpecular, pbrInfo.baseColor, pbrInfo.metallic);
         } else {
             cDiffuse = pbrInfo.baseColor * (1.0 - max(pbrInfo.specular.r, max(pbrInfo.specular.g, pbrInfo.specular.b)));
             f0 = pbrInfo.specular;
@@ -364,7 +365,7 @@ vec3 computeColor(
     if (dot(n, l) > 0.0 || dot(n, v) > 0.0) {
         float a = pbrInfo.clearcoatRoughness * pbrInfo.clearcoatRoughness;
 
-        vec3 f = f(DIELECTRIC_SPECULAR, v, h);
+        vec3 f = f(CLEARCOAT_DIELECTRIC_SPECULAR, v, h);
         float vis = vis(n, l, v, a);
         float d = d(a, n, h);
 
@@ -428,7 +429,7 @@ vec3 computeIBL(PbrInfo pbrInfo, vec3 v) {
 
     vec3 f0 = pbrInfo.specular;
     if (pbrInfo.metallicRoughnessWorkflow) {
-        f0 = mix(DIELECTRIC_SPECULAR, pbrInfo.baseColor, pbrInfo.metallic);
+        f0 = mix(pbrInfo.dielectricSpecular, pbrInfo.baseColor, pbrInfo.metallic);
     }
 
     vec3 n = pbrInfo.normal;
@@ -446,7 +447,7 @@ vec3 computeIBL(PbrInfo pbrInfo, vec3 v) {
 
     // clearcoat layer
     vec3 cn = pbrInfo.clearcoatNormal;
-    vec3 fClearcoat = f(DIELECTRIC_SPECULAR, v, cn, pbrInfo.clearcoatRoughness);
+    vec3 fClearcoat = f(CLEARCOAT_DIELECTRIC_SPECULAR, v, cn, pbrInfo.clearcoatRoughness);
 
     vec3 cr = normalize(reflect(-v, cn));
     vec3 cReflection = prefilteredReflection(cr, pbrInfo.clearcoatRoughness);
@@ -490,6 +491,9 @@ void main() {
     float clearcoatRoughness = getClearcoatRoughness();
     vec3 clearcoatNormal = getClearcoatNormal();
 
+    float dielectricSpecularSqrt = (material.ior - 1)/(material.ior + 1);
+    float dielectricSpecular = dielectricSpecularSqrt*dielectricSpecularSqrt;
+
     vec3 n = getNormal();
     vec3 v = normalize(camera.eye.xyz - oPositions);
 
@@ -502,7 +506,8 @@ void main() {
         n,
         clearcoatFactor,
         clearcoatRoughness,
-        clearcoatNormal
+        clearcoatNormal,
+        vec3(dielectricSpecular)
     );
 
     vec3 color = vec3(0.0);

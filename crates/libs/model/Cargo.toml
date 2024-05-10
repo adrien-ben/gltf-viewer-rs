@@ -21,4 +21,5 @@ features = [
     "KHR_materials_emissive_strength",
     "KHR_materials_clearcoat",
     "KHR_texture_transform",
+    "KHR_materials_ior",
 ]
