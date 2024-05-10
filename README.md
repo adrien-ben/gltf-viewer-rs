@@ -154,3 +154,4 @@ Bloom tutorial on [Learn OpenGL][8]
 |---|---|---|
 |![Indoor](images/helmet_indoor.png "Indoor")|![Env](images/env.png "Env")|![Corset](images/corset.png "Corset")|
 |![MG08](images/mg08.png "MG08")|![Flight](images/flight_helmet.png "Flight Helmet")|![Junkrat](images/junkrat.png "Junkrat")|
+|![Wicker](images/clearcoat_wicker.png "Wicker")|||
