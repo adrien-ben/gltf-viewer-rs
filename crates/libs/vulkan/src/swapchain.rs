@@ -181,7 +181,7 @@ impl Swapchain {
         unsafe {
             self.swapchain.acquire_next_image(
                 self.swapchain_khr,
-                timeout.unwrap_or(std::u64::MAX),
+                timeout.unwrap_or(u64::MAX),
                 semaphore.unwrap_or_else(vk::Semaphore::null),
                 fence.unwrap_or_else(vk::Fence::null),
             )
@@ -319,7 +319,7 @@ impl SwapchainSupportDetails {
         capabilities: vk::SurfaceCapabilitiesKHR,
         preferred_dimensions: [u32; 2],
     ) -> vk::Extent2D {
-        if capabilities.current_extent.width != std::u32::MAX {
+        if capabilities.current_extent.width != u32::MAX {
             return capabilities.current_extent;
         }
 

@@ -315,7 +315,7 @@ impl Renderer {
         unsafe {
             self.context
                 .device()
-                .wait_for_fences(&wait_fences, true, std::u64::MAX)
+                .wait_for_fences(&wait_fences, true, u64::MAX)
                 .unwrap()
         };
 
@@ -807,7 +807,7 @@ impl Renderer {
                         command_buffer,
                         extent,
                         *pixels_per_point,
-                        &clipped_primitives,
+                        clipped_primitives,
                     )
                     .unwrap();
             }

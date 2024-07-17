@@ -32,7 +32,7 @@ impl GBufferPass {
         camera_buffers: &[Buffer],
         depth_format: vk::Format,
     ) -> Self {
-        let dummy_texture = VulkanTexture::from_rgba(&context, 1, 1, &[std::u8::MAX; 4], true);
+        let dummy_texture = VulkanTexture::from_rgba(&context, 1, 1, &[u8::MAX; 4], true);
 
         let model_rc = model_data
             .model
@@ -608,7 +608,7 @@ pub struct MaterialUniform {
 }
 
 impl MaterialUniform {
-    const NO_TEXTURE_ID: u32 = std::u8::MAX as u32;
+    const NO_TEXTURE_ID: u32 = u8::MAX as u32;
 }
 
 impl From<Material> for MaterialUniform {
