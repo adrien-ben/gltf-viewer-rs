@@ -75,7 +75,7 @@ impl Image {
             depth: 1,
         };
 
-        let image_info = vk::ImageCreateInfo::builder()
+        let image_info = vk::ImageCreateInfo::default()
             .image_type(vk::ImageType::TYPE_2D)
             .extent(extent)
             .mip_levels(parameters.mip_levels)
@@ -101,7 +101,7 @@ impl Image {
             parameters.mem_properties,
         );
 
-        let alloc_info = vk::MemoryAllocateInfo::builder()
+        let alloc_info = vk::MemoryAllocateInfo::default()
             .allocation_size(mem_requirements.size)
             .memory_type_index(mem_type_index);
         let memory = unsafe {
@@ -223,7 +223,7 @@ impl Image {
         let barrier = self.get_barrier(base_mip_level, level_count, old_layout, new_layout);
 
         let dependency_info =
-            vk::DependencyInfo::builder().image_memory_barriers(std::slice::from_ref(&barrier));
+            vk::DependencyInfo::default().image_memory_barriers(std::slice::from_ref(&barrier));
 
         unsafe {
             self.context
@@ -360,7 +360,7 @@ impl Image {
             vk::ImageAspectFlags::COLOR
         };
 
-        vk::ImageMemoryBarrier2::builder()
+        vk::ImageMemoryBarrier2::default()
             .src_stage_mask(src_stage)
             .src_access_mask(src_access_mask)
             .old_layout(old_layout)
@@ -375,7 +375,6 @@ impl Image {
                 base_array_layer: 0,
                 layer_count: self.layers,
             })
-            .build()
     }
 
     pub fn copy_buffer(&self, buffer: &Buffer, extent: vk::Extent2D) {
@@ -390,7 +389,7 @@ impl Image {
         buffer: &Buffer,
         extent: vk::Extent2D,
     ) {
-        let region = vk::BufferImageCopy::builder()
+        let region = vk::BufferImageCopy::default()
             .buffer_offset(0)
             .buffer_row_length(0)
             .buffer_image_height(0)
@@ -405,8 +404,7 @@ impl Image {
                 width: extent.width,
                 height: extent.height,
                 depth: 1,
-            })
-            .build();
+            });
         let regions = [region];
         unsafe {
             self.context.device().cmd_copy_buffer_to_image(
@@ -431,13 +429,12 @@ impl Image {
         src_image: &Image,
         subresource_layers: vk::ImageSubresourceLayers,
     ) {
-        let image_copy_info = [vk::ImageCopy::builder()
+        let image_copy_info = [vk::ImageCopy::default()
             .src_subresource(subresource_layers)
             .src_offset(vk::Offset3D { x: 0, y: 0, z: 0 })
             .dst_subresource(subresource_layers)
             .dst_offset(vk::Offset3D { x: 0, y: 0, z: 0 })
-            .extent(src_image.extent)
-            .build()];
+            .extent(src_image.extent)];
 
         unsafe {
             self.context.device().cmd_copy_image(
@@ -510,7 +507,7 @@ impl Image {
                 vk::ImageLayout::TRANSFER_SRC_OPTIMAL,
             );
 
-            let blit = vk::ImageBlit::builder()
+            let blit = vk::ImageBlit::default()
                 .src_offsets([
                     vk::Offset3D { x: 0, y: 0, z: 0 },
                     vk::Offset3D {
@@ -538,8 +535,7 @@ impl Image {
                     mip_level: level,
                     base_array_layer: 0,
                     layer_count: self.layers,
-                })
-                .build();
+                });
             let blits = [blit];
 
             unsafe {
@@ -610,7 +606,7 @@ pub fn create_image_view(
     format: vk::Format,
     aspect_mask: vk::ImageAspectFlags,
 ) -> vk::ImageView {
-    let create_info = vk::ImageViewCreateInfo::builder()
+    let create_info = vk::ImageViewCreateInfo::default()
         .image(image)
         .view_type(view_type)
         .format(format)
@@ -682,7 +678,7 @@ pub fn cmd_transition_images_layouts(
         })
         .collect::<Vec<_>>();
 
-    let dependency_info = vk::DependencyInfo::builder().image_memory_barriers(&barriers);
+    let dependency_info = vk::DependencyInfo::default().image_memory_barriers(&barriers);
 
     unsafe {
         context

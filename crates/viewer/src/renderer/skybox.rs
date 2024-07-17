@@ -108,21 +108,19 @@ fn create_descriptors(
 
 fn create_descriptor_set_layout(device: &Device) -> vk::DescriptorSetLayout {
     let bindings = [
-        vk::DescriptorSetLayoutBinding::builder()
+        vk::DescriptorSetLayoutBinding::default()
             .binding(0)
             .descriptor_type(vk::DescriptorType::UNIFORM_BUFFER)
             .descriptor_count(1)
-            .stage_flags(vk::ShaderStageFlags::VERTEX | vk::ShaderStageFlags::FRAGMENT)
-            .build(),
-        vk::DescriptorSetLayoutBinding::builder()
+            .stage_flags(vk::ShaderStageFlags::VERTEX | vk::ShaderStageFlags::FRAGMENT),
+        vk::DescriptorSetLayoutBinding::default()
             .binding(1)
             .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
             .descriptor_count(1)
-            .stage_flags(vk::ShaderStageFlags::FRAGMENT)
-            .build(),
+            .stage_flags(vk::ShaderStageFlags::FRAGMENT),
     ];
 
-    let layout_info = vk::DescriptorSetLayoutCreateInfo::builder().bindings(&bindings);
+    let layout_info = vk::DescriptorSetLayoutCreateInfo::default().bindings(&bindings);
 
     unsafe {
         device
@@ -142,7 +140,7 @@ fn create_descriptor_pool(device: &Device, descriptor_count: u32) -> vk::Descrip
         },
     ];
 
-    let create_info = vk::DescriptorPoolCreateInfo::builder()
+    let create_info = vk::DescriptorPoolCreateInfo::default()
         .pool_sizes(&pool_sizes)
         .max_sets(descriptor_count);
 
@@ -158,7 +156,7 @@ fn create_descriptor_sets(
 ) -> Vec<vk::DescriptorSet> {
     let layouts = (0..buffers.len()).map(|_| layout).collect::<Vec<_>>();
 
-    let allocate_info = vk::DescriptorSetAllocateInfo::builder()
+    let allocate_info = vk::DescriptorSetAllocateInfo::default()
         .descriptor_pool(pool)
         .set_layouts(&layouts);
     let sets = unsafe {
@@ -169,31 +167,27 @@ fn create_descriptor_sets(
     };
 
     sets.iter().zip(buffers.iter()).for_each(|(set, buffer)| {
-        let buffer_info = [vk::DescriptorBufferInfo::builder()
+        let buffer_info = [vk::DescriptorBufferInfo::default()
             .buffer(buffer.buffer)
             .offset(0)
-            .range(vk::WHOLE_SIZE)
-            .build()];
+            .range(vk::WHOLE_SIZE)];
 
-        let cubemap_info = [vk::DescriptorImageInfo::builder()
+        let cubemap_info = [vk::DescriptorImageInfo::default()
             .image_layout(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL)
             .image_view(cubemap.view)
-            .sampler(cubemap.sampler.unwrap())
-            .build()];
+            .sampler(cubemap.sampler.unwrap())];
 
         let descriptor_writes = [
-            vk::WriteDescriptorSet::builder()
+            vk::WriteDescriptorSet::default()
                 .dst_set(*set)
                 .dst_binding(0)
                 .descriptor_type(vk::DescriptorType::UNIFORM_BUFFER)
-                .buffer_info(&buffer_info)
-                .build(),
-            vk::WriteDescriptorSet::builder()
+                .buffer_info(&buffer_info),
+            vk::WriteDescriptorSet::default()
                 .dst_set(*set)
                 .dst_binding(1)
                 .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
-                .image_info(&cubemap_info)
-                .build(),
+                .image_info(&cubemap_info),
         ];
 
         unsafe {
@@ -211,7 +205,7 @@ fn create_pipeline_layout(
     descriptor_set_layout: vk::DescriptorSetLayout,
 ) -> vk::PipelineLayout {
     let layouts = [descriptor_set_layout];
-    let layout_info = vk::PipelineLayoutCreateInfo::builder().set_layouts(&layouts);
+    let layout_info = vk::PipelineLayoutCreateInfo::default().set_layouts(&layouts);
     unsafe { device.create_pipeline_layout(&layout_info, None).unwrap() }
 }
 
@@ -221,7 +215,7 @@ fn create_skybox_pipeline(
     depth_format: vk::Format,
     layout: vk::PipelineLayout,
 ) -> vk::Pipeline {
-    let depth_stencil_info = vk::PipelineDepthStencilStateCreateInfo::builder()
+    let depth_stencil_info = vk::PipelineDepthStencilStateCreateInfo::default()
         .depth_test_enable(false)
         .depth_write_enable(false)
         .depth_compare_op(vk::CompareOp::LESS_OR_EQUAL)
@@ -232,7 +226,7 @@ fn create_skybox_pipeline(
         .front(Default::default())
         .back(Default::default());
 
-    let color_blend_attachments = [vk::PipelineColorBlendAttachmentState::builder()
+    let color_blend_attachments = [vk::PipelineColorBlendAttachmentState::default()
         .color_write_mask(
             vk::ColorComponentFlags::R
                 | vk::ColorComponentFlags::G
@@ -245,8 +239,7 @@ fn create_skybox_pipeline(
         .color_blend_op(vk::BlendOp::ADD)
         .src_alpha_blend_factor(vk::BlendFactor::ONE)
         .dst_alpha_blend_factor(vk::BlendFactor::ZERO)
-        .alpha_blend_op(vk::BlendOp::ADD)
-        .build()];
+        .alpha_blend_op(vk::BlendOp::ADD)];
 
     create_renderer_pipeline::<SkyboxVertex>(
         context,

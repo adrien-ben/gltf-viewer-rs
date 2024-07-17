@@ -1,12 +1,10 @@
 use crate::{debug::*, swapchain::*, MsaaSamples};
 use ash::{
-    extensions::{
-        ext::DebugUtils,
-        khr::{DynamicRendering, Surface, Swapchain as SwapchainLoader, Synchronization2},
-    },
+    ext::debug_utils,
+    khr::{dynamic_rendering, surface, swapchain, synchronization2},
     vk, Device, Entry, Instance,
 };
-use raw_window_handle::{HasRawDisplayHandle, HasRawWindowHandle};
+use raw_window_handle::{HasDisplayHandle, HasWindowHandle};
 use std::{
     ffi::{CStr, CString},
     mem::size_of,
@@ -21,16 +19,16 @@ pub const HDR_SURFACE_FORMAT: vk::SurfaceFormatKHR = vk::SurfaceFormatKHR {
 pub struct SharedContext {
     _entry: Entry,
     instance: Instance,
-    debug_report_callback: Option<(DebugUtils, vk::DebugUtilsMessengerEXT)>,
-    surface: Surface,
+    debug_report_callback: Option<(debug_utils::Instance, vk::DebugUtilsMessengerEXT)>,
+    surface: surface::Instance,
     surface_khr: vk::SurfaceKHR,
     physical_device: vk::PhysicalDevice,
     device: Device,
     pub queue_families_indices: QueueFamiliesIndices,
     graphics_compute_queue: vk::Queue,
     present_queue: vk::Queue,
-    dynamic_rendering: DynamicRendering,
-    synchronization2: Synchronization2,
+    dynamic_rendering: dynamic_rendering::Device,
+    synchronization2: synchronization2::Device,
     has_hdr_support: bool,
 }
 
@@ -39,13 +37,13 @@ impl SharedContext {
         let entry = unsafe { Entry::load().unwrap() };
         let instance = create_instance(&entry, window, enable_debug);
 
-        let surface = Surface::new(&entry, &instance);
+        let surface = surface::Instance::new(&entry, &instance);
         let surface_khr = unsafe {
             ash_window::create_surface(
                 &entry,
                 &instance,
-                window.raw_display_handle(),
-                window.raw_window_handle(),
+                window.display_handle().unwrap().as_raw(),
+                window.window_handle().unwrap().as_raw(),
                 None,
             )
             .expect("Failed to create surface")
@@ -67,8 +65,8 @@ impl SharedContext {
                 queue_families_indices,
             );
 
-        let dynamic_rendering = DynamicRendering::new(&instance, &device);
-        let synchronization2 = Synchronization2::new(&instance, &device);
+        let dynamic_rendering = dynamic_rendering::Device::new(&instance, &device);
+        let synchronization2 = synchronization2::Device::new(&instance, &device);
 
         let has_hdr_support = unsafe {
             surface
@@ -98,7 +96,7 @@ impl SharedContext {
 fn create_instance(entry: &Entry, window: &Window, enable_debug: bool) -> Instance {
     let app_name = CString::new("Vulkan Application").unwrap();
     let engine_name = CString::new("No Engine").unwrap();
-    let app_info = vk::ApplicationInfo::builder()
+    let app_info = vk::ApplicationInfo::default()
         .application_name(app_name.as_c_str())
         .application_version(vk::make_api_version(0, 0, 1, 0))
         .engine_name(engine_name.as_c_str())
@@ -106,18 +104,18 @@ fn create_instance(entry: &Entry, window: &Window, enable_debug: bool) -> Instan
         .api_version(vk::make_api_version(0, 1, 0, 0));
 
     let mut extension_names =
-        ash_window::enumerate_required_extensions(window.raw_display_handle())
+        ash_window::enumerate_required_extensions(window.display_handle().unwrap().as_raw())
             .expect("Failed to enumerate required extensions")
             .to_vec();
-    extension_names.push(vk::KhrGetPhysicalDeviceProperties2Fn::name().as_ptr());
+    extension_names.push(ash::khr::get_physical_device_properties2::NAME.as_ptr());
     if enable_debug {
-        extension_names.push(DebugUtils::name().as_ptr());
+        extension_names.push(debug_utils::NAME.as_ptr());
     }
     if has_ext_colorspace_support(entry) {
-        extension_names.push(vk::ExtSwapchainColorspaceFn::name().as_ptr());
+        extension_names.push(ash::ext::swapchain_colorspace::NAME.as_ptr());
     }
 
-    let instance_create_info = vk::InstanceCreateInfo::builder()
+    let instance_create_info = vk::InstanceCreateInfo::default()
         .application_info(&app_info)
         .enabled_extension_names(&extension_names);
 
@@ -140,7 +138,7 @@ fn create_instance(entry: &Entry, window: &Window, enable_debug: bool) -> Instan
 /// A tuple containing the physical device and the queue families indices.
 fn pick_physical_device(
     instance: &Instance,
-    surface: &Surface,
+    surface: &surface::Instance,
     surface_khr: vk::SurfaceKHR,
 ) -> (vk::PhysicalDevice, QueueFamiliesIndices) {
     let devices = unsafe {
@@ -179,7 +177,7 @@ fn pick_physical_device(
 
 fn is_device_suitable(
     instance: &Instance,
-    surface: &Surface,
+    surface: &surface::Instance,
     surface_khr: vk::SurfaceKHR,
     device: vk::PhysicalDevice,
 ) -> bool {
@@ -198,13 +196,15 @@ fn is_device_suitable(
 }
 
 fn has_ext_colorspace_support(entry: &Entry) -> bool {
-    let extension_props = entry
-        .enumerate_instance_extension_properties(None)
-        .expect("Failed to enumerate instance extention properties");
+    let extension_props = unsafe {
+        entry
+            .enumerate_instance_extension_properties(None)
+            .expect("Failed to enumerate instance extention properties")
+    };
 
     extension_props.iter().any(|ext| {
         let name = unsafe { CStr::from_ptr(ext.extension_name.as_ptr()) };
-        vk::ExtSwapchainColorspaceFn::name() == name
+        ash::ext::swapchain_colorspace::NAME == name
     })
 }
 
@@ -233,13 +233,13 @@ fn check_device_extension_support(instance: &Instance, device: vk::PhysicalDevic
 
 fn get_required_device_extensions() -> [&'static CStr; 7] {
     [
-        SwapchainLoader::name(),
-        DynamicRendering::name(),
-        vk::KhrDepthStencilResolveFn::name(),
-        vk::KhrCreateRenderpass2Fn::name(),
-        vk::KhrMultiviewFn::name(),
-        vk::KhrMaintenance2Fn::name(),
-        vk::KhrSynchronization2Fn::name(),
+        swapchain::NAME,
+        dynamic_rendering::NAME,
+        ash::khr::depth_stencil_resolve::NAME,
+        ash::khr::create_renderpass2::NAME,
+        ash::khr::multiview::NAME,
+        ash::khr::maintenance2::NAME,
+        ash::khr::synchronization2::NAME,
     ]
 }
 
@@ -251,7 +251,7 @@ fn get_required_device_extensions() -> [&'static CStr; 7] {
 /// Return a tuple (Option<graphics_family_index>, Option<present_family_index>).
 fn find_queue_families(
     instance: &Instance,
-    surface: &Surface,
+    surface: &surface::Instance,
     surface_khr: vk::SurfaceKHR,
     device: vk::PhysicalDevice,
 ) -> (Option<u32>, Option<u32>) {
@@ -313,10 +313,9 @@ fn create_logical_device_with_graphics_queue(
         indices
             .iter()
             .map(|index| {
-                vk::DeviceQueueCreateInfo::builder()
+                vk::DeviceQueueCreateInfo::default()
                     .queue_family_index(*index)
                     .queue_priorities(&queue_priorities)
-                    .build()
             })
             .collect::<Vec<_>>()
     };
@@ -327,17 +326,17 @@ fn create_logical_device_with_graphics_queue(
         .map(|ext| ext.as_ptr())
         .collect::<Vec<_>>();
 
-    let device_features = vk::PhysicalDeviceFeatures::builder().sampler_anisotropy(true);
+    let device_features = vk::PhysicalDeviceFeatures::default().sampler_anisotropy(true);
     let mut dynamic_rendering_feature =
-        vk::PhysicalDeviceDynamicRenderingFeatures::builder().dynamic_rendering(true);
+        vk::PhysicalDeviceDynamicRenderingFeatures::default().dynamic_rendering(true);
     let mut synchronization2_feature =
-        vk::PhysicalDeviceSynchronization2Features::builder().synchronization2(true);
-    let mut device_features_2 = vk::PhysicalDeviceFeatures2::builder()
-        .features(device_features.build())
+        vk::PhysicalDeviceSynchronization2Features::default().synchronization2(true);
+    let mut device_features_2 = vk::PhysicalDeviceFeatures2::default()
+        .features(device_features)
         .push_next(&mut dynamic_rendering_feature)
         .push_next(&mut synchronization2_feature);
 
-    let device_create_info = vk::DeviceCreateInfo::builder()
+    let device_create_info = vk::DeviceCreateInfo::default()
         .queue_create_infos(&queue_create_infos)
         .enabled_extension_names(&device_extensions_ptrs)
         .push_next(&mut device_features_2);
@@ -359,7 +358,7 @@ impl SharedContext {
         &self.instance
     }
 
-    pub fn surface(&self) -> &Surface {
+    pub fn surface(&self) -> &surface::Instance {
         &self.surface
     }
 
@@ -387,11 +386,11 @@ impl SharedContext {
         self.present_queue
     }
 
-    pub fn dynamic_rendering(&self) -> &DynamicRendering {
+    pub fn dynamic_rendering(&self) -> &dynamic_rendering::Device {
         &self.dynamic_rendering
     }
 
-    pub fn synchronization2(&self) -> &Synchronization2 {
+    pub fn synchronization2(&self) -> &synchronization2::Device {
         &self.synchronization2
     }
 
@@ -480,7 +479,7 @@ impl SharedContext {
         executor: F,
     ) -> R {
         let command_buffer = {
-            let alloc_info = vk::CommandBufferAllocateInfo::builder()
+            let alloc_info = vk::CommandBufferAllocateInfo::default()
                 .level(vk::CommandBufferLevel::PRIMARY)
                 .command_pool(pool)
                 .command_buffer_count(1);
@@ -495,7 +494,7 @@ impl SharedContext {
 
         // Begin recording
         {
-            let begin_info = vk::CommandBufferBeginInfo::builder()
+            let begin_info = vk::CommandBufferBeginInfo::default()
                 .flags(vk::CommandBufferUsageFlags::ONE_TIME_SUBMIT);
             unsafe {
                 self.device
@@ -517,8 +516,8 @@ impl SharedContext {
         // Submit and wait
         {
             let cmd_buffer_submit_info =
-                vk::CommandBufferSubmitInfo::builder().command_buffer(command_buffer);
-            let submit_info = vk::SubmitInfo2::builder()
+                vk::CommandBufferSubmitInfo::default().command_buffer(command_buffer);
+            let submit_info = vk::SubmitInfo2::default()
                 .command_buffer_infos(std::slice::from_ref(&cmd_buffer_submit_info));
 
             unsafe {

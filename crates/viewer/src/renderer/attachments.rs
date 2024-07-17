@@ -347,7 +347,7 @@ fn create_sampler(
     min_filter: vk::Filter,
     mag_filter: vk::Filter,
 ) -> vk::Sampler {
-    let sampler_info = vk::SamplerCreateInfo::builder()
+    let sampler_info = vk::SamplerCreateInfo::default()
         .mag_filter(mag_filter)
         .min_filter(min_filter)
         .address_mode_u(vk::SamplerAddressMode::CLAMP_TO_EDGE)

@@ -130,7 +130,7 @@ impl BloomPass {
             }
 
             {
-                let attachment_info = RenderingAttachmentInfo::builder()
+                let attachment_info = RenderingAttachmentInfo::default()
                     .clear_value(vk::ClearValue {
                         color: vk::ClearColorValue {
                             float32: [0.0, 0.0, 0.0, 1.0],
@@ -141,7 +141,7 @@ impl BloomPass {
                     .load_op(vk::AttachmentLoadOp::CLEAR)
                     .store_op(vk::AttachmentStoreOp::STORE);
 
-                let rendering_info = RenderingInfo::builder()
+                let rendering_info = RenderingInfo::default()
                     .color_attachments(std::slice::from_ref(&attachment_info))
                     .layer_count(1)
                     .render_area(vk::Rect2D {
@@ -276,7 +276,7 @@ impl BloomPass {
             }
 
             {
-                let attachment_info = RenderingAttachmentInfo::builder()
+                let attachment_info = RenderingAttachmentInfo::default()
                     .clear_value(vk::ClearValue {
                         color: vk::ClearColorValue {
                             float32: [0.0, 0.0, 0.0, 1.0],
@@ -287,7 +287,7 @@ impl BloomPass {
                     .load_op(vk::AttachmentLoadOp::CLEAR)
                     .store_op(vk::AttachmentStoreOp::STORE);
 
-                let rendering_info = RenderingInfo::builder()
+                let rendering_info = RenderingInfo::default()
                     .color_attachments(std::slice::from_ref(&attachment_info))
                     .layer_count(1)
                     .render_area(vk::Rect2D {
@@ -385,14 +385,13 @@ fn create_descriptors(context: &Arc<Context>, attachments: &Attachments) -> Desc
 }
 
 fn create_descriptor_set_layout(device: &Device) -> vk::DescriptorSetLayout {
-    let bindings = [vk::DescriptorSetLayoutBinding::builder()
+    let bindings = [vk::DescriptorSetLayoutBinding::default()
         .binding(0)
         .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
         .descriptor_count(1)
-        .stage_flags(vk::ShaderStageFlags::FRAGMENT)
-        .build()];
+        .stage_flags(vk::ShaderStageFlags::FRAGMENT)];
 
-    let layout_info = vk::DescriptorSetLayoutCreateInfo::builder().bindings(&bindings);
+    let layout_info = vk::DescriptorSetLayoutCreateInfo::default().bindings(&bindings);
 
     unsafe {
         device
@@ -407,7 +406,7 @@ fn create_descriptor_pool(device: &Device) -> vk::DescriptorPool {
         descriptor_count,
     }];
 
-    let create_info = vk::DescriptorPoolCreateInfo::builder()
+    let create_info = vk::DescriptorPoolCreateInfo::default()
         .pool_sizes(&pool_sizes)
         .max_sets(descriptor_count)
         .flags(vk::DescriptorPoolCreateFlags::FREE_DESCRIPTOR_SET);
@@ -424,7 +423,7 @@ fn create_descriptor_sets(
     let layouts = (0..(BLOOM_MIP_LEVELS + 1))
         .map(|_| layout)
         .collect::<Vec<_>>();
-    let allocate_info = vk::DescriptorSetAllocateInfo::builder()
+    let allocate_info = vk::DescriptorSetAllocateInfo::default()
         .descriptor_pool(pool)
         .set_layouts(&layouts);
     let sets = unsafe {
@@ -449,7 +448,7 @@ fn update_descriptor_sets(
     let mut image_infos = vec![];
 
     image_infos.push(
-        vk::DescriptorImageInfo::builder()
+        vk::DescriptorImageInfo::default()
             .image_layout(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL)
             .image_view(attachments.get_scene_resolved_color().view)
             .sampler(
@@ -457,17 +456,15 @@ fn update_descriptor_sets(
                     .get_scene_resolved_color()
                     .sampler
                     .expect("Post process input image must have a sampler"),
-            )
-            .build(),
+            ),
     );
 
     for view in &attachments.bloom.mips_views {
         image_infos.push(
-            vk::DescriptorImageInfo::builder()
+            vk::DescriptorImageInfo::default()
                 .image_layout(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL)
                 .image_view(*view)
-                .sampler(attachments.bloom.sampler)
-                .build(),
+                .sampler(attachments.bloom.sampler),
         )
     }
 
@@ -475,12 +472,11 @@ fn update_descriptor_sets(
         .iter()
         .zip(sets.iter())
         .map(|(info, set)| {
-            vk::WriteDescriptorSet::builder()
+            vk::WriteDescriptorSet::default()
                 .dst_set(*set)
                 .dst_binding(0)
                 .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
                 .image_info(std::slice::from_ref(info))
-                .build()
         })
         .collect::<Vec<_>>();
 
@@ -501,7 +497,7 @@ fn create_downsample_pipeline_layout(
         size: (2 * size_of::<f32>()) as _,
         stage_flags: vk::ShaderStageFlags::FRAGMENT,
     }];
-    let layout_info = vk::PipelineLayoutCreateInfo::builder()
+    let layout_info = vk::PipelineLayoutCreateInfo::default()
         .set_layouts(&layouts)
         .push_constant_ranges(&push_constant_ranges);
     unsafe { device.create_pipeline_layout(&layout_info, None).unwrap() }
@@ -517,7 +513,7 @@ fn create_upsample_pipeline_layout(
         size: size_of::<f32>() as _,
         stage_flags: vk::ShaderStageFlags::FRAGMENT,
     }];
-    let layout_info = vk::PipelineLayoutCreateInfo::builder()
+    let layout_info = vk::PipelineLayoutCreateInfo::default()
         .set_layouts(&layouts)
         .push_constant_ranges(&push_constant_ranges);
     unsafe { device.create_pipeline_layout(&layout_info, None).unwrap() }

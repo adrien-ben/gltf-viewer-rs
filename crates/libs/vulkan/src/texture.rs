@@ -118,7 +118,7 @@ impl Texture {
         let image_view = image.create_view(vk::ImageViewType::TYPE_2D, vk::ImageAspectFlags::COLOR);
 
         let sampler = {
-            let sampler_info = vk::SamplerCreateInfo::builder()
+            let sampler_info = vk::SamplerCreateInfo::default()
                 .mag_filter(vk::Filter::LINEAR)
                 .min_filter(vk::Filter::LINEAR)
                 .address_mode_u(vk::SamplerAddressMode::REPEAT)
@@ -220,7 +220,7 @@ impl Texture {
 
         let sampler = {
             let params = sampler_parameters.unwrap_or_default();
-            let sampler_info = vk::SamplerCreateInfo::builder()
+            let sampler_info = vk::SamplerCreateInfo::default()
                 .mag_filter(params.mag_filter)
                 .min_filter(params.min_filter)
                 .address_mode_u(vk::SamplerAddressMode::REPEAT)
@@ -285,7 +285,7 @@ impl Texture {
         let image_view = image.create_view(vk::ImageViewType::CUBE, vk::ImageAspectFlags::COLOR);
 
         let sampler = {
-            let sampler_info = vk::SamplerCreateInfo::builder()
+            let sampler_info = vk::SamplerCreateInfo::default()
                 .mag_filter(vk::Filter::LINEAR)
                 .min_filter(vk::Filter::LINEAR)
                 .address_mode_u(vk::SamplerAddressMode::CLAMP_TO_EDGE)
@@ -341,7 +341,7 @@ impl Texture {
         let image_view = image.create_view(vk::ImageViewType::TYPE_2D, vk::ImageAspectFlags::COLOR);
 
         let sampler = {
-            let sampler_info = vk::SamplerCreateInfo::builder()
+            let sampler_info = vk::SamplerCreateInfo::default()
                 .mag_filter(vk::Filter::LINEAR)
                 .min_filter(vk::Filter::LINEAR)
                 .address_mode_u(vk::SamplerAddressMode::CLAMP_TO_EDGE)

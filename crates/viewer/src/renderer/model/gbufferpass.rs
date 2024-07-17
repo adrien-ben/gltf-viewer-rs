@@ -225,7 +225,7 @@ fn create_descriptor_pool(
         },
     ];
 
-    let create_info = vk::DescriptorPoolCreateInfo::builder()
+    let create_info = vk::DescriptorPoolCreateInfo::default()
         .pool_sizes(&pool_sizes)
         .max_sets(descriptor_count + primitive_count);
 
@@ -234,27 +234,24 @@ fn create_descriptor_pool(
 
 fn create_dynamic_data_descriptor_set_layout(device: &Device) -> vk::DescriptorSetLayout {
     let bindings = [
-        vk::DescriptorSetLayoutBinding::builder()
+        vk::DescriptorSetLayoutBinding::default()
             .binding(CAMERA_UBO_BINDING)
             .descriptor_type(vk::DescriptorType::UNIFORM_BUFFER)
             .descriptor_count(1)
-            .stage_flags(vk::ShaderStageFlags::VERTEX | vk::ShaderStageFlags::FRAGMENT)
-            .build(),
-        vk::DescriptorSetLayoutBinding::builder()
+            .stage_flags(vk::ShaderStageFlags::VERTEX | vk::ShaderStageFlags::FRAGMENT),
+        vk::DescriptorSetLayoutBinding::default()
             .binding(TRANSFORMS_UBO_BINDING)
             .descriptor_type(vk::DescriptorType::UNIFORM_BUFFER_DYNAMIC)
             .descriptor_count(1)
-            .stage_flags(vk::ShaderStageFlags::VERTEX)
-            .build(),
-        vk::DescriptorSetLayoutBinding::builder()
+            .stage_flags(vk::ShaderStageFlags::VERTEX),
+        vk::DescriptorSetLayoutBinding::default()
             .binding(SKINS_UBO_BINDING)
             .descriptor_type(vk::DescriptorType::UNIFORM_BUFFER_DYNAMIC)
             .descriptor_count(1)
-            .stage_flags(vk::ShaderStageFlags::VERTEX)
-            .build(),
+            .stage_flags(vk::ShaderStageFlags::VERTEX),
     ];
 
-    let layout_info = vk::DescriptorSetLayoutCreateInfo::builder().bindings(&bindings);
+    let layout_info = vk::DescriptorSetLayoutCreateInfo::default().bindings(&bindings);
 
     unsafe {
         device
@@ -273,7 +270,7 @@ fn create_dynamic_data_descriptor_sets(
         .map(|_| layout)
         .collect::<Vec<_>>();
 
-    let allocate_info = vk::DescriptorSetAllocateInfo::builder()
+    let allocate_info = vk::DescriptorSetAllocateInfo::default()
         .descriptor_pool(pool)
         .set_layouts(&layouts);
     let sets = unsafe {
@@ -288,43 +285,37 @@ fn create_dynamic_data_descriptor_sets(
         let model_transform_ubo = &resources.model_transform_buffers[i];
         let model_skin_ubo = &resources.model_skin_buffers[i];
 
-        let camera_buffer_info = [vk::DescriptorBufferInfo::builder()
+        let camera_buffer_info = [vk::DescriptorBufferInfo::default()
             .buffer(camera_ubo.buffer)
             .offset(0)
-            .range(vk::WHOLE_SIZE)
-            .build()];
+            .range(vk::WHOLE_SIZE)];
 
-        let model_transform_buffer_info = [vk::DescriptorBufferInfo::builder()
+        let model_transform_buffer_info = [vk::DescriptorBufferInfo::default()
             .buffer(model_transform_ubo.buffer)
             .offset(0)
-            .range(size_of::<Matrix4<f32>>() as _)
-            .build()];
+            .range(size_of::<Matrix4<f32>>() as _)];
 
-        let model_skin_buffer_info = [vk::DescriptorBufferInfo::builder()
+        let model_skin_buffer_info = [vk::DescriptorBufferInfo::default()
             .buffer(model_skin_ubo.buffer)
             .offset(0)
-            .range(size_of::<JointsBuffer>() as _)
-            .build()];
+            .range(size_of::<JointsBuffer>() as _)];
 
         let descriptor_writes = [
-            vk::WriteDescriptorSet::builder()
+            vk::WriteDescriptorSet::default()
                 .dst_set(*set)
                 .dst_binding(CAMERA_UBO_BINDING)
                 .descriptor_type(vk::DescriptorType::UNIFORM_BUFFER)
-                .buffer_info(&camera_buffer_info)
-                .build(),
-            vk::WriteDescriptorSet::builder()
+                .buffer_info(&camera_buffer_info),
+            vk::WriteDescriptorSet::default()
                 .dst_set(*set)
                 .dst_binding(TRANSFORMS_UBO_BINDING)
                 .descriptor_type(vk::DescriptorType::UNIFORM_BUFFER_DYNAMIC)
-                .buffer_info(&model_transform_buffer_info)
-                .build(),
-            vk::WriteDescriptorSet::builder()
+                .buffer_info(&model_transform_buffer_info),
+            vk::WriteDescriptorSet::default()
                 .dst_set(*set)
                 .dst_binding(SKINS_UBO_BINDING)
                 .descriptor_type(vk::DescriptorType::UNIFORM_BUFFER_DYNAMIC)
-                .buffer_info(&model_skin_buffer_info)
-                .build(),
+                .buffer_info(&model_skin_buffer_info),
         ];
 
         unsafe {
@@ -338,14 +329,13 @@ fn create_dynamic_data_descriptor_sets(
 }
 
 fn create_per_primitive_descriptor_set_layout(device: &Device) -> vk::DescriptorSetLayout {
-    let bindings = [vk::DescriptorSetLayoutBinding::builder()
+    let bindings = [vk::DescriptorSetLayoutBinding::default()
         .binding(COLOR_SAMPLER_BINDING)
         .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
         .descriptor_count(1)
-        .stage_flags(vk::ShaderStageFlags::FRAGMENT)
-        .build()];
+        .stage_flags(vk::ShaderStageFlags::FRAGMENT)];
 
-    let layout_info = vk::DescriptorSetLayoutCreateInfo::builder().bindings(&bindings);
+    let layout_info = vk::DescriptorSetLayoutCreateInfo::default().bindings(&bindings);
 
     unsafe {
         device
@@ -364,7 +354,7 @@ fn create_per_primitive_descriptor_sets(
         .map(|_| layout)
         .collect::<Vec<_>>();
 
-    let allocate_info = vk::DescriptorSetAllocateInfo::builder()
+    let allocate_info = vk::DescriptorSetAllocateInfo::default()
         .descriptor_pool(pool)
         .set_layouts(&layouts);
     let sets = unsafe {
@@ -389,12 +379,11 @@ fn create_per_primitive_descriptor_sets(
             let set = sets[primitive_index];
             primitive_index += 1;
 
-            let descriptor_writes = [vk::WriteDescriptorSet::builder()
+            let descriptor_writes = [vk::WriteDescriptorSet::default()
                 .dst_set(set)
                 .dst_binding(COLOR_SAMPLER_BINDING)
                 .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
-                .image_info(&albedo_info)
-                .build()];
+                .image_info(&albedo_info)];
 
             unsafe {
                 context
@@ -418,11 +407,10 @@ fn create_descriptor_image_info(
             (t.get_view(), t.get_sampler())
         });
 
-    [vk::DescriptorImageInfo::builder()
+    [vk::DescriptorImageInfo::default()
         .image_layout(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL)
         .image_view(view)
-        .sampler(sampler)
-        .build()]
+        .sampler(sampler)]
 }
 
 fn create_pipeline_layout(device: &Device, descriptors: &Descriptors) -> vk::PipelineLayout {
@@ -435,7 +423,7 @@ fn create_pipeline_layout(device: &Device, descriptors: &Descriptors) -> vk::Pip
         offset: 0,
         size: size_of::<MaterialUniform>() as _,
     }];
-    let layout_info = vk::PipelineLayoutCreateInfo::builder()
+    let layout_info = vk::PipelineLayoutCreateInfo::default()
         .set_layouts(&layouts)
         .push_constant_ranges(&constant_ranges);
 
@@ -448,7 +436,7 @@ fn create_pipeline(
     layout: vk::PipelineLayout,
     enable_face_culling: bool,
 ) -> vk::Pipeline {
-    let depth_stencil_info = vk::PipelineDepthStencilStateCreateInfo::builder()
+    let depth_stencil_info = vk::PipelineDepthStencilStateCreateInfo::default()
         .depth_test_enable(true)
         .depth_write_enable(true)
         .depth_compare_op(vk::CompareOp::LESS_OR_EQUAL)
@@ -459,7 +447,7 @@ fn create_pipeline(
         .front(Default::default())
         .back(Default::default());
 
-    let color_blend_attachments = [vk::PipelineColorBlendAttachmentState::builder()
+    let color_blend_attachments = [vk::PipelineColorBlendAttachmentState::default()
         .color_write_mask(
             vk::ColorComponentFlags::R
                 | vk::ColorComponentFlags::G
@@ -472,8 +460,7 @@ fn create_pipeline(
         .color_blend_op(vk::BlendOp::ADD)
         .src_alpha_blend_factor(vk::BlendFactor::ONE)
         .dst_alpha_blend_factor(vk::BlendFactor::ZERO)
-        .alpha_blend_op(vk::BlendOp::ADD)
-        .build()];
+        .alpha_blend_op(vk::BlendOp::ADD)];
 
     create_renderer_pipeline::<ModelVertex>(
         context,

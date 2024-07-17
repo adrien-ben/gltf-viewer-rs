@@ -257,21 +257,19 @@ fn create_descriptors(context: &Arc<Context>, attachments: &Attachments) -> Desc
 
 fn create_descriptor_set_layout(device: &Device) -> vk::DescriptorSetLayout {
     let bindings = [
-        vk::DescriptorSetLayoutBinding::builder()
+        vk::DescriptorSetLayoutBinding::default()
             .binding(0)
             .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
             .descriptor_count(1)
-            .stage_flags(vk::ShaderStageFlags::FRAGMENT)
-            .build(),
-        vk::DescriptorSetLayoutBinding::builder()
+            .stage_flags(vk::ShaderStageFlags::FRAGMENT),
+        vk::DescriptorSetLayoutBinding::default()
             .binding(1)
             .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
             .descriptor_count(1)
-            .stage_flags(vk::ShaderStageFlags::FRAGMENT)
-            .build(),
+            .stage_flags(vk::ShaderStageFlags::FRAGMENT),
     ];
 
-    let layout_info = vk::DescriptorSetLayoutCreateInfo::builder().bindings(&bindings);
+    let layout_info = vk::DescriptorSetLayoutCreateInfo::default().bindings(&bindings);
 
     unsafe {
         device
@@ -285,7 +283,7 @@ fn create_descriptor_pool(device: &Device) -> vk::DescriptorPool {
         descriptor_count: 2,
     }];
 
-    let create_info = vk::DescriptorPoolCreateInfo::builder()
+    let create_info = vk::DescriptorPoolCreateInfo::default()
         .pool_sizes(&pool_sizes)
         .max_sets(1)
         .flags(vk::DescriptorPoolCreateFlags::FREE_DESCRIPTOR_SET);
@@ -300,7 +298,7 @@ fn create_descriptor_sets(
     attachments: &Attachments,
 ) -> Vec<vk::DescriptorSet> {
     let layouts = [layout];
-    let allocate_info = vk::DescriptorSetAllocateInfo::builder()
+    let allocate_info = vk::DescriptorSetAllocateInfo::default()
         .descriptor_pool(pool)
         .set_layouts(&layouts);
     let sets = unsafe {
@@ -320,7 +318,7 @@ fn update_descriptor_set(
     set: vk::DescriptorSet,
     attachments: &Attachments,
 ) {
-    let input_image_info = [vk::DescriptorImageInfo::builder()
+    let input_image_info = [vk::DescriptorImageInfo::default()
         .image_layout(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL)
         .image_view(attachments.get_scene_resolved_color().view)
         .sampler(
@@ -328,28 +326,24 @@ fn update_descriptor_set(
                 .get_scene_resolved_color()
                 .sampler
                 .expect("Post process input image must have a sampler"),
-        )
-        .build()];
+        )];
 
-    let bloom_info = [vk::DescriptorImageInfo::builder()
+    let bloom_info = [vk::DescriptorImageInfo::default()
         .image_layout(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL)
         .image_view(attachments.bloom.mips_views[0])
-        .sampler(attachments.bloom.sampler)
-        .build()];
+        .sampler(attachments.bloom.sampler)];
 
     let descriptor_writes = [
-        vk::WriteDescriptorSet::builder()
+        vk::WriteDescriptorSet::default()
             .dst_set(set)
             .dst_binding(0)
             .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
-            .image_info(&input_image_info)
-            .build(),
-        vk::WriteDescriptorSet::builder()
+            .image_info(&input_image_info),
+        vk::WriteDescriptorSet::default()
             .dst_set(set)
             .dst_binding(1)
             .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
-            .image_info(&bloom_info)
-            .build(),
+            .image_info(&bloom_info),
     ];
 
     unsafe {
@@ -369,7 +363,7 @@ fn create_pipeline_layout(
         size: size_of::<f32>() as _,
         stage_flags: vk::ShaderStageFlags::FRAGMENT,
     }];
-    let layout_info = vk::PipelineLayoutCreateInfo::builder()
+    let layout_info = vk::PipelineLayoutCreateInfo::default()
         .set_layouts(&layouts)
         .push_constant_ranges(&push_constant_ranges);
     unsafe { device.create_pipeline_layout(&layout_info, None).unwrap() }
@@ -381,25 +375,7 @@ fn create_pipeline(
     layout: vk::PipelineLayout,
     tone_map_mode: ToneMapMode,
 ) -> vk::Pipeline {
-    let (specialization_info, _map_entries, _data) =
-        create_model_frag_shader_specialization(tone_map_mode);
-
-    create_fullscreen_pipeline(
-        context,
-        output_format,
-        layout,
-        "final",
-        Some(&specialization_info),
-    )
-}
-
-fn create_model_frag_shader_specialization(
-    tone_map_mode: ToneMapMode,
-) -> (
-    vk::SpecializationInfo,
-    Vec<vk::SpecializationMapEntry>,
-    Vec<u8>,
-) {
+    // create_model_frag_shader_specialization
     let map_entries = vec![vk::SpecializationMapEntry {
         constant_id: 0,
         offset: 0,
@@ -410,10 +386,15 @@ fn create_model_frag_shader_specialization(
 
     let data = Vec::from(unsafe { util::any_as_u8_slice(&data) });
 
-    let specialization_info = vk::SpecializationInfo::builder()
+    let specialization_info = vk::SpecializationInfo::default()
         .map_entries(&map_entries)
-        .data(&data)
-        .build();
+        .data(&data);
 
-    (specialization_info, map_entries, data)
+    create_fullscreen_pipeline(
+        context,
+        output_format,
+        layout,
+        "final",
+        Some(&specialization_info),
+    )
 }

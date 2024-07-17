@@ -166,14 +166,13 @@ fn create_descriptors(context: &Arc<Context>, texture: &Texture) -> Descriptors 
     let device = context.device();
 
     let layout = {
-        let bindings = [vk::DescriptorSetLayoutBinding::builder()
+        let bindings = [vk::DescriptorSetLayoutBinding::default()
             .binding(0)
             .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
             .descriptor_count(1)
-            .stage_flags(vk::ShaderStageFlags::FRAGMENT)
-            .build()];
+            .stage_flags(vk::ShaderStageFlags::FRAGMENT)];
 
-        let layout_info = vk::DescriptorSetLayoutCreateInfo::builder().bindings(&bindings);
+        let layout_info = vk::DescriptorSetLayoutCreateInfo::default().bindings(&bindings);
 
         unsafe {
             device
@@ -188,7 +187,7 @@ fn create_descriptors(context: &Arc<Context>, texture: &Texture) -> Descriptors 
             descriptor_count: 1,
         }];
 
-        let create_info = vk::DescriptorPoolCreateInfo::builder()
+        let create_info = vk::DescriptorPoolCreateInfo::default()
             .pool_sizes(&pool_sizes)
             .max_sets(1);
 
@@ -198,7 +197,7 @@ fn create_descriptors(context: &Arc<Context>, texture: &Texture) -> Descriptors 
     let sets = {
         let layouts = [layout];
 
-        let allocate_info = vk::DescriptorSetAllocateInfo::builder()
+        let allocate_info = vk::DescriptorSetAllocateInfo::default()
             .descriptor_pool(pool)
             .set_layouts(&layouts);
 
@@ -209,18 +208,16 @@ fn create_descriptors(context: &Arc<Context>, texture: &Texture) -> Descriptors 
                 .unwrap()
         };
 
-        let cubemap_info = [vk::DescriptorImageInfo::builder()
+        let cubemap_info = [vk::DescriptorImageInfo::default()
             .image_layout(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL)
             .image_view(texture.view)
-            .sampler(texture.sampler.unwrap())
-            .build()];
+            .sampler(texture.sampler.unwrap())];
 
-        let descriptor_writes = [vk::WriteDescriptorSet::builder()
+        let descriptor_writes = [vk::WriteDescriptorSet::default()
             .dst_set(sets[0])
             .dst_binding(0)
             .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
-            .image_info(&cubemap_info)
-            .build()];
+            .image_info(&cubemap_info)];
 
         unsafe {
             context
@@ -238,9 +235,9 @@ fn create_descriptors(context: &Arc<Context>, texture: &Texture) -> Descriptors 
 struct EnvPipelineParameters<'a> {
     vertex_shader_name: &'static str,
     fragment_shader_name: &'static str,
-    viewport_info: &'a vk::PipelineViewportStateCreateInfo,
-    rasterizer_info: &'a vk::PipelineRasterizationStateCreateInfo,
-    dynamic_state_info: Option<&'a vk::PipelineDynamicStateCreateInfo>,
+    viewport_info: &'a vk::PipelineViewportStateCreateInfo<'a>,
+    rasterizer_info: &'a vk::PipelineRasterizationStateCreateInfo<'a>,
+    dynamic_state_info: Option<&'a vk::PipelineDynamicStateCreateInfo<'a>>,
     layout: vk::PipelineLayout,
     format: vk::Format,
 }
@@ -249,14 +246,14 @@ fn create_env_pipeline<V: Vertex>(
     context: &Arc<Context>,
     params: EnvPipelineParameters,
 ) -> vk::Pipeline {
-    let multisampling_info = vk::PipelineMultisampleStateCreateInfo::builder()
+    let multisampling_info = vk::PipelineMultisampleStateCreateInfo::default()
         .sample_shading_enable(false)
         .rasterization_samples(vk::SampleCountFlags::TYPE_1)
         .min_sample_shading(1.0)
         .alpha_to_coverage_enable(false)
         .alpha_to_one_enable(false);
 
-    let color_blend_attachments = [vk::PipelineColorBlendAttachmentState::builder()
+    let color_blend_attachments = [vk::PipelineColorBlendAttachmentState::default()
         .color_write_mask(
             vk::ColorComponentFlags::R
                 | vk::ColorComponentFlags::G
@@ -269,8 +266,7 @@ fn create_env_pipeline<V: Vertex>(
         .color_blend_op(vk::BlendOp::ADD)
         .src_alpha_blend_factor(vk::BlendFactor::ONE)
         .dst_alpha_blend_factor(vk::BlendFactor::ZERO)
-        .alpha_blend_op(vk::BlendOp::ADD)
-        .build()];
+        .alpha_blend_op(vk::BlendOp::ADD)];
 
     create_pipeline::<V>(
         context,

@@ -45,7 +45,7 @@ pub(crate) fn create_skybox_cubemap<P: AsRef<Path>>(
                 offset: 0,
                 size: size_of::<Matrix4<f32>>() as _,
             }];
-            let layout_info = vk::PipelineLayoutCreateInfo::builder()
+            let layout_info = vk::PipelineLayoutCreateInfo::default()
                 .set_layouts(&layouts)
                 .push_constant_ranges(&push_constant_range);
 
@@ -71,11 +71,11 @@ pub(crate) fn create_skybox_cubemap<P: AsRef<Path>>(
                 },
             };
             let scissors = [scissor];
-            let viewport_info = vk::PipelineViewportStateCreateInfo::builder()
+            let viewport_info = vk::PipelineViewportStateCreateInfo::default()
                 .viewports(&viewports)
                 .scissors(&scissors);
 
-            let rasterizer_info = vk::PipelineRasterizationStateCreateInfo::builder()
+            let rasterizer_info = vk::PipelineRasterizationStateCreateInfo::default()
                 .depth_clamp_enable(false)
                 .rasterizer_discard_enable(false)
                 .polygon_mode(vk::PolygonMode::FILL)
@@ -106,7 +106,7 @@ pub(crate) fn create_skybox_cubemap<P: AsRef<Path>>(
 
     let views = (0..6)
         .map(|i| {
-            let create_info = vk::ImageViewCreateInfo::builder()
+            let create_info = vk::ImageViewCreateInfo::default()
                 .image(cubemap.image.image)
                 .view_type(vk::ImageViewType::TYPE_2D)
                 .format(cubemap_format)
@@ -130,7 +130,7 @@ pub(crate) fn create_skybox_cubemap<P: AsRef<Path>>(
     context.execute_one_time_commands(|buffer| {
         {
             for face in 0..6 {
-                let attachment_info = RenderingAttachmentInfo::builder()
+                let attachment_info = RenderingAttachmentInfo::default()
                     .clear_value(vk::ClearValue {
                         color: vk::ClearColorValue {
                             float32: [0.0, 0.0, 0.0, 1.0],
@@ -141,7 +141,7 @@ pub(crate) fn create_skybox_cubemap<P: AsRef<Path>>(
                     .load_op(vk::AttachmentLoadOp::CLEAR)
                     .store_op(vk::AttachmentStoreOp::STORE);
 
-                let rendering_info = RenderingInfo::builder()
+                let rendering_info = RenderingInfo::default()
                     .color_attachments(std::slice::from_ref(&attachment_info))
                     .layer_count(1)
                     .render_area(vk::Rect2D {

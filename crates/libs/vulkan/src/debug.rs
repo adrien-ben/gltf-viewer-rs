@@ -1,5 +1,4 @@
-use ash::extensions::ext::DebugUtils;
-use ash::{vk, Entry, Instance};
+use ash::{ext::debug_utils, vk, Entry, Instance};
 use std::{ffi::CStr, os::raw::c_void};
 
 unsafe extern "system" fn vulkan_debug_callback(
@@ -24,16 +23,16 @@ unsafe extern "system" fn vulkan_debug_callback(
 pub fn setup_debug_messenger(
     entry: &Entry,
     instance: &Instance,
-) -> (DebugUtils, vk::DebugUtilsMessengerEXT) {
+) -> (debug_utils::Instance, vk::DebugUtilsMessengerEXT) {
     use vk::DebugUtilsMessageSeverityFlagsEXT as Severity;
     use vk::DebugUtilsMessageTypeFlagsEXT as MsgType;
 
-    let create_info = vk::DebugUtilsMessengerCreateInfoEXT::builder()
+    let create_info = vk::DebugUtilsMessengerCreateInfoEXT::default()
         .flags(vk::DebugUtilsMessengerCreateFlagsEXT::empty())
         .message_severity(Severity::VERBOSE | Severity::INFO | Severity::WARNING | Severity::ERROR)
         .message_type(MsgType::GENERAL | MsgType::VALIDATION | MsgType::PERFORMANCE)
         .pfn_user_callback(Some(vulkan_debug_callback));
-    let debug_utils = DebugUtils::new(entry, instance);
+    let debug_utils = debug_utils::Instance::new(entry, instance);
     let debug_utils_messenger = unsafe {
         debug_utils
             .create_debug_utils_messenger(&create_info, None)

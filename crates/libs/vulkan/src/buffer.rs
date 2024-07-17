@@ -50,7 +50,7 @@ impl Buffer {
     ) -> Self {
         let device = context.device();
         let buffer = {
-            let buffer_info = vk::BufferCreateInfo::builder()
+            let buffer_info = vk::BufferCreateInfo::default()
                 .size(size)
                 .usage(usage)
                 .sharing_mode(vk::SharingMode::EXCLUSIVE);
@@ -69,7 +69,7 @@ impl Buffer {
                 mem_properties,
             );
 
-            let alloc_info = vk::MemoryAllocateInfo::builder()
+            let alloc_info = vk::MemoryAllocateInfo::default()
                 .allocation_size(mem_requirements.size)
                 .memory_type_index(mem_type);
             unsafe {

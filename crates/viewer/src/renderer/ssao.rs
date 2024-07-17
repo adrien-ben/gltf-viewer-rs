@@ -205,7 +205,7 @@ impl SSAOPass {
         }
 
         {
-            let attachment_info = RenderingAttachmentInfo::builder()
+            let attachment_info = RenderingAttachmentInfo::default()
                 .clear_value(vk::ClearValue {
                     color: vk::ClearColorValue {
                         float32: [0.0, 0.0, 0.0, 1.0],
@@ -216,7 +216,7 @@ impl SSAOPass {
                 .load_op(vk::AttachmentLoadOp::CLEAR)
                 .store_op(vk::AttachmentStoreOp::STORE);
 
-            let rendering_info = RenderingInfo::builder()
+            let rendering_info = RenderingInfo::default()
                 .color_attachments(std::slice::from_ref(&attachment_info))
                 .layer_count(1)
                 .render_area(vk::Rect2D {
@@ -400,7 +400,7 @@ fn create_descriptor_pool(device: &Device, descriptor_count: u32) -> vk::Descrip
         },
     ];
 
-    let create_info = vk::DescriptorPoolCreateInfo::builder()
+    let create_info = vk::DescriptorPoolCreateInfo::default()
         .pool_sizes(&pool_sizes)
         .max_sets(descriptor_count + 2)
         .flags(vk::DescriptorPoolCreateFlags::FREE_DESCRIPTOR_SET);
@@ -410,27 +410,24 @@ fn create_descriptor_pool(device: &Device, descriptor_count: u32) -> vk::Descrip
 
 fn create_static_set_layout(device: &Device) -> vk::DescriptorSetLayout {
     let bindings = [
-        vk::DescriptorSetLayoutBinding::builder()
+        vk::DescriptorSetLayoutBinding::default()
             .binding(NORMALS_SAMPLER_BINDING)
             .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
             .descriptor_count(1)
-            .stage_flags(vk::ShaderStageFlags::FRAGMENT)
-            .build(),
-        vk::DescriptorSetLayoutBinding::builder()
+            .stage_flags(vk::ShaderStageFlags::FRAGMENT),
+        vk::DescriptorSetLayoutBinding::default()
             .binding(DEPTH_SAMPLER_BINDING)
             .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
             .descriptor_count(1)
-            .stage_flags(vk::ShaderStageFlags::FRAGMENT)
-            .build(),
-        vk::DescriptorSetLayoutBinding::builder()
+            .stage_flags(vk::ShaderStageFlags::FRAGMENT),
+        vk::DescriptorSetLayoutBinding::default()
             .binding(NOISE_SAMPLER_BINDING)
             .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
             .descriptor_count(1)
-            .stage_flags(vk::ShaderStageFlags::FRAGMENT)
-            .build(),
+            .stage_flags(vk::ShaderStageFlags::FRAGMENT),
     ];
 
-    let layout_info = vk::DescriptorSetLayoutCreateInfo::builder().bindings(&bindings);
+    let layout_info = vk::DescriptorSetLayoutCreateInfo::default().bindings(&bindings);
 
     unsafe {
         device
@@ -448,7 +445,7 @@ fn create_static_set(
     noise_texture: &Texture,
 ) -> vk::DescriptorSet {
     let layouts = [layout];
-    let allocate_info = vk::DescriptorSetAllocateInfo::builder()
+    let allocate_info = vk::DescriptorSetAllocateInfo::default()
         .descriptor_pool(pool)
         .set_layouts(&layouts);
 
@@ -471,51 +468,45 @@ fn update_static_set(
     depth: &Texture,
     noise_texture: &Texture,
 ) {
-    let normals_info = [vk::DescriptorImageInfo::builder()
+    let normals_info = [vk::DescriptorImageInfo::default()
         .image_layout(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL)
         .image_view(normals.view)
         .sampler(
             normals
                 .sampler
                 .expect("SSAO input normals must have a sampler"),
-        )
-        .build()];
+        )];
 
-    let depth_info = [vk::DescriptorImageInfo::builder()
+    let depth_info = [vk::DescriptorImageInfo::default()
         .image_layout(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL)
         .image_view(depth.view)
-        .sampler(depth.sampler.expect("SSAO input depth must have a sampler"))
-        .build()];
+        .sampler(depth.sampler.expect("SSAO input depth must have a sampler"))];
 
-    let noise_info = [vk::DescriptorImageInfo::builder()
+    let noise_info = [vk::DescriptorImageInfo::default()
         .image_layout(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL)
         .image_view(noise_texture.view)
         .sampler(
             noise_texture
                 .sampler
                 .expect("SSAO input depth must have a sampler"),
-        )
-        .build()];
+        )];
 
     let descriptor_writes = [
-        vk::WriteDescriptorSet::builder()
+        vk::WriteDescriptorSet::default()
             .dst_set(set)
             .dst_binding(NORMALS_SAMPLER_BINDING)
             .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
-            .image_info(&normals_info)
-            .build(),
-        vk::WriteDescriptorSet::builder()
+            .image_info(&normals_info),
+        vk::WriteDescriptorSet::default()
             .dst_set(set)
             .dst_binding(DEPTH_SAMPLER_BINDING)
             .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
-            .image_info(&depth_info)
-            .build(),
-        vk::WriteDescriptorSet::builder()
+            .image_info(&depth_info),
+        vk::WriteDescriptorSet::default()
             .dst_set(set)
             .dst_binding(NOISE_SAMPLER_BINDING)
             .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
-            .image_info(&noise_info)
-            .build(),
+            .image_info(&noise_info),
     ];
 
     unsafe {
@@ -526,14 +517,13 @@ fn update_static_set(
 }
 
 fn create_dynamic_set_layout(device: &Device) -> vk::DescriptorSetLayout {
-    let bindings = [vk::DescriptorSetLayoutBinding::builder()
+    let bindings = [vk::DescriptorSetLayoutBinding::default()
         .binding(KERNEL_UBO_BINDING)
         .descriptor_type(vk::DescriptorType::UNIFORM_BUFFER)
         .descriptor_count(1)
-        .stage_flags(vk::ShaderStageFlags::FRAGMENT)
-        .build()];
+        .stage_flags(vk::ShaderStageFlags::FRAGMENT)];
 
-    let layout_info = vk::DescriptorSetLayoutCreateInfo::builder().bindings(&bindings);
+    let layout_info = vk::DescriptorSetLayoutCreateInfo::default().bindings(&bindings);
 
     unsafe {
         device
@@ -549,7 +539,7 @@ fn create_dynamic_set(
     kernel_buffer: &Buffer,
 ) -> vk::DescriptorSet {
     let layouts = [layout];
-    let allocate_info = vk::DescriptorSetAllocateInfo::builder()
+    let allocate_info = vk::DescriptorSetAllocateInfo::default()
         .descriptor_pool(pool)
         .set_layouts(&layouts);
 
@@ -566,18 +556,16 @@ fn create_dynamic_set(
 }
 
 fn update_dynamic_set(context: &Arc<Context>, set: vk::DescriptorSet, kernel_buffer: &Buffer) {
-    let kernel_info = [vk::DescriptorBufferInfo::builder()
+    let kernel_info = [vk::DescriptorBufferInfo::default()
         .buffer(kernel_buffer.buffer)
         .offset(0)
-        .range(vk::WHOLE_SIZE)
-        .build()];
+        .range(vk::WHOLE_SIZE)];
 
-    let descriptor_writes = [vk::WriteDescriptorSet::builder()
+    let descriptor_writes = [vk::WriteDescriptorSet::default()
         .dst_set(set)
         .dst_binding(KERNEL_UBO_BINDING)
         .descriptor_type(vk::DescriptorType::UNIFORM_BUFFER)
-        .buffer_info(&kernel_info)
-        .build()];
+        .buffer_info(&kernel_info)];
 
     unsafe {
         context
@@ -587,14 +575,13 @@ fn update_dynamic_set(context: &Arc<Context>, set: vk::DescriptorSet, kernel_buf
 }
 
 fn create_per_frame_set_layout(device: &Device) -> vk::DescriptorSetLayout {
-    let bindings = [vk::DescriptorSetLayoutBinding::builder()
+    let bindings = [vk::DescriptorSetLayoutBinding::default()
         .binding(CAMERA_UBO_BINDING)
         .descriptor_type(vk::DescriptorType::UNIFORM_BUFFER)
         .descriptor_count(1)
-        .stage_flags(vk::ShaderStageFlags::FRAGMENT | vk::ShaderStageFlags::VERTEX)
-        .build()];
+        .stage_flags(vk::ShaderStageFlags::FRAGMENT | vk::ShaderStageFlags::VERTEX)];
 
-    let layout_info = vk::DescriptorSetLayoutCreateInfo::builder().bindings(&bindings);
+    let layout_info = vk::DescriptorSetLayoutCreateInfo::default().bindings(&bindings);
 
     unsafe {
         device
@@ -612,7 +599,7 @@ fn create_per_frame_sets(
     let layouts = (0..camera_buffers.len())
         .map(|_| layout)
         .collect::<Vec<_>>();
-    let allocate_info = vk::DescriptorSetAllocateInfo::builder()
+    let allocate_info = vk::DescriptorSetAllocateInfo::default()
         .descriptor_pool(pool)
         .set_layouts(&layouts);
     let sets = unsafe {
@@ -625,18 +612,16 @@ fn create_per_frame_sets(
     sets.iter()
         .zip(camera_buffers.iter())
         .for_each(|(set, buffer)| {
-            let buffer_info = [vk::DescriptorBufferInfo::builder()
+            let buffer_info = [vk::DescriptorBufferInfo::default()
                 .buffer(buffer.buffer)
                 .offset(0)
-                .range(vk::WHOLE_SIZE)
-                .build()];
+                .range(vk::WHOLE_SIZE)];
 
-            let descriptor_writes = [vk::WriteDescriptorSet::builder()
+            let descriptor_writes = [vk::WriteDescriptorSet::default()
                 .dst_set(*set)
                 .dst_binding(CAMERA_UBO_BINDING)
                 .descriptor_type(vk::DescriptorType::UNIFORM_BUFFER)
-                .buffer_info(&buffer_info)
-                .build()];
+                .buffer_info(&buffer_info)];
 
             unsafe {
                 context
@@ -661,7 +646,7 @@ fn create_pipeline_layout(device: &Device, descriptors: &Descriptors) -> vk::Pip
         size: size_of::<ConfigUniform>() as _,
     }];
 
-    let layout_info = vk::PipelineLayoutCreateInfo::builder()
+    let layout_info = vk::PipelineLayoutCreateInfo::default()
         .set_layouts(&layouts)
         .push_constant_ranges(&push_constant_ranges);
     unsafe { device.create_pipeline_layout(&layout_info, None).unwrap() }
@@ -672,10 +657,23 @@ fn create_pipeline(
     layout: vk::PipelineLayout,
     kernel_size: u32,
 ) -> vk::Pipeline {
-    let (specialization_info, _map_entries, _data) =
-        create_ssao_frag_shader_specialization(kernel_size);
+    // create_ssao_frag_shader_specialization
+    let map_entries = vec![
+        // Kernel size
+        vk::SpecializationMapEntry {
+            constant_id: 0,
+            offset: 0,
+            size: size_of::<u32>(),
+        },
+    ];
 
-    let depth_stencil_info = vk::PipelineDepthStencilStateCreateInfo::builder()
+    let data = unsafe { any_as_u8_slice(&kernel_size) }.to_vec();
+
+    let specialization_info = vk::SpecializationInfo::default()
+        .map_entries(&map_entries)
+        .data(&data);
+
+    let depth_stencil_info = vk::PipelineDepthStencilStateCreateInfo::default()
         .depth_test_enable(false)
         .depth_write_enable(false)
         .depth_compare_op(vk::CompareOp::LESS_OR_EQUAL)
@@ -686,7 +684,7 @@ fn create_pipeline(
         .front(Default::default())
         .back(Default::default());
 
-    let color_blend_attachments = [vk::PipelineColorBlendAttachmentState::builder()
+    let color_blend_attachments = [vk::PipelineColorBlendAttachmentState::default()
         .color_write_mask(
             vk::ColorComponentFlags::R
                 | vk::ColorComponentFlags::G
@@ -699,8 +697,7 @@ fn create_pipeline(
         .color_blend_op(vk::BlendOp::ADD)
         .src_alpha_blend_factor(vk::BlendFactor::ONE)
         .dst_alpha_blend_factor(vk::BlendFactor::ZERO)
-        .alpha_blend_op(vk::BlendOp::ADD)
-        .build()];
+        .alpha_blend_op(vk::BlendOp::ADD)];
 
     create_renderer_pipeline::<QuadVertex>(
         context,
@@ -719,30 +716,4 @@ fn create_pipeline(
             parent: None,
         },
     )
-}
-
-fn create_ssao_frag_shader_specialization(
-    saao_samples_count: u32,
-) -> (
-    vk::SpecializationInfo,
-    Vec<vk::SpecializationMapEntry>,
-    Vec<u8>,
-) {
-    let map_entries = vec![
-        // Kernel size
-        vk::SpecializationMapEntry {
-            constant_id: 0,
-            offset: 0,
-            size: size_of::<u32>(),
-        },
-    ];
-
-    let data = unsafe { any_as_u8_slice(&saao_samples_count) }.to_vec();
-
-    let specialization_info = vk::SpecializationInfo::builder()
-        .map_entries(&map_entries)
-        .data(&data)
-        .build();
-
-    (specialization_info, map_entries, data)
 }

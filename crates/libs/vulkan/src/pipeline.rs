@@ -6,11 +6,11 @@ use std::{ffi::CString, sync::Arc};
 pub struct PipelineParameters<'a> {
     pub vertex_shader_params: ShaderParameters<'a>,
     pub fragment_shader_params: ShaderParameters<'a>,
-    pub multisampling_info: &'a vk::PipelineMultisampleStateCreateInfo,
-    pub viewport_info: &'a vk::PipelineViewportStateCreateInfo,
-    pub rasterizer_info: &'a vk::PipelineRasterizationStateCreateInfo,
-    pub dynamic_state_info: Option<&'a vk::PipelineDynamicStateCreateInfo>,
-    pub depth_stencil_info: Option<&'a vk::PipelineDepthStencilStateCreateInfo>,
+    pub multisampling_info: &'a vk::PipelineMultisampleStateCreateInfo<'a>,
+    pub viewport_info: &'a vk::PipelineViewportStateCreateInfo<'a>,
+    pub rasterizer_info: &'a vk::PipelineRasterizationStateCreateInfo<'a>,
+    pub dynamic_state_info: Option<&'a vk::PipelineDynamicStateCreateInfo<'a>>,
+    pub depth_stencil_info: Option<&'a vk::PipelineDepthStencilStateCreateInfo<'a>>,
     pub color_blend_attachments: &'a [vk::PipelineColorBlendAttachmentState],
     pub color_attachment_formats: &'a [vk::Format],
     pub depth_attachment_format: Option<vk::Format>,
@@ -43,25 +43,25 @@ pub fn create_pipeline<V: Vertex>(
 
     let bindings_descs = V::get_bindings_descriptions();
     let attributes_descs = V::get_attributes_descriptions();
-    let vertex_input_info = vk::PipelineVertexInputStateCreateInfo::builder()
+    let vertex_input_info = vk::PipelineVertexInputStateCreateInfo::default()
         .vertex_binding_descriptions(&bindings_descs)
         .vertex_attribute_descriptions(&attributes_descs);
 
-    let input_assembly_info = vk::PipelineInputAssemblyStateCreateInfo::builder()
+    let input_assembly_info = vk::PipelineInputAssemblyStateCreateInfo::default()
         .topology(vk::PrimitiveTopology::TRIANGLE_LIST)
         .primitive_restart_enable(false);
 
-    let color_blending_info = vk::PipelineColorBlendStateCreateInfo::builder()
+    let color_blending_info = vk::PipelineColorBlendStateCreateInfo::default()
         .logic_op_enable(false)
         .logic_op(vk::LogicOp::COPY)
         .attachments(params.color_blend_attachments)
         .blend_constants([0.0, 0.0, 0.0, 0.0]);
 
-    let mut dynamic_rendering = vk::PipelineRenderingCreateInfo::builder()
+    let mut dynamic_rendering = vk::PipelineRenderingCreateInfo::default()
         .color_attachment_formats(params.color_attachment_formats)
         .depth_attachment_format(params.depth_attachment_format.unwrap_or_default());
 
-    let mut pipeline_info = vk::GraphicsPipelineCreateInfo::builder()
+    let mut pipeline_info = vk::GraphicsPipelineCreateInfo::default()
         .stages(&shader_states_infos)
         .vertex_input_state(&vertex_input_info)
         .input_assembly_state(&input_assembly_info)
@@ -88,7 +88,6 @@ pub fn create_pipeline<V: Vertex>(
         pipeline_info = pipeline_info.flags(vk::PipelineCreateFlags::ALLOW_DERIVATIVES);
     }
 
-    let pipeline_info = pipeline_info.build();
     let pipeline_infos = [pipeline_info];
 
     unsafe {
@@ -99,24 +98,23 @@ pub fn create_pipeline<V: Vertex>(
     }
 }
 
-fn create_shader_stage_info(
+fn create_shader_stage_info<'a>(
     context: &Arc<Context>,
-    entry_point_name: &CString,
+    entry_point_name: &'a CString,
     stage: vk::ShaderStageFlags,
-    params: ShaderParameters,
-) -> (ShaderModule, vk::PipelineShaderStageCreateInfo) {
+    params: ShaderParameters<'a>,
+) -> (ShaderModule, vk::PipelineShaderStageCreateInfo<'a>) {
     let extension = get_shader_file_extension(stage);
     let shader_path = format!("crates/viewer/shaders/{}.{}.spv", params.name, extension);
     let module = ShaderModule::new(Arc::clone(context), shader_path);
 
-    let mut stage_info = vk::PipelineShaderStageCreateInfo::builder()
+    let mut stage_info = vk::PipelineShaderStageCreateInfo::default()
         .stage(stage)
         .module(module.module())
         .name(entry_point_name);
     if let Some(specialization) = params.specialization {
         stage_info = stage_info.specialization_info(specialization);
     }
-    let stage_info = stage_info.build();
 
     (module, stage_info)
 }
@@ -132,7 +130,7 @@ fn get_shader_file_extension(stage: vk::ShaderStageFlags) -> &'static str {
 #[derive(Copy, Clone, Debug)]
 pub struct ShaderParameters<'a> {
     name: &'a str,
-    specialization: Option<&'a vk::SpecializationInfo>,
+    specialization: Option<&'a vk::SpecializationInfo<'a>>,
 }
 
 impl<'a> ShaderParameters<'a> {

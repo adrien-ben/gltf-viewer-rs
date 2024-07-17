@@ -76,7 +76,7 @@ pub(crate) fn create_brdf_lookup(context: &Arc<Context>, size: u32) -> Texture {
 
     let (pipeline_layout, pipeline) = {
         let layout = {
-            let layout_info = vk::PipelineLayoutCreateInfo::builder();
+            let layout_info = vk::PipelineLayoutCreateInfo::default();
 
             unsafe { device.create_pipeline_layout(&layout_info, None).unwrap() }
         };
@@ -98,11 +98,11 @@ pub(crate) fn create_brdf_lookup(context: &Arc<Context>, size: u32) -> Texture {
                     height: size,
                 },
             }];
-            let viewport_info = vk::PipelineViewportStateCreateInfo::builder()
+            let viewport_info = vk::PipelineViewportStateCreateInfo::default()
                 .viewports(&viewports)
                 .scissors(&scissors);
 
-            let rasterizer_info = vk::PipelineRasterizationStateCreateInfo::builder()
+            let rasterizer_info = vk::PipelineRasterizationStateCreateInfo::default()
                 .depth_clamp_enable(false)
                 .rasterizer_discard_enable(false)
                 .polygon_mode(vk::PolygonMode::FILL)
@@ -136,7 +136,7 @@ pub(crate) fn create_brdf_lookup(context: &Arc<Context>, size: u32) -> Texture {
     // Render
     context.execute_one_time_commands(|buffer| {
         {
-            let attachment_info = RenderingAttachmentInfo::builder()
+            let attachment_info = RenderingAttachmentInfo::default()
                 .clear_value(vk::ClearValue {
                     color: vk::ClearColorValue {
                         float32: [1.0, 0.0, 0.0, 1.0],
@@ -147,7 +147,7 @@ pub(crate) fn create_brdf_lookup(context: &Arc<Context>, size: u32) -> Texture {
                 .load_op(vk::AttachmentLoadOp::CLEAR)
                 .store_op(vk::AttachmentStoreOp::STORE);
 
-            let rendering_info = RenderingInfo::builder()
+            let rendering_info = RenderingInfo::default()
                 .color_attachments(std::slice::from_ref(&attachment_info))
                 .layer_count(1)
                 .render_area(vk::Rect2D {

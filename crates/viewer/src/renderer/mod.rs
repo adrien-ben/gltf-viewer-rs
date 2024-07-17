@@ -229,7 +229,7 @@ fn find_depth_format(context: &Context) -> vk::Format {
 }
 
 fn allocate_command_buffers(context: &Context, count: usize) -> Vec<vk::CommandBuffer> {
-    let allocate_info = vk::CommandBufferAllocateInfo::builder()
+    let allocate_info = vk::CommandBufferAllocateInfo::default()
         .command_pool(context.general_command_pool())
         .level(vk::CommandBufferLevel::PRIMARY)
         .command_buffer_count(count as _);
@@ -247,17 +247,17 @@ fn create_sync_objects(context: &Arc<Context>) -> InFlightFrames {
     let mut sync_objects_vec = Vec::new();
     for _ in 0..MAX_FRAMES_IN_FLIGHT {
         let image_available_semaphore = {
-            let semaphore_info = vk::SemaphoreCreateInfo::builder();
+            let semaphore_info = vk::SemaphoreCreateInfo::default();
             unsafe { device.create_semaphore(&semaphore_info, None).unwrap() }
         };
 
         let render_finished_semaphore = {
-            let semaphore_info = vk::SemaphoreCreateInfo::builder();
+            let semaphore_info = vk::SemaphoreCreateInfo::default();
             unsafe { device.create_semaphore(&semaphore_info, None).unwrap() }
         };
 
         let in_flight_fence = {
-            let fence_info = vk::FenceCreateInfo::builder().flags(vk::FenceCreateFlags::SIGNALED);
+            let fence_info = vk::FenceCreateInfo::default().flags(vk::FenceCreateFlags::SIGNALED);
             unsafe { device.create_fence(&fence_info, None).unwrap() }
         };
 
@@ -372,7 +372,7 @@ impl Renderer {
 
             // begin command buffer
             {
-                let command_buffer_begin_info = vk::CommandBufferBeginInfo::builder()
+                let command_buffer_begin_info = vk::CommandBufferBeginInfo::default()
                     .flags(vk::CommandBufferUsageFlags::SIMULTANEOUS_USE);
                 unsafe {
                     self.context
@@ -397,18 +397,18 @@ impl Renderer {
 
         // Submit command buffer
         {
-            let wait_semaphore_submit_info = vk::SemaphoreSubmitInfo::builder()
+            let wait_semaphore_submit_info = vk::SemaphoreSubmitInfo::default()
                 .semaphore(image_available_semaphore)
                 .stage_mask(vk::PipelineStageFlags2::COLOR_ATTACHMENT_OUTPUT);
 
-            let signal_semaphore_submit_info = vk::SemaphoreSubmitInfo::builder()
+            let signal_semaphore_submit_info = vk::SemaphoreSubmitInfo::default()
                 .semaphore(render_finished_semaphore)
                 .stage_mask(vk::PipelineStageFlags2::ALL_COMMANDS);
 
-            let cmd_buffer_submit_info = vk::CommandBufferSubmitInfo::builder()
+            let cmd_buffer_submit_info = vk::CommandBufferSubmitInfo::default()
                 .command_buffer(self.command_buffers[image_index as usize]);
 
-            let submit_info = vk::SubmitInfo2::builder()
+            let submit_info = vk::SubmitInfo2::default()
                 .command_buffer_infos(std::slice::from_ref(&cmd_buffer_submit_info))
                 .wait_semaphore_infos(std::slice::from_ref(&wait_semaphore_submit_info))
                 .signal_semaphore_infos(std::slice::from_ref(&signal_semaphore_submit_info));
@@ -431,7 +431,7 @@ impl Renderer {
         {
             let signal_semaphores = [render_finished_semaphore];
 
-            let present_info = vk::PresentInfoKHR::builder()
+            let present_info = vk::PresentInfoKHR::default()
                 .wait_semaphores(&signal_semaphores)
                 .swapchains(&swapchains)
                 .image_indices(&images_indices);
@@ -502,7 +502,7 @@ impl Renderer {
                     )
                 }
 
-                let color_attachment_info = RenderingAttachmentInfo::builder()
+                let color_attachment_info = RenderingAttachmentInfo::default()
                     .clear_value(vk::ClearValue {
                         color: vk::ClearColorValue {
                             float32: [0.0, 0.0, 0.0, 1.0],
@@ -513,7 +513,7 @@ impl Renderer {
                     .load_op(vk::AttachmentLoadOp::CLEAR)
                     .store_op(vk::AttachmentStoreOp::STORE);
 
-                let depth_attachment_info = RenderingAttachmentInfo::builder()
+                let depth_attachment_info = RenderingAttachmentInfo::default()
                     .clear_value(vk::ClearValue {
                         depth_stencil: vk::ClearDepthStencilValue {
                             depth: 1.0,
@@ -525,7 +525,7 @@ impl Renderer {
                     .load_op(vk::AttachmentLoadOp::CLEAR)
                     .store_op(vk::AttachmentStoreOp::STORE);
 
-                let rendering_info = RenderingInfo::builder()
+                let rendering_info = RenderingInfo::default()
                     .color_attachments(std::slice::from_ref(&color_attachment_info))
                     .depth_attachment(&depth_attachment_info)
                     .layer_count(1)
@@ -664,7 +664,7 @@ impl Renderer {
             }
 
             {
-                let mut color_attachment_info = RenderingAttachmentInfo::builder()
+                let mut color_attachment_info = RenderingAttachmentInfo::default()
                     .clear_value(vk::ClearValue {
                         color: vk::ClearColorValue {
                             float32: [1.0, 0.0, 0.0, 1.0],
@@ -682,7 +682,7 @@ impl Renderer {
                         .resolve_image_view(resolve_attachment.view)
                 }
 
-                let depth_attachment_info = RenderingAttachmentInfo::builder()
+                let depth_attachment_info = RenderingAttachmentInfo::default()
                     .clear_value(vk::ClearValue {
                         depth_stencil: vk::ClearDepthStencilValue {
                             depth: 1.0,
@@ -694,7 +694,7 @@ impl Renderer {
                     .load_op(vk::AttachmentLoadOp::CLEAR)
                     .store_op(vk::AttachmentStoreOp::STORE);
 
-                let rendering_info = RenderingInfo::builder()
+                let rendering_info = RenderingInfo::default()
                     .color_attachments(std::slice::from_ref(&color_attachment_info))
                     .depth_attachment(&depth_attachment_info)
                     .layer_count(1)
@@ -766,7 +766,7 @@ impl Renderer {
             }
 
             {
-                let color_attachment_info = RenderingAttachmentInfo::builder()
+                let color_attachment_info = RenderingAttachmentInfo::default()
                     .clear_value(vk::ClearValue {
                         color: vk::ClearColorValue {
                             float32: [0.0, 0.0, 0.0, 1.0],
@@ -777,7 +777,7 @@ impl Renderer {
                     .load_op(vk::AttachmentLoadOp::CLEAR)
                     .store_op(vk::AttachmentStoreOp::STORE);
 
-                let rendering_info = RenderingInfo::builder()
+                let rendering_info = RenderingInfo::default()
                     .color_attachments(std::slice::from_ref(&color_attachment_info))
                     .layer_count(1)
                     .render_area(vk::Rect2D {
@@ -1105,13 +1105,13 @@ impl Drop for Renderer {
 struct RendererPipelineParameters<'a> {
     vertex_shader_name: &'static str,
     fragment_shader_name: &'static str,
-    vertex_shader_specialization: Option<&'a vk::SpecializationInfo>,
-    fragment_shader_specialization: Option<&'a vk::SpecializationInfo>,
+    vertex_shader_specialization: Option<&'a vk::SpecializationInfo<'a>>,
+    fragment_shader_specialization: Option<&'a vk::SpecializationInfo<'a>>,
     msaa_samples: vk::SampleCountFlags,
     color_attachment_formats: &'a [vk::Format],
     depth_attachment_format: Option<vk::Format>,
     layout: vk::PipelineLayout,
-    depth_stencil_info: &'a vk::PipelineDepthStencilStateCreateInfo,
+    depth_stencil_info: &'a vk::PipelineDepthStencilStateCreateInfo<'a>,
     color_blend_attachments: &'a [vk::PipelineColorBlendAttachmentState],
     enable_face_culling: bool,
     parent: Option<vk::Pipeline>,
@@ -1132,14 +1132,14 @@ fn create_renderer_pipeline<V: Vertex>(
             ShaderParameters::specialized(params.fragment_shader_name, s)
         });
 
-    let multisampling_info = vk::PipelineMultisampleStateCreateInfo::builder()
+    let multisampling_info = vk::PipelineMultisampleStateCreateInfo::default()
         .sample_shading_enable(false)
         .rasterization_samples(params.msaa_samples)
         .min_sample_shading(1.0)
         .alpha_to_coverage_enable(false)
         .alpha_to_one_enable(false);
 
-    let viewport_info = vk::PipelineViewportStateCreateInfo::builder()
+    let viewport_info = vk::PipelineViewportStateCreateInfo::default()
         .viewport_count(1)
         .scissor_count(1);
 
@@ -1149,7 +1149,7 @@ fn create_renderer_pipeline<V: Vertex>(
         vk::CullModeFlags::NONE
     };
 
-    let rasterizer_info = vk::PipelineRasterizationStateCreateInfo::builder()
+    let rasterizer_info = vk::PipelineRasterizationStateCreateInfo::default()
         .depth_clamp_enable(false)
         .rasterizer_discard_enable(false)
         .polygon_mode(vk::PolygonMode::FILL)
@@ -1163,7 +1163,7 @@ fn create_renderer_pipeline<V: Vertex>(
 
     let dynamic_states = [vk::DynamicState::VIEWPORT, vk::DynamicState::SCISSOR];
     let dynamic_state_info =
-        vk::PipelineDynamicStateCreateInfo::builder().dynamic_states(&dynamic_states);
+        vk::PipelineDynamicStateCreateInfo::default().dynamic_states(&dynamic_states);
 
     create_pipeline::<V>(
         context,

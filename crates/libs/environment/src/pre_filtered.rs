@@ -44,7 +44,7 @@ pub(crate) fn create_pre_filtered_map(
                     size: size_of::<f32>() as _,
                 },
             ];
-            let layout_info = vk::PipelineLayoutCreateInfo::builder()
+            let layout_info = vk::PipelineLayoutCreateInfo::default()
                 .set_layouts(&layouts)
                 .push_constant_ranges(&push_constant_range);
 
@@ -52,11 +52,11 @@ pub(crate) fn create_pre_filtered_map(
         };
 
         let pipeline = {
-            let viewport_info = vk::PipelineViewportStateCreateInfo::builder()
+            let viewport_info = vk::PipelineViewportStateCreateInfo::default()
                 .viewport_count(1)
                 .scissor_count(1);
 
-            let rasterizer_info = vk::PipelineRasterizationStateCreateInfo::builder()
+            let rasterizer_info = vk::PipelineRasterizationStateCreateInfo::default()
                 .depth_clamp_enable(false)
                 .rasterizer_discard_enable(false)
                 .polygon_mode(vk::PolygonMode::FILL)
@@ -70,7 +70,7 @@ pub(crate) fn create_pre_filtered_map(
 
             let dynamic_state = [vk::DynamicState::VIEWPORT, vk::DynamicState::SCISSOR];
             let dynamic_state_info =
-                vk::PipelineDynamicStateCreateInfo::builder().dynamic_states(&dynamic_state);
+                vk::PipelineDynamicStateCreateInfo::default().dynamic_states(&dynamic_state);
 
             create_env_pipeline::<SkyboxVertex>(
                 context,
@@ -97,7 +97,7 @@ pub(crate) fn create_pre_filtered_map(
     for lod in 0..max_mip_levels {
         let lod_views = (0..6)
             .map(|i| {
-                let create_info = vk::ImageViewCreateInfo::builder()
+                let create_info = vk::ImageViewCreateInfo::default()
                     .image(pre_filtered.image.image)
                     .view_type(vk::ImageViewType::TYPE_2D)
                     .format(cubemap_format)
@@ -149,7 +149,7 @@ pub(crate) fn create_pre_filtered_map(
                 for (face, view) in view_matrices.iter().enumerate() {
                     let image_view = views[lod as usize][face];
 
-                    let attachment_info = RenderingAttachmentInfo::builder()
+                    let attachment_info = RenderingAttachmentInfo::default()
                         .clear_value(vk::ClearValue {
                             color: vk::ClearColorValue {
                                 float32: [0.0, 0.0, 0.0, 1.0],
@@ -160,7 +160,7 @@ pub(crate) fn create_pre_filtered_map(
                         .load_op(vk::AttachmentLoadOp::CLEAR)
                         .store_op(vk::AttachmentStoreOp::STORE);
 
-                    let rendering_info = RenderingInfo::builder()
+                    let rendering_info = RenderingInfo::default()
                         .color_attachments(std::slice::from_ref(&attachment_info))
                         .layer_count(1)
                         .render_area(vk::Rect2D {

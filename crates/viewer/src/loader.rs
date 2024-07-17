@@ -102,7 +102,7 @@ fn pre_load_model<P: AsRef<Path>>(
 
     // Create command buffer
     let command_buffer = {
-        let allocate_info = vk::CommandBufferAllocateInfo::builder()
+        let allocate_info = vk::CommandBufferAllocateInfo::default()
             .command_pool(context.general_command_pool())
             .level(vk::CommandBufferLevel::SECONDARY)
             .command_buffer_count(1);
@@ -112,8 +112,8 @@ fn pre_load_model<P: AsRef<Path>>(
 
     // Begin recording command buffer
     {
-        let inheritance_info = vk::CommandBufferInheritanceInfo::builder().build();
-        let command_buffer_begin_info = vk::CommandBufferBeginInfo::builder()
+        let inheritance_info = vk::CommandBufferInheritanceInfo::default();
+        let command_buffer_begin_info = vk::CommandBufferBeginInfo::default()
             .inheritance_info(&inheritance_info)
             .flags(vk::CommandBufferUsageFlags::ONE_TIME_SUBMIT);
         unsafe {

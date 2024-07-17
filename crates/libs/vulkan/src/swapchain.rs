@@ -3,7 +3,7 @@ use super::{
     image::{create_image_view, Image},
 };
 use ash::{
-    extensions::khr::{Surface, Swapchain as SwapchainLoader},
+    khr::{surface, swapchain},
     prelude::VkResult,
     vk, Device,
 };
@@ -11,7 +11,7 @@ use std::sync::Arc;
 
 pub struct Swapchain {
     context: Arc<Context>,
-    swapchain: SwapchainLoader,
+    swapchain: swapchain::Device,
     swapchain_khr: vk::SwapchainKHR,
     properties: SwapchainProperties,
     images: Vec<Image>,
@@ -51,7 +51,7 @@ impl Swapchain {
         let families_indices = [graphics, present];
 
         let create_info = {
-            let mut builder = vk::SwapchainCreateInfoKHR::builder()
+            let mut builder = vk::SwapchainCreateInfoKHR::default()
                 .surface(context.surface_khr())
                 .min_image_count(min_image_count)
                 .image_format(format.format)
@@ -75,7 +75,7 @@ impl Swapchain {
                 .clipped(true)
         };
 
-        let swapchain = SwapchainLoader::new(context.instance(), context.device());
+        let swapchain = swapchain::Device::new(context.instance(), context.device());
         let swapchain_khr = unsafe {
             swapchain
                 .create_swapchain(&create_info, None)
@@ -132,7 +132,7 @@ impl Swapchain {
 
     fn new(
         context: Arc<Context>,
-        swapchain: SwapchainLoader,
+        swapchain: swapchain::Device,
         swapchain_khr: vk::SwapchainKHR,
         properties: SwapchainProperties,
         images: Vec<Image>,
@@ -212,7 +212,11 @@ pub struct SwapchainSupportDetails {
 }
 
 impl SwapchainSupportDetails {
-    pub fn new(device: vk::PhysicalDevice, surface: &Surface, surface_khr: vk::SurfaceKHR) -> Self {
+    pub fn new(
+        device: vk::PhysicalDevice,
+        surface: &surface::Instance,
+        surface_khr: vk::SurfaceKHR,
+    ) -> Self {
         let capabilities = unsafe {
             surface
                 .get_physical_device_surface_capabilities(device, surface_khr)

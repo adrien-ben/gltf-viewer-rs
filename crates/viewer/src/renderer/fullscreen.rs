@@ -72,7 +72,7 @@ pub fn create_fullscreen_pipeline(
     fragment_shader_name: &'static str,
     fragment_shader_specialization: Option<&vk::SpecializationInfo>,
 ) -> vk::Pipeline {
-    let depth_stencil_info = vk::PipelineDepthStencilStateCreateInfo::builder()
+    let depth_stencil_info = vk::PipelineDepthStencilStateCreateInfo::default()
         .depth_test_enable(false)
         .depth_write_enable(false)
         .depth_compare_op(vk::CompareOp::LESS_OR_EQUAL)
@@ -83,7 +83,7 @@ pub fn create_fullscreen_pipeline(
         .front(Default::default())
         .back(Default::default());
 
-    let color_blend_attachments = [vk::PipelineColorBlendAttachmentState::builder()
+    let color_blend_attachments = [vk::PipelineColorBlendAttachmentState::default()
         .color_write_mask(
             vk::ColorComponentFlags::R
                 | vk::ColorComponentFlags::G
@@ -96,8 +96,7 @@ pub fn create_fullscreen_pipeline(
         .color_blend_op(vk::BlendOp::ADD)
         .src_alpha_blend_factor(vk::BlendFactor::ONE)
         .dst_alpha_blend_factor(vk::BlendFactor::ZERO)
-        .alpha_blend_op(vk::BlendOp::ADD)
-        .build()];
+        .alpha_blend_op(vk::BlendOp::ADD)];
 
     create_renderer_pipeline::<QuadVertex>(
         context,

@@ -160,7 +160,7 @@ fn map_sampler(context: &Arc<Context>, image: &Image, sampler: &Sampler) -> vk::
         0.25
     };
 
-    let sampler_info = vk::SamplerCreateInfo::builder()
+    let sampler_info = vk::SamplerCreateInfo::default()
         .mag_filter(map_mag_filter(mag_filter))
         .min_filter(map_min_filter(min_filter))
         .address_mode_u(map_wrap_mode(sampler.wrap_s()))

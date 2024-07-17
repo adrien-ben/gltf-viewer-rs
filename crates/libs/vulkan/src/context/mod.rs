@@ -5,7 +5,7 @@ pub use self::shared::HDR_SURFACE_FORMAT;
 use self::shared::*;
 use crate::MsaaSamples;
 use ash::{
-    extensions::khr::{DynamicRendering, Surface, Synchronization2},
+    khr::{dynamic_rendering, surface, synchronization2},
     vk, Device, Instance,
 };
 use std::sync::Arc;
@@ -64,7 +64,7 @@ fn create_command_pool(
     queue_families_indices: QueueFamiliesIndices,
     create_flags: vk::CommandPoolCreateFlags,
 ) -> vk::CommandPool {
-    let command_pool_info = vk::CommandPoolCreateInfo::builder()
+    let command_pool_info = vk::CommandPoolCreateInfo::default()
         .queue_family_index(queue_families_indices.graphics_index)
         .flags(create_flags);
 
@@ -80,7 +80,7 @@ impl Context {
         self.shared_context.instance()
     }
 
-    pub fn surface(&self) -> &Surface {
+    pub fn surface(&self) -> &surface::Instance {
         self.shared_context.surface()
     }
 
@@ -108,11 +108,11 @@ impl Context {
         self.shared_context.present_queue()
     }
 
-    pub fn dynamic_rendering(&self) -> &DynamicRendering {
+    pub fn dynamic_rendering(&self) -> &dynamic_rendering::Device {
         self.shared_context.dynamic_rendering()
     }
 
-    pub fn synchronization2(&self) -> &Synchronization2 {
+    pub fn synchronization2(&self) -> &synchronization2::Device {
         self.shared_context.synchronization2()
     }
 
