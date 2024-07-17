@@ -1,5 +1,4 @@
-use image::{codecs::hdr::HdrDecoder, Rgb};
-use std::{fs::File, io::BufReader, path::Path};
+use std::path::Path;
 
 /// Return a `&[u8]` for any sized object passed in.
 pub unsafe fn any_as_u8_slice<T: Sized>(any: &T) -> &[u8] {
@@ -8,15 +7,10 @@ pub unsafe fn any_as_u8_slice<T: Sized>(any: &T) -> &[u8] {
 }
 
 pub fn load_hdr_image<P: AsRef<Path>>(path: P) -> (u32, u32, Vec<f32>) {
-    let decoder = HdrDecoder::new(BufReader::new(File::open(path).unwrap())).unwrap();
+    let img = image::open(path).unwrap();
+    let w = img.width();
+    let h = img.height();
+    let data = img.into_rgba32f().into_raw();
 
-    let w = decoder.metadata().width;
-    let h = decoder.metadata().height;
-    let rgb = decoder.read_image_hdr().unwrap();
-    let mut data = Vec::with_capacity(rgb.len() * 4);
-    for Rgb(p) in rgb.iter() {
-        data.extend_from_slice(p);
-        data.push(0.0);
-    }
     (w, h, data)
 }
