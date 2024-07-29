@@ -190,7 +190,7 @@ impl Gui {
 
 fn init_egui(window: &WinitWindow) -> (Context, EguiWinit) {
     let egui = Context::default();
-    let egui_winit = EguiWinit::new(egui.clone(), ViewportId::ROOT, &window, None, None);
+    let egui_winit = EguiWinit::new(egui.clone(), ViewportId::ROOT, &window, None, None, None);
 
     (egui, egui_winit)
 }
