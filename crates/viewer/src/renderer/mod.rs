@@ -339,24 +339,25 @@ impl Renderer {
                 .unwrap();
         }
 
-        let ui_render_data = gui.map(|gui| {
-            let render_data = gui.render(window);
+        // FIXME: egui-winit w/ winit 0.30 support
+        // let ui_render_data = gui.map(|gui| {
+        //     let render_data = gui.render(window);
 
-            self.in_flight_frames.gui_textures_to_free.clear();
-            self.in_flight_frames
-                .gui_textures_to_free
-                .extend_from_slice(&render_data.textures_delta.free);
+        //     self.in_flight_frames.gui_textures_to_free.clear();
+        //     self.in_flight_frames
+        //         .gui_textures_to_free
+        //         .extend_from_slice(&render_data.textures_delta.free);
 
-            self.gui_renderer
-                .set_textures(
-                    self.context.graphics_compute_queue(),
-                    self.context.transient_command_pool(),
-                    &render_data.textures_delta.set,
-                )
-                .unwrap();
+        //     self.gui_renderer
+        //         .set_textures(
+        //             self.context.graphics_compute_queue(),
+        //             self.context.transient_command_pool(),
+        //             &render_data.textures_delta.set,
+        //         )
+        //         .unwrap();
 
-            render_data
-        });
+        //     render_data
+        // });
 
         // record_command_buffer
         {
@@ -382,7 +383,7 @@ impl Renderer {
                 };
             }
 
-            self.cmd_draw(command_buffer, frame_index, ui_render_data.as_ref());
+            self.cmd_draw(command_buffer, frame_index, None); // FIXME: egui-winit w/ winit 0.30 support
 
             // End command buffer
             unsafe {

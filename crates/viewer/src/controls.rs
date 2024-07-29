@@ -1,7 +1,5 @@
 use vulkan::winit::{
-    event::{
-        DeviceEvent, ElementState, Event, KeyEvent, MouseButton, MouseScrollDelta, WindowEvent,
-    },
+    event::{DeviceEvent, ElementState, KeyEvent, MouseButton, MouseScrollDelta, WindowEvent},
     keyboard::{KeyCode, PhysicalKey},
 };
 
@@ -20,7 +18,15 @@ pub struct InputState {
 }
 
 impl InputState {
-    pub fn update(self, event: &Event<()>) -> Self {
+    pub fn reset(self) -> Self {
+        Self {
+            cursor_delta: [0.0, 0.0],
+            wheel_delta: 0.0,
+            ..self
+        }
+    }
+
+    pub fn handle_window_event(self, event: &WindowEvent) -> Self {
         let mut is_forward_pressed = None;
         let mut is_backward_pressed = None;
         let mut is_left_pressed = None;
@@ -30,63 +36,43 @@ impl InputState {
         let mut is_left_clicked = None;
         let mut is_right_clicked = None;
         let mut wheel_delta = self.wheel_delta;
-        let mut cursor_delta = self.cursor_delta;
 
-        if let Event::NewEvents(_) = event {
-            return Self {
-                cursor_delta: [0.0, 0.0],
-                wheel_delta: 0.0,
-                ..self
-            };
-        }
-
-        if let Event::WindowEvent { event, .. } = event {
-            match event {
-                WindowEvent::MouseInput { button, state, .. } => {
-                    let clicked = matches!(state, ElementState::Pressed);
-                    match button {
-                        MouseButton::Left => is_left_clicked = Some(clicked),
-                        MouseButton::Right => is_right_clicked = Some(clicked),
-                        _ => {}
-                    };
-                }
-                WindowEvent::MouseWheel {
-                    delta: MouseScrollDelta::LineDelta(_, v_lines),
-                    ..
-                } => {
-                    wheel_delta += v_lines;
-                }
-                WindowEvent::KeyboardInput {
-                    event:
-                        KeyEvent {
-                            physical_key: PhysicalKey::Code(scancode),
-                            state,
-                            ..
-                        },
-                    ..
-                } => {
-                    let pressed = matches!(state, ElementState::Pressed);
-                    match scancode {
-                        KeyCode::KeyW => is_forward_pressed = Some(pressed),
-                        KeyCode::KeyS => is_backward_pressed = Some(pressed),
-                        KeyCode::KeyA => is_left_pressed = Some(pressed),
-                        KeyCode::KeyD => is_right_pressed = Some(pressed),
-                        KeyCode::Space => is_up_pressed = Some(pressed),
-                        KeyCode::ControlLeft => is_down_pressed = Some(pressed),
-                        _ => {}
-                    };
-                }
-                _ => {}
+        match event {
+            WindowEvent::MouseInput { button, state, .. } => {
+                let clicked = matches!(state, ElementState::Pressed);
+                match button {
+                    MouseButton::Left => is_left_clicked = Some(clicked),
+                    MouseButton::Right => is_right_clicked = Some(clicked),
+                    _ => {}
+                };
             }
-        }
-
-        if let Event::DeviceEvent {
-            event: DeviceEvent::MouseMotion { delta: (x, y) },
-            ..
-        } = event
-        {
-            cursor_delta[0] += *x as f32;
-            cursor_delta[1] += *y as f32;
+            WindowEvent::MouseWheel {
+                delta: MouseScrollDelta::LineDelta(_, v_lines),
+                ..
+            } => {
+                wheel_delta += v_lines;
+            }
+            WindowEvent::KeyboardInput {
+                event:
+                    KeyEvent {
+                        physical_key: PhysicalKey::Code(scancode),
+                        state,
+                        ..
+                    },
+                ..
+            } => {
+                let pressed = matches!(state, ElementState::Pressed);
+                match scancode {
+                    KeyCode::KeyW => is_forward_pressed = Some(pressed),
+                    KeyCode::KeyS => is_backward_pressed = Some(pressed),
+                    KeyCode::KeyA => is_left_pressed = Some(pressed),
+                    KeyCode::KeyD => is_right_pressed = Some(pressed),
+                    KeyCode::Space => is_up_pressed = Some(pressed),
+                    KeyCode::ControlLeft => is_down_pressed = Some(pressed),
+                    _ => {}
+                };
+            }
+            _ => {}
         }
 
         Self {
@@ -98,8 +84,22 @@ impl InputState {
             is_down_pressed: is_down_pressed.unwrap_or(self.is_down_pressed),
             is_left_clicked: is_left_clicked.unwrap_or(self.is_left_clicked),
             is_right_clicked: is_right_clicked.unwrap_or(self.is_right_clicked),
-            cursor_delta,
             wheel_delta,
+            ..self
+        }
+    }
+
+    pub fn handle_device_event(self, event: &DeviceEvent) -> Self {
+        let mut cursor_delta = self.cursor_delta;
+
+        if let DeviceEvent::MouseMotion { delta: (x, y) } = event {
+            cursor_delta[0] += *x as f32;
+            cursor_delta[1] += *y as f32;
+        }
+
+        Self {
+            cursor_delta,
+            ..self
         }
     }
 }

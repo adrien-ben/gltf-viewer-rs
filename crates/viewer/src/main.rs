@@ -5,19 +5,19 @@ mod error;
 mod gui;
 mod loader;
 mod renderer;
+mod viewer;
 
-use crate::{camera::*, config::Config, controls::*, gui::Gui, loader::*, renderer::*};
+use crate::{camera::*, config::Config, controls::*, loader::*, renderer::*};
 use clap::Parser;
-use environment::*;
-use model::{Model, PlaybackMode};
-use std::{cell::RefCell, error::Error, path::PathBuf, rc::Rc, sync::Arc, time::Instant};
+use std::{error::Error, path::PathBuf};
+use viewer::Viewer;
 use vulkan::*;
 use winit::{
+    application::ApplicationHandler,
     dpi::PhysicalSize,
-    event::{ElementState, Event, KeyEvent, WindowEvent},
-    event_loop::{ControlFlow, EventLoop},
-    keyboard::Key,
-    window::{Fullscreen, WindowBuilder},
+    event::{DeviceEvent, DeviceId, StartCause, WindowEvent},
+    event_loop::{ActiveEventLoop, ControlFlow, EventLoop},
+    window::{Fullscreen, Window, WindowId},
 };
 
 const TITLE: &str = "Gltf Viewer";
@@ -26,217 +26,103 @@ fn main() -> Result<(), Box<dyn Error>> {
     env_logger::init();
     log::info!("Welcome to gltf-viewer-rs");
 
-    let cli = Cli::parse();
-
-    let config = cli
-        .config
-        .as_ref()
-        .map(config::load_config)
-        .transpose()?
-        .unwrap_or_default();
-    let enable_debug = cli.debug;
-    let model_path = cli.file;
-
-    run(config, enable_debug, model_path);
+    let event_loop = EventLoop::new().unwrap();
+    event_loop.set_control_flow(ControlFlow::Poll);
+    let mut app = App::new()?;
+    event_loop.run_app(&mut app)?;
 
     Ok(())
 }
 
-fn run(config: Config, enable_debug: bool, path: Option<PathBuf>) {
-    log::debug!("Initializing application.");
+struct App {
+    config: Config,
+    enable_debug: bool,
+    model_path: Option<PathBuf>,
+    window: Option<Window>,
+    viewer: Option<Viewer>,
+}
 
-    let event_loop = EventLoop::new().unwrap();
-    event_loop.set_control_flow(ControlFlow::Poll);
-    let window = WindowBuilder::new()
-        .with_title(TITLE)
-        .with_inner_size(PhysicalSize::new(
-            config.resolution().width(),
-            config.resolution().height(),
-        ))
-        .with_fullscreen(config.fullscreen().then_some(Fullscreen::Borderless(None)))
-        .build(&event_loop)
-        .unwrap();
+impl App {
+    fn new() -> Result<Self, Box<dyn Error>> {
+        let cli = Cli::parse();
 
-    let context = Arc::new(Context::new(&window, enable_debug));
+        let config = cli
+            .config
+            .as_ref()
+            .map(config::load_config)
+            .transpose()?
+            .unwrap_or_default();
+        let enable_debug = cli.debug;
+        let model_path = cli.file;
 
-    let mut renderer_settings = RendererSettings::new(&context);
+        Ok(Self {
+            config,
+            enable_debug,
+            model_path,
+            window: None,
+            viewer: None,
+        })
+    }
+}
 
-    let environment = Environment::new(&context, config.env().path(), config.env().resolution());
-    let mut gui = Gui::new(&window, renderer_settings);
-    let mut enable_ui = true;
-    let mut renderer = Renderer::create(
-        Arc::clone(&context),
-        &config,
-        renderer_settings,
-        environment,
-    );
+impl ApplicationHandler for App {
+    fn resumed(&mut self, event_loop: &ActiveEventLoop) {
+        let window = event_loop
+            .create_window(
+                Window::default_attributes()
+                    .with_title(TITLE)
+                    .with_inner_size(PhysicalSize::new(
+                        self.config.resolution().width(),
+                        self.config.resolution().height(),
+                    ))
+                    .with_fullscreen(
+                        self.config
+                            .fullscreen()
+                            .then_some(Fullscreen::Borderless(None)),
+                    ),
+            )
+            .expect("Failed to create window");
 
-    let mut model: Option<Rc<RefCell<Model>>> = None;
-    let loader = Loader::new(Arc::new(context.new_thread()));
-    if let Some(p) = path {
-        loader.load(p);
+        self.viewer = Some(Viewer::new(
+            self.config.clone(),
+            &window,
+            self.enable_debug,
+            self.model_path.take(),
+        ));
+        self.window = Some(window);
     }
 
-    let mut camera = Camera::default();
-    let mut input_state = InputState::default();
-    let mut time = Instant::now();
-    let mut dirty_swapchain = false;
+    fn new_events(&mut self, _: &ActiveEventLoop, _: StartCause) {
+        if let Some(viewer) = self.viewer.as_mut() {
+            viewer.new_frame();
+        }
+    }
 
-    // Main loop
-    log::debug!("Running application.");
-    event_loop
-        .run(move |event, elwt| {
-            input_state = input_state.update(&event);
+    fn about_to_wait(&mut self, _: &ActiveEventLoop) {
+        self.viewer
+            .as_mut()
+            .unwrap()
+            .end_frame(self.window.as_ref().unwrap());
+    }
 
-            match event {
-                // Start of event processing
-                Event::NewEvents(_) => {}
-                // End of event processing
-                Event::AboutToWait => {
-                    let new_time = Instant::now();
-                    let delta_s = (new_time - time).as_secs_f32();
-                    time = new_time;
+    fn window_event(&mut self, event_loop: &ActiveEventLoop, _: WindowId, event: WindowEvent) {
+        if let WindowEvent::CloseRequested = event {
+            event_loop.exit();
+        }
 
-                    // Load new model
-                    if let Some(loaded_model) = loader.get_model() {
-                        gui.set_model_metadata(loaded_model.metadata().clone());
-                        model.take();
+        self.viewer
+            .as_mut()
+            .unwrap()
+            .handle_window_event(self.window.as_ref().unwrap(), &event);
+    }
 
-                        context.graphics_queue_wait_idle();
-                        let loaded_model = Rc::new(RefCell::new(loaded_model));
-                        renderer.set_model(&loaded_model);
-                        model = Some(loaded_model);
-                    }
+    fn device_event(&mut self, _: &ActiveEventLoop, _: DeviceId, event: DeviceEvent) {
+        self.viewer.as_mut().unwrap().handle_device_event(&event);
+    }
 
-                    // Update model
-                    if let Some(model) = model.as_ref() {
-                        let mut model = model.borrow_mut();
-
-                        if gui.should_toggle_animation() {
-                            model.toggle_animation();
-                        } else if gui.should_stop_animation() {
-                            model.stop_animation();
-                        } else if gui.should_reset_animation() {
-                            model.reset_animation();
-                        } else {
-                            let playback_mode = if gui.is_infinite_animation_checked() {
-                                PlaybackMode::Loop
-                            } else {
-                                PlaybackMode::Once
-                            };
-
-                            model.set_animation_playback_mode(playback_mode);
-                            model.set_current_animation(gui.get_selected_animation());
-                        }
-                        gui.set_animation_playback_state(model.get_animation_playback_state());
-
-                        let delta_s = delta_s * gui.get_animation_speed();
-                        model.update(delta_s);
-                    }
-
-                    // Update camera
-                    {
-                        if gui.should_reset_camera() {
-                            camera = Default::default();
-                        }
-
-                        camera = match gui.camera_mode() {
-                            gui::CameraMode::Orbital => camera.to_orbital(),
-                            gui::CameraMode::Fps => camera.to_fps(),
-                        };
-
-                        camera.fov = gui.camera_fov();
-                        camera.z_near = gui.camera_z_near();
-                        camera.z_far = gui.camera_z_far();
-                        camera.set_move_speed(gui.camera_move_speed());
-
-                        if !gui.is_hovered() {
-                            camera.update(&input_state, delta_s);
-                            gui.set_camera(Some(camera));
-                        }
-                    }
-
-                    // Check if settings changed
-                    if let Some(new_renderer_settings) = gui.get_new_renderer_settings() {
-                        // recreate swapchain if hdr was toggled
-                        if renderer_settings.hdr_enabled != new_renderer_settings.hdr_enabled {
-                            renderer.recreate_swapchain(
-                                window.inner_size().into(),
-                                config.vsync(),
-                                new_renderer_settings.hdr_enabled.unwrap_or_default(),
-                            );
-                            dirty_swapchain = false;
-                        }
-
-                        // Update renderer
-                        renderer.update_settings(new_renderer_settings);
-
-                        renderer_settings = new_renderer_settings;
-                    }
-
-                    // If swapchain must be recreated wait for windows to not be minimized anymore
-                    if dirty_swapchain {
-                        let PhysicalSize { width, height } = window.inner_size();
-                        if width > 0 && height > 0 {
-                            renderer.recreate_swapchain(
-                                window.inner_size().into(),
-                                config.vsync(),
-                                renderer_settings.hdr_enabled.unwrap_or_default(),
-                            );
-                        } else {
-                            return;
-                        }
-                    }
-
-                    let gui = enable_ui.then_some(&mut gui);
-                    dirty_swapchain = matches!(
-                        renderer.render(&window, camera, gui),
-                        Err(RenderError::DirtySwapchain)
-                    );
-                }
-                // Window event
-                Event::WindowEvent { event, .. } => {
-                    gui.handle_event(&window, &event);
-                    match event {
-                        // Dropped file
-                        WindowEvent::DroppedFile(path) => {
-                            log::debug!("File dropped: {:?}", path);
-                            loader.load(path);
-                        }
-                        // Resizing
-                        WindowEvent::Resized(_) => {
-                            dirty_swapchain = true;
-                        }
-                        // Key events
-                        WindowEvent::KeyboardInput {
-                            event:
-                                KeyEvent {
-                                    logical_key: Key::Character(c),
-                                    state: ElementState::Pressed,
-                                    ..
-                                },
-                            ..
-                        } => {
-                            if c == "h" {
-                                enable_ui = !enable_ui;
-                            }
-                        }
-                        // Exit
-                        WindowEvent::CloseRequested => {
-                            elwt.exit();
-                        }
-                        _ => (),
-                    }
-                }
-                // Cleanup
-                Event::LoopExiting => {
-                    log::info!("Stopping application");
-                    renderer.wait_idle_gpu();
-                }
-                _ => (),
-            }
-        })
-        .unwrap();
+    fn exiting(&mut self, _: &ActiveEventLoop) {
+        self.viewer.as_mut().unwrap().on_exit();
+    }
 }
 
 #[derive(Parser)]

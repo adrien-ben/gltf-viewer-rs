@@ -50,53 +50,55 @@ impl Gui {
         }
     }
 
-    pub fn handle_event(&mut self, window: &WinitWindow, event: &WindowEvent) {
-        let _ = self.egui_winit.on_window_event(window, event);
-    }
+    // FIXME: egui-winit w/ winit 0.30 support
+    // pub fn handle_event(&mut self, window: &WinitWindow, event: &WindowEvent) {
+    //     let _ = self.egui_winit.on_window_event(window, event);
+    // }
 
-    pub fn render(&mut self, window: &WinitWindow) -> RenderData {
-        let raw_input = self.egui_winit.take_egui_input(window);
+    // FIXME: egui-winit w/ winit 0.30 support
+    // pub fn render(&mut self, window: &WinitWindow) -> RenderData {
+    //     let raw_input = self.egui_winit.take_egui_input(window);
 
-        let previous_state = self.state;
+    //     let previous_state = self.state;
 
-        let egui::FullOutput {
-            platform_output,
-            textures_delta,
-            shapes,
-            pixels_per_point,
-            ..
-        } = self.egui.run(raw_input, |ctx: &Context| {
-            egui::Window::new("Menu ('H' to toggle)")
-                .default_open(false)
-                .show(ctx, |ui| {
-                    build_renderer_settings_window(ui, &mut self.state);
-                    ui.separator();
-                    build_camera_details_window(ui, &mut self.state, self.camera);
-                    ui.separator();
-                    build_animation_player_window(
-                        ui,
-                        &mut self.state,
-                        self.model_metadata.as_ref(),
-                        self.animation_playback_state,
-                    );
-                });
-        });
+    //     let egui::FullOutput {
+    //         platform_output,
+    //         textures_delta,
+    //         shapes,
+    //         pixels_per_point,
+    //         ..
+    //     } = self.egui.run(raw_input, |ctx: &Context| {
+    //         egui::Window::new("Menu ('H' to toggle)")
+    //             .default_open(false)
+    //             .show(ctx, |ui| {
+    //                 build_renderer_settings_window(ui, &mut self.state);
+    //                 ui.separator();
+    //                 build_camera_details_window(ui, &mut self.state, self.camera);
+    //                 ui.separator();
+    //                 build_animation_player_window(
+    //                     ui,
+    //                     &mut self.state,
+    //                     self.model_metadata.as_ref(),
+    //                     self.animation_playback_state,
+    //                 );
+    //             });
+    //     });
 
-        self.state.check_renderer_settings_changed(&previous_state);
+    //     self.state.check_renderer_settings_changed(&previous_state);
 
-        self.state.hovered = self.egui.is_pointer_over_area();
+    //     self.state.hovered = self.egui.is_pointer_over_area();
 
-        self.egui_winit
-            .handle_platform_output(window, platform_output);
+    //     self.egui_winit
+    //         .handle_platform_output(window, platform_output);
 
-        let clipped_primitives = self.egui.tessellate(shapes, pixels_per_point);
+    //     let clipped_primitives = self.egui.tessellate(shapes, pixels_per_point);
 
-        RenderData {
-            pixels_per_point,
-            textures_delta,
-            clipped_primitives,
-        }
-    }
+    //     RenderData {
+    //         pixels_per_point,
+    //         textures_delta,
+    //         clipped_primitives,
+    //     }
+    // }
 
     pub fn set_model_metadata(&mut self, metadata: Metadata) {
         self.model_metadata.replace(metadata);
