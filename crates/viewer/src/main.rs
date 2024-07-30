@@ -7,7 +7,7 @@ mod loader;
 mod renderer;
 
 use crate::{camera::*, config::Config, controls::*, gui::Gui, loader::*, renderer::*};
-use clap::{Arg, Command};
+use clap::Parser;
 use environment::*;
 use model::{Model, PlaybackMode};
 use std::{cell::RefCell, error::Error, path::PathBuf, rc::Rc, sync::Arc, time::Instant};
@@ -26,15 +26,18 @@ fn main() -> Result<(), Box<dyn Error>> {
     env_logger::init();
     log::info!("Welcome to gltf-viewer-rs");
 
-    let matches = create_app().get_matches();
+    let cli = Cli::parse();
 
-    let config = matches
-        .value_of("config")
-        .map_or(Ok(Default::default()), config::load_config)?;
-    let enable_debug = matches.is_present("debug");
-    let file_path = matches.value_of("file").map(PathBuf::from);
+    let config = cli
+        .config
+        .as_ref()
+        .map(config::load_config)
+        .transpose()?
+        .unwrap_or_default();
+    let enable_debug = cli.debug;
+    let model_path = cli.file;
 
-    run(config, enable_debug, file_path);
+    run(config, enable_debug, model_path);
 
     Ok(())
 }
@@ -236,33 +239,15 @@ fn run(config: Config, enable_debug: bool, path: Option<PathBuf>) {
         .unwrap();
 }
 
-fn create_app<'a>() -> Command<'a> {
-    Command::new("GLTF Viewer")
-        .version("1.0")
-        .author("Adrien Bennadji")
-        .about("Viewer for GLTF 2.0 files.")
-        .arg(
-            Arg::new("config")
-                .short('c')
-                .long("config")
-                .value_name("FILE")
-                .help("Set the path to the configuration file")
-                .takes_value(true),
-        )
-        .arg(
-            Arg::new("file")
-                .short('f')
-                .long("file")
-                .value_name("FILE")
-                .help("Set the path to gltf model to view")
-                .takes_value(true),
-        )
-        .arg(
-            Arg::new("debug")
-                .short('d')
-                .long("debug")
-                .value_name("DEBUG")
-                .help("Enable vulkan debug printing")
-                .takes_value(false),
-        )
+#[derive(Parser)]
+#[command(name = "GLTF Viewer")]
+#[command(version = "1.0")]
+#[command(about = "Viewer for GLTF 2.0 files.", long_about = None)]
+struct Cli {
+    #[arg(short, long, value_name = "FILE")]
+    config: Option<PathBuf>,
+    #[arg(short, long, value_name = "FILE")]
+    file: Option<PathBuf>,
+    #[arg(short, long)]
+    debug: bool,
 }

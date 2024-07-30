@@ -2,6 +2,7 @@ use crate::error::*;
 use serde::de::Unexpected;
 use serde::Deserialize;
 use std::fs::File;
+use std::path::Path;
 use vulkan::MsaaSamples;
 
 #[derive(Deserialize, Clone)]
@@ -124,7 +125,7 @@ impl Default for Environment {
     }
 }
 
-pub fn load_config(path: &str) -> Result<Config, AppError> {
+pub fn load_config<P: AsRef<Path>>(path: P) -> Result<Config, AppError> {
     let config_file = File::open(path)
         .map_err(|e| AppError::ConfigLoadError(format!("Failed to load file: {}", e)))?;
     serde_yaml::from_reader(config_file)
