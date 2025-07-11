@@ -33,9 +33,9 @@ ash-window = "0.13"
 raw-window-handle = "0.6"
 winit = "0.30"
 gltf = "1.3"
-egui = "0.31"
-egui-winit = "0.31"
-egui-ash-renderer = { version = "0.8", features = ["dynamic-rendering"] }
+egui = "0.32"
+egui-winit = "0.32"
+egui-ash-renderer = { version = "0.9", features = ["dynamic-rendering"] }
 
 [patch.crates-io.gltf]
 git = "https://github.com/adrien-ben/gltf"
