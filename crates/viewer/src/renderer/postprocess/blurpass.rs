@@ -2,7 +2,7 @@ use crate::renderer::attachments::Attachments;
 use crate::renderer::fullscreen::*;
 use std::sync::Arc;
 use vulkan::ash::vk::{RenderingAttachmentInfo, RenderingInfo};
-use vulkan::ash::{vk, Device};
+use vulkan::ash::{Device, vk};
 use vulkan::{Context, Descriptors, Texture};
 
 const BLUR_OUTPUT_FORMAT: vk::Format = vk::Format::R8_UNORM;

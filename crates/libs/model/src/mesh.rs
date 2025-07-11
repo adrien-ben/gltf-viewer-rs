@@ -1,10 +1,10 @@
-use super::{generate_tangents, IndexBuffer, Material, ModelVertex, VertexBuffer};
+use super::{IndexBuffer, Material, ModelVertex, VertexBuffer, generate_tangents};
 use ash::vk;
 use cgmath::Vector3;
 use gltf::{
+    Document,
     buffer::{Buffer as GltfBuffer, Data},
     mesh::{Bounds, Reader, Semantic},
-    Document,
 };
 use math::*;
 use std::{mem::size_of, sync::Arc};

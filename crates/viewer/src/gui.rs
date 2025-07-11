@@ -1,10 +1,10 @@
 use crate::camera::Camera;
-use crate::renderer::{OutputMode, RendererSettings, ToneMapMode, DEFAULT_BLOOM_STRENGTH};
+use crate::renderer::{DEFAULT_BLOOM_STRENGTH, OutputMode, RendererSettings, ToneMapMode};
 use crate::{DEFAULT_FOV, DEFAULT_FPS_MOVE_SPEED, DEFAULT_Z_FAR, DEFAULT_Z_NEAR};
 use egui::{ClippedPrimitive, Context, TexturesDelta, Ui, ViewportId, Widget};
 use egui_winit::State as EguiWinit;
 use math::cgmath::Deg;
-use model::{metadata::*, PlaybackState};
+use model::{PlaybackState, metadata::*};
 use vulkan::winit::event::WindowEvent;
 use vulkan::winit::window::Window as WinitWindow;
 

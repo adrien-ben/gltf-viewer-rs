@@ -1,8 +1,8 @@
 use super::JointsBuffer;
 use math::cgmath::{InnerSpace, Matrix4, SquareMatrix, Vector4};
-use model::{Light, Material, Model, TextureInfo, Type, Workflow, MAX_JOINTS_PER_MESH};
+use model::{Light, MAX_JOINTS_PER_MESH, Material, Model, TextureInfo, Type, Workflow};
 use std::{mem::size_of, sync::Arc};
-use vulkan::{ash::vk, Buffer, Context};
+use vulkan::{Buffer, Context, ash::vk};
 
 pub const MAX_LIGHT_COUNT: usize = 8;
 const DEFAULT_LIGHT_DIRECTION: [f32; 4] = [0.0, 0.0, -1.0, 0.0];

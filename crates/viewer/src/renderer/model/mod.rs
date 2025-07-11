@@ -6,15 +6,15 @@ mod uniform;
 use gbufferpass::GBufferPass;
 use lightpass::LightPass;
 use math::cgmath::Matrix4;
+use model::MAX_JOINTS_PER_MESH;
 use model::Material;
 use model::Model;
-use model::MAX_JOINTS_PER_MESH;
 use std::cell::RefCell;
 use std::rc::Weak;
 use std::sync::Arc;
 use uniform::*;
 use vulkan::ash::vk;
-use vulkan::{mem_copy, mem_copy_aligned, Buffer, Context};
+use vulkan::{Buffer, Context, mem_copy, mem_copy_aligned};
 
 type JointsBuffer = [Matrix4<f32>; MAX_JOINTS_PER_MESH];
 

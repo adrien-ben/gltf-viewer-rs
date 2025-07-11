@@ -1,8 +1,8 @@
 use crate::renderer::attachments::Attachments;
-use crate::renderer::{fullscreen::*, RendererSettings};
+use crate::renderer::{RendererSettings, fullscreen::*};
 use std::{mem::size_of, sync::Arc};
 use util::any_as_u8_slice;
-use vulkan::ash::{vk, Device};
+use vulkan::ash::{Device, vk};
 use vulkan::{Context, Descriptors};
 
 /// Tone mapping and gamma correction pass

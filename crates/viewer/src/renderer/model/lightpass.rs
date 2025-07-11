@@ -1,13 +1,13 @@
-use super::{uniform::*, JointsBuffer, ModelData};
+use super::{JointsBuffer, ModelData, uniform::*};
 use crate::renderer::attachments::SCENE_COLOR_FORMAT;
-use crate::renderer::{create_renderer_pipeline, RendererPipelineParameters, RendererSettings};
+use crate::renderer::{RendererPipelineParameters, RendererSettings, create_renderer_pipeline};
 use environment::*;
 use math::cgmath::Matrix4;
 use model::{Model, ModelVertex, Primitive, Texture, Workflow};
 use std::mem::offset_of;
 use std::{mem::size_of, sync::Arc};
 use util::*;
-use vulkan::ash::{vk, Device};
+use vulkan::ash::{Device, vk};
 use vulkan::{Buffer, Context, Texture as VulkanTexture};
 
 const SAMPLERS_PER_PRIMITIVE: u32 = 8;

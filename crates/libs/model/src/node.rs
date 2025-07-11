@@ -1,4 +1,4 @@
-use gltf::{iter::Nodes as GltfNodes, scene::Transform, Scene};
+use gltf::{Scene, iter::Nodes as GltfNodes, scene::Transform};
 use math::cgmath::{Matrix4, Quaternion, Vector3};
 
 #[derive(Clone, Debug)]

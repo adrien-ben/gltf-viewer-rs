@@ -1,8 +1,9 @@
-use crate::{debug::*, swapchain::*, MsaaSamples};
+use crate::{MsaaSamples, debug::*, swapchain::*};
 use ash::{
+    Device, Entry, Instance,
     ext::debug_utils,
     khr::{dynamic_rendering, surface, swapchain, synchronization2},
-    vk, Device, Entry, Instance,
+    vk,
 };
 use raw_window_handle::{HasDisplayHandle, HasWindowHandle};
 use std::{

@@ -5,8 +5,9 @@ pub use self::shared::HDR_SURFACE_FORMAT;
 use self::shared::*;
 use crate::MsaaSamples;
 use ash::{
+    Device, Instance,
     khr::{dynamic_rendering, surface, synchronization2},
-    vk, Device, Instance,
+    vk,
 };
 use std::sync::Arc;
 use winit::window::Window;

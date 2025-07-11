@@ -1,11 +1,11 @@
 use super::{JointsBuffer, ModelData};
 use crate::renderer::attachments::GBUFFER_NORMALS_FORMAT;
-use crate::renderer::{create_renderer_pipeline, RendererPipelineParameters};
+use crate::renderer::{RendererPipelineParameters, create_renderer_pipeline};
 use math::cgmath::Matrix4;
 use model::{Material, Model, ModelVertex, Primitive, Texture};
 use std::{mem::size_of, sync::Arc};
 use util::any_as_u8_slice;
-use vulkan::ash::{vk, Device};
+use vulkan::ash::{Device, vk};
 use vulkan::{Buffer, Context, Texture as VulkanTexture};
 
 const DYNAMIC_DATA_SET_INDEX: u32 = 0;

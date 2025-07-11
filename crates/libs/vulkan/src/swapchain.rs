@@ -1,11 +1,12 @@
 use super::{
     context::Context,
-    image::{create_image_view, Image},
+    image::{Image, create_image_view},
 };
 use ash::{
+    Device,
     khr::{surface, swapchain},
     prelude::VkResult,
-    vk, Device,
+    vk,
 };
 use std::sync::Arc;
 

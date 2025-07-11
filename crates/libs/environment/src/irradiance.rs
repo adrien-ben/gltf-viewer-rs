@@ -1,6 +1,6 @@
 use super::{
-    create_descriptors, create_env_pipeline, get_view_matrices, EnvPipelineParameters, SkyboxModel,
-    SkyboxVertex,
+    EnvPipelineParameters, SkyboxModel, SkyboxVertex, create_descriptors, create_env_pipeline,
+    get_view_matrices,
 };
 use cgmath::{Deg, Matrix4};
 use math::*;

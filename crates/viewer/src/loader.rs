@@ -14,9 +14,9 @@ use model::{Model, ModelStagingResources};
 
 use std::error::Error;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 use std::sync::mpsc;
 use std::sync::mpsc::{Receiver, Sender};
-use std::sync::Arc;
 use std::thread;
 use std::thread::JoinHandle;
 use vulkan::ash::vk;

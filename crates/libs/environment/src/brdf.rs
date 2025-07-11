@@ -1,9 +1,9 @@
-use super::{create_env_pipeline, EnvPipelineParameters};
+use super::{EnvPipelineParameters, create_env_pipeline};
 use std::mem::size_of;
 use std::sync::Arc;
 use std::time::Instant;
 use vulkan::ash::vk::{self, RenderingAttachmentInfo, RenderingInfo};
-use vulkan::{create_device_local_buffer_with_data, Buffer, Context, Texture, Vertex};
+use vulkan::{Buffer, Context, Texture, Vertex, create_device_local_buffer_with_data};
 
 #[repr(C)]
 #[derive(Clone, Copy)]

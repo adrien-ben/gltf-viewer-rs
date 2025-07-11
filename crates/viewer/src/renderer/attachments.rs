@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use vulkan::{ash::vk, Context, Image, ImageParameters, Texture};
+use vulkan::{Context, Image, ImageParameters, Texture, ash::vk};
 
 pub const GBUFFER_NORMALS_FORMAT: vk::Format = vk::Format::R16G16B16A16_SFLOAT;
 pub const AO_MAP_FORMAT: vk::Format = vk::Format::R8_UNORM;

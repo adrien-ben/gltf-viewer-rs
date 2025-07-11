@@ -1,6 +1,6 @@
 use super::attachments::Attachments;
 use super::fullscreen::*;
-use super::{create_renderer_pipeline, RendererPipelineParameters, RendererSettings};
+use super::{RendererPipelineParameters, RendererSettings, create_renderer_pipeline};
 use math::{
     cgmath::{InnerSpace, Vector3, Vector4},
     lerp::Lerp,
@@ -10,8 +10,8 @@ use std::mem::size_of;
 use std::sync::Arc;
 use util::any_as_u8_slice;
 use vulkan::ash::vk::{RenderingAttachmentInfo, RenderingInfo};
-use vulkan::ash::{vk, Device};
-use vulkan::{create_device_local_buffer_with_data, Buffer, Context, SamplerParameters, Texture};
+use vulkan::ash::{Device, vk};
+use vulkan::{Buffer, Context, SamplerParameters, Texture, create_device_local_buffer_with_data};
 
 const AO_MAP_FORMAT: vk::Format = vk::Format::R8_UNORM;
 

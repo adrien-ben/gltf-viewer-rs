@@ -1,13 +1,13 @@
 use super::node::Nodes;
 use gltf::{
+    Animation as GltfAnimation,
     animation::{
+        Channel as GltfChannel, Interpolation as GltfInterpolation, Property,
         iter::Channels,
         util::{ReadOutputs, Reader},
-        Channel as GltfChannel, Interpolation as GltfInterpolation, Property,
     },
     buffer::{Buffer, Data},
     iter::Animations as GltfAnimations,
-    Animation as GltfAnimation,
 };
 use math::cgmath::{InnerSpace, Quaternion, Vector3, VectorSpace};
 use math::slerp;

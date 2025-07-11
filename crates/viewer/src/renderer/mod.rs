@@ -20,7 +20,7 @@ pub use self::{postprocess::*, skybox::*};
 use super::camera::{Camera, CameraUBO};
 use super::config::Config;
 use super::gui::Gui;
-use ash::{vk, Device};
+use ash::{Device, vk};
 use egui::TextureId;
 use egui_ash_renderer::{DynamicRendering, Options, Renderer as GuiRenderer};
 use environment::Environment;
@@ -438,7 +438,7 @@ impl Renderer {
 
             match self.swapchain.present(&present_info) {
                 Ok(true) | Err(vk::Result::ERROR_OUT_OF_DATE_KHR) => {
-                    return Err(RenderError::DirtySwapchain)
+                    return Err(RenderError::DirtySwapchain);
                 }
                 Err(error) => panic!("Failed to present queue. Cause: {}", error),
                 _ => {}

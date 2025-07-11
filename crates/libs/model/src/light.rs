@@ -1,6 +1,6 @@
+use gltf::Document;
 use gltf::iter::Lights;
 use gltf::khr_lights_punctual::{Kind, Light as GltfLight};
-use gltf::Document;
 
 #[derive(Copy, Clone, Debug)]
 pub struct Light {

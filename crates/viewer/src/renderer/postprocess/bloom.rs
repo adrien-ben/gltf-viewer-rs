@@ -2,16 +2,17 @@ use std::{mem::size_of, sync::Arc};
 
 use util::any_as_u8_slice;
 use vulkan::{
+    Context, Descriptors, LayoutTransition, MipsRange,
     ash::{
-        vk::{self, RenderingAttachmentInfo, RenderingInfo},
         Device,
+        vk::{self, RenderingAttachmentInfo, RenderingInfo},
     },
-    cmd_transition_images_layouts, Context, Descriptors, LayoutTransition, MipsRange,
+    cmd_transition_images_layouts,
 };
 
 use crate::renderer::{
     attachments::{Attachments, BLOOM_FORMAT, BLOOM_MIP_LEVELS},
-    fullscreen::{create_fullscreen_pipeline, QuadModel},
+    fullscreen::{QuadModel, create_fullscreen_pipeline},
 };
 
 const BLOOM_FILTER_RADIUS: f32 = 0.005;

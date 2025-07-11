@@ -1,7 +1,7 @@
 use super::{
-    attachments::SCENE_COLOR_FORMAT, create_renderer_pipeline, RendererPipelineParameters,
+    RendererPipelineParameters, attachments::SCENE_COLOR_FORMAT, create_renderer_pipeline,
 };
-use ash::{vk, Device};
+use ash::{Device, vk};
 use environment::*;
 use std::sync::Arc;
 use vulkan::*;

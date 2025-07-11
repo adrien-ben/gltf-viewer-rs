@@ -2,19 +2,19 @@ use environment::Environment;
 use model::{Model, PlaybackMode};
 use std::{cell::RefCell, path::PathBuf, rc::Rc, sync::Arc, time::Instant};
 use vulkan::{
+    Context,
     winit::{
         dpi::PhysicalSize,
         event::{DeviceEvent, ElementState, KeyEvent, WindowEvent},
         keyboard::Key,
         window::Window,
     },
-    Context,
 };
 
 use crate::{
+    Camera, InputState, Loader, RenderError, Renderer, RendererSettings,
     config::Config,
     gui::{self, Gui},
-    Camera, InputState, Loader, RenderError, Renderer, RendererSettings,
 };
 
 pub struct Viewer {

@@ -1,5 +1,5 @@
 use super::Context;
-use ash::{vk, Device};
+use ash::{Device, vk};
 use std::{path::Path, sync::Arc};
 
 pub struct ShaderModule {

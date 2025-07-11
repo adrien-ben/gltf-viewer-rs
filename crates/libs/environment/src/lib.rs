@@ -14,8 +14,8 @@ use std::path::Path;
 use std::sync::Arc;
 use vulkan::ash::vk;
 use vulkan::{
-    create_device_local_buffer_with_data, create_pipeline, Buffer, Context, Descriptors,
-    PipelineParameters, ShaderParameters, Texture, Vertex,
+    Buffer, Context, Descriptors, PipelineParameters, ShaderParameters, Texture, Vertex,
+    create_device_local_buffer_with_data, create_pipeline,
 };
 
 pub const PRE_FILTERED_MAP_SIZE: u32 = 512;

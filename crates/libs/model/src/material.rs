@@ -1,7 +1,7 @@
 use gltf::{
+    Document,
     material::{AlphaMode, Material as GltfMaterial, NormalTexture, OcclusionTexture},
     texture::{Info, TextureTransform},
-    Document,
 };
 use math::cgmath::{Matrix3, Rad};
 

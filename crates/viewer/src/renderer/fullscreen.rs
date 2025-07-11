@@ -1,8 +1,8 @@
 use std::mem::size_of;
 use std::sync::Arc;
-use vulkan::{ash::vk, create_device_local_buffer_with_data, Buffer, Context, Vertex};
+use vulkan::{Buffer, Context, Vertex, ash::vk, create_device_local_buffer_with_data};
 
-use super::{create_renderer_pipeline, RendererPipelineParameters};
+use super::{RendererPipelineParameters, create_renderer_pipeline};
 
 #[repr(C)]
 #[derive(Clone, Copy)]

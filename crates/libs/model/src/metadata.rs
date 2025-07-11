@@ -1,9 +1,9 @@
 use gltf::{
+    Animation as GltfAnimation, Document, Material as GltfMaterial, Mesh as GltfMesh,
+    Node as GltfNode, Primitive as GltfPrimitive, Scene,
     khr_lights_punctual::{Kind as GltfLightKind, Light as GltfLight},
     material::AlphaMode as GltfAlphaMode,
     mesh::Mode as GltfPrimitiveMode,
-    Animation as GltfAnimation, Document, Material as GltfMaterial, Mesh as GltfMesh,
-    Node as GltfNode, Primitive as GltfPrimitive, Scene,
 };
 use std::{fmt, path::Path};
 

@@ -1,5 +1,5 @@
 use super::node::Node;
-use gltf::{buffer::Data, iter::Skins as GltfSkins, Skin as GltfSkin};
+use gltf::{Skin as GltfSkin, buffer::Data, iter::Skins as GltfSkins};
 use math::cgmath::{Matrix4, SquareMatrix};
 
 // Must be kept in sync with the value in model.vert
