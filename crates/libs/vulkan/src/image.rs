@@ -238,7 +238,7 @@ impl Image {
         level_count: u32,
         old_layout: vk::ImageLayout,
         new_layout: vk::ImageLayout,
-    ) -> vk::ImageMemoryBarrier2 {
+    ) -> vk::ImageMemoryBarrier2<'_> {
         let (src_access_mask, dst_access_mask, src_stage, dst_stage) =
             match (old_layout, new_layout) {
                 (vk::ImageLayout::UNDEFINED, vk::ImageLayout::TRANSFER_DST_OPTIMAL) => (
