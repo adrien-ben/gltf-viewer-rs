@@ -22,7 +22,8 @@ use super::config::Config;
 use super::gui::Gui;
 use ash::{Device, vk};
 use egui::TextureId;
-use egui_ash_renderer::{DynamicRendering, Options, Renderer as GuiRenderer};
+use egui_ash_renderer::allocator::DefaultAllocator;
+use egui_ash_renderer::{DynamicRendering, Options, RenderMode, Renderer as GuiRenderer};
 use environment::Environment;
 use math::cgmath::{Matrix4, SquareMatrix, Vector3};
 use model_crate::Model;
@@ -93,7 +94,7 @@ pub struct Renderer {
     quad_model: QuadModel,
     bloom_pass: BloomPass,
     final_pass: FinalPass,
-    gui_renderer: GuiRenderer,
+    gui_renderer: GuiRenderer<DefaultAllocator>,
     context: Arc<Context>,
 }
 
@@ -177,10 +178,11 @@ impl Renderer {
             context.instance(),
             context.physical_device(),
             context.device().clone(),
-            DynamicRendering {
+            RenderMode::DynamicRendering(DynamicRendering {
                 color_attachment_format: swapchain.properties().format.format,
                 depth_attachment_format: None,
-            },
+                stencil_attachment_format: None,
+            }),
             Options {
                 in_flight_frames: MAX_FRAMES_IN_FLIGHT as _,
                 srgb_framebuffer: true,
@@ -962,10 +964,11 @@ impl Renderer {
 
         // UI Renderer
         self.gui_renderer
-            .set_dynamic_rendering(DynamicRendering {
+            .set_render_mode(RenderMode::DynamicRendering(DynamicRendering {
                 color_attachment_format: dbg!(swapchain_properties.format.format),
                 depth_attachment_format: None,
-            })
+                stencil_attachment_format: None,
+            }))
             .expect("update gui renderer");
     }
 

@@ -65,7 +65,7 @@ impl Gui {
             shapes,
             pixels_per_point,
             ..
-        } = self.egui.run(raw_input, |ctx: &Context| {
+        } = self.egui.run_ui(raw_input, |ctx: &mut Ui| {
             egui::Window::new("Menu ('H' to toggle)")
                 .default_open(false)
                 .show(ctx, |ui| {
@@ -84,7 +84,7 @@ impl Gui {
 
         self.state.check_renderer_settings_changed(&previous_state);
 
-        self.state.hovered = self.egui.is_pointer_over_area();
+        self.state.hovered = self.egui.is_pointer_over_egui();
 
         self.egui_winit
             .handle_platform_output(window, platform_output);
