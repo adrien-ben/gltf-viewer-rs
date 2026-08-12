@@ -20,6 +20,7 @@ pub use self::{postprocess::*, skybox::*};
 use super::camera::{Camera, CameraUBO};
 use super::config::Config;
 use super::gui::Gui;
+use ahash::{HashSet, HashSetExt};
 use ash::{Device, vk};
 use egui::TextureId;
 use egui_ash_renderer::allocator::DefaultAllocator;
@@ -335,27 +336,29 @@ impl Renderer {
         unsafe { self.context.device().reset_fences(&wait_fences).unwrap() };
 
         // UI
-        if !self.in_flight_frames.gui_textures_to_free.is_empty() {
-            self.gui_renderer
-                .free_textures(&self.in_flight_frames.gui_textures_to_free)
-                .unwrap();
+        for id in self.in_flight_frames.gui_textures_to_free.drain() {
+            self.gui_renderer.free_texture(id).unwrap();
         }
 
         let ui_render_data = gui.map(|gui| {
-            let render_data = gui.render(window);
+            let mut render_data = gui.render(window);
 
-            self.in_flight_frames.gui_textures_to_free.clear();
-            self.in_flight_frames
-                .gui_textures_to_free
-                .extend_from_slice(&render_data.textures_delta.free);
+            for id in render_data.textures_delta.free.drain() {
+                self.in_flight_frames.gui_textures_to_free.insert(id);
+            }
 
-            self.gui_renderer
-                .set_textures(
-                    self.context.graphics_compute_queue(),
-                    self.context.transient_command_pool(),
-                    &render_data.textures_delta.set,
-                )
-                .unwrap();
+            for (id, deltas) in render_data.textures_delta.set.drain() {
+                for delta in deltas {
+                    self.gui_renderer
+                        .set_texture(
+                            self.context.graphics_compute_queue(),
+                            self.context.transient_command_pool(),
+                            id,
+                            &delta,
+                        )
+                        .unwrap();
+                }
+            }
 
             render_data
         });
@@ -1191,7 +1194,7 @@ fn create_renderer_pipeline<V: Vertex>(
 struct InFlightFrames {
     context: Arc<Context>,
     sync_objects: Vec<SyncObjects>,
-    gui_textures_to_free: Vec<TextureId>,
+    gui_textures_to_free: HashSet<TextureId>,
     current_frame: usize,
 }
 
@@ -1200,7 +1203,7 @@ impl InFlightFrames {
         Self {
             context,
             sync_objects,
-            gui_textures_to_free: Vec::new(),
+            gui_textures_to_free: HashSet::new(),
             current_frame: 0,
         }
     }
